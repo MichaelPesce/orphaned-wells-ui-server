@@ -2,7 +2,7 @@ name: uow-server-env
 channels:
   - conda-forge
 dependencies:
-  - python=3.9
+  - python=3.12
   - pip
   - pip:
-    - -r backend/requirements.txt
+    - .
