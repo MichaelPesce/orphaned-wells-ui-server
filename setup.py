@@ -17,7 +17,7 @@ long_description = (cwd / "README.md").read_text()
 setup(
     name="orphaned-wells-ui-server",
     url="https://github.com/CATALOG-Historic-Records/orphaned-wells-ui-server",
-    version="0.1.dev0",
+    version="0.1.dev",
     description="Orphaned Wells UI Backend Server",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -40,7 +40,6 @@ setup(
         "Programming Language :: Python :: 3 :: Only",
     ],
     keywords="orphaned wells",
-    
     packages=find_packages(
         include=("backend*",),
     ),
@@ -66,15 +65,15 @@ setup(
         "testing": [
             "pytest",
         ],
-        # "dev": [
-        #     "Sphinx==7.1.*",  # docs
-        #     "sphinx_rtd_theme",  # docs
-        #     "json-schema-for-humans",  # pretty JSON schema in HTML
-        #     "black",  # code formatting
-        #     # other requirements
-        #     "pytest",  # test framework
-        #     "pytest-cov",  # code coverage
-        #     "mongomock",  # mongodb mocking for testing
-        # ],
+        "dev": [
+            #     "Sphinx==7.1.*",  # docs
+            #     "sphinx_rtd_theme",  # docs
+            #     "json-schema-for-humans",  # pretty JSON schema in HTML
+            #     "black",  # code formatting
+            #     # other requirements
+            #     "pytest",  # test framework
+            #     "pytest-cov",  # code coverage
+            #     "mongomock",  # mongodb mocking for testing
+        ],
     },
 )
