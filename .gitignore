@@ -1,0 +1,5 @@
+creds.py
+.DS_Store
+
+uploaded_images/
+__pycache__/
