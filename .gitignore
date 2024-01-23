@@ -3,3 +3,4 @@ creds.py
 
 uploaded_images/
 __pycache__/
+*.egg-info/
