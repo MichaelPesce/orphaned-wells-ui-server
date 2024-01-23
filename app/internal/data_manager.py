@@ -8,11 +8,11 @@ from pydantic import BaseModel
 from app.internal.mongodb_connection import connectToDatabase
 
 
-# _log = idaeslog.getLogger(__name__)
 _log = logging.getLogger(__name__)
 
+
 class Project(BaseModel):
-    """Information about a flowsheet."""
+    """Information about a project."""
 
     # static information
     id_: str
@@ -20,6 +20,7 @@ class Project(BaseModel):
     description: str = ""
     state: str = ""
     history: List = []
+
 
 class DataManager:
     """Manage the active data."""
@@ -31,24 +32,23 @@ class DataManager:
         self.img_path.mkdir(parents=True, exist_ok=True)
         self.db = connectToDatabase()
         self.projects = []
-
         self.fetchProjects()
-
 
     def fetchProjects(self):
         cursor = self.db.projects.find({})
         for document in cursor:
             self.addProject(document)
-        _log.info(f'projects is : {self.projects}')
+        _log.info(f"projects is : {self.projects}")
 
     def addProject(self, document):
         p = Project(
-            id_=str(document['_id']),
-            name=document['name'],
-            description=document['description'],
-            state=document['state'],
-            history=document['history'],
+            id_=str(document["_id"]),
+            name=document["name"],
+            description=document["description"],
+            state=document["state"],
+            history=document["history"],
         )
         self.projects.append(p)
-    
+
+
 data_manager = DataManager()
