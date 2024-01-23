@@ -21,10 +21,10 @@ This will install the correct runtime versions of the backend (Python) and the b
 
 ### 2. Add credentials file
 
-In order to use Google Cloud's document AI features, you must have access to a valid project and processor. The backend assumes that you will have the proper credentials stored in a python file called **creds.py**, located in **< orphaned-wells-ui-path >/backend/app/internal/**
+In order to use Google Cloud's document AI features, you must have access to a valid project and processor. Additionally, to access the database, you must have a valid username and password. The backend assumes that you will have the proper credentials stored in a python file called **creds.py**, located in **< orphaned-wells-ui-path >/backend/app/internal/**
 
 **You must create that file and put it in that location, and the following variables must be stored in that file**:
-    PROJECT_ID, LOCATION, PROCESSOR_ID
+    PROJECT_ID, LOCATION, PROCESSOR_ID, DB_USERNAME, DB_PASSWORD
 
 # Running the server
 
