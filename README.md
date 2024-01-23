@@ -37,5 +37,5 @@ conda activate uow-ui-env
 ### Start server on port 8001
 
 ```console
-cd <orphaned-wells-ui-path>/backend/app && uvicorn main:app --reload --host 127.0.0.1 --port 8001
+cd <orphaned-wells-ui-server-path>/backend/app && uvicorn main:app --reload --host 127.0.0.1 --port 8001
 ```
