@@ -6,7 +6,6 @@ import logging
 import aiofiles
 import copy
 
-from app.internal.ocr_stuff import get_tokens_inside_coordinates, parse_image, convert_tiff, get_tokens_inside_normalized_coordinates
 from app.internal.data_manager import data_manager
 
 _log = logging.getLogger(__name__)
