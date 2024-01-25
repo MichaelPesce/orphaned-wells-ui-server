@@ -1,5 +1,6 @@
 creds.py
 .DS_Store
+.env
 
 uploaded_images/
 __pycache__/

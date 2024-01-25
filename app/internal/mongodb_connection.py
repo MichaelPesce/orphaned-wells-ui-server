@@ -1,8 +1,14 @@
+import os
+from dotenv import load_dotenv
 import urllib.parse
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
-from app.internal.creds import DB_USERNAME, DB_PASSWORD
 
+
+# fetch environment variables
+load_dotenv()
+DB_USERNAME = os.getenv('DB_USERNAME')
+DB_PASSWORD = os.getenv('DB_PASSWORD')
 
 def connectToDatabase():
     username = urllib.parse.quote_plus(DB_USERNAME)
