@@ -56,6 +56,7 @@ setup(
         "idna",
         "pydantic>2",
         "pydantic_core",
+        "pydantic_settings",
         "python-dotenv",
         "sniffio",
         "starlette",
