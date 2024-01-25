@@ -58,6 +58,7 @@ setup(
         "pydantic_core",
         "pydantic_settings",
         "python-dotenv",
+        "python-multipart",
         "sniffio",
         "starlette",
         "typing_extensions",
