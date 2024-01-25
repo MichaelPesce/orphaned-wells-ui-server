@@ -56,22 +56,20 @@ setup(
         "idna",
         "pydantic>2",
         "pydantic_core",
+        "python-dotenv",
         "sniffio",
         "starlette",
         "typing_extensions",
         "uvicorn",
     ],
     extras_require={
-        "testing": [
-            "pytest",
-        ],
         "dev": [
             #     "Sphinx==7.1.*",  # docs
             #     "sphinx_rtd_theme",  # docs
             #     "json-schema-for-humans",  # pretty JSON schema in HTML
             #     "black",  # code formatting
             #     # other requirements
-            #     "pytest",  # test framework
+                "pytest",  # test framework
             #     "pytest-cov",  # code coverage
             #     "mongomock",  # mongodb mocking for testing
         ],
