@@ -33,11 +33,11 @@ async def get_projects():
     """
     return data_manager.projects
 
+
 @router.get("/get_project/{project_id}")
 async def get_project_data(project_id: str):
     """
     Fetch project with provided project id
-    
     Return project data
     """
     records = data_manager.fetchProjectData(project_id)

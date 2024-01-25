@@ -6,6 +6,7 @@ from typing import Optional, Dict, List
 from pydantic import BaseModel
 
 from app.internal.mongodb_connection import connectToDatabase
+from app.internal.settings import AppSettings
 
 
 _log = logging.getLogger(__name__)
@@ -28,8 +29,7 @@ class DataManager:
     VERSION = 1
 
     def __init__(self, **kwargs) -> None:
-        self.img_path = Path.home() / ".uow" / "uploaded_images"
-        self.img_path.mkdir(parents=True, exist_ok=True)
+        self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
         self.projects = []
         self.fetchProjects()
@@ -41,7 +41,7 @@ class DataManager:
         _log.info(f"projects is : {self.projects}")
 
     def uploadProject(self, project_info):
-        _log.info(f'uploading project with data: {project_info}')
+        _log.info(f"uploading project with data: {project_info}")
 
     def addProject(self, document):
         p = Project(
@@ -56,9 +56,8 @@ class DataManager:
     def fetchProjectData(self, project_id):
         records = []
         cursor = self.db.records.find({"project_id": project_id})
-        _log.info(f'found cursor: {cursor}')
         for document in cursor:
-            _log.info(f'found document: {document}')
+            _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
             records.append(document)
         return records
