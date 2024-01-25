@@ -39,7 +39,7 @@ class DataManager:
         cursor = self.db.projects.find({})
         for document in cursor:
             self.addProject(document)
-        _log.info(f"projects is : {self.projects}")
+        # _log.info(f"projects is : {self.projects}")
 
     def uploadProject(self, project_info):
         _log.info(f"uploading project with data: {project_info}")

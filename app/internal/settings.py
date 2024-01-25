@@ -22,7 +22,9 @@ class AppSettings(BaseSettings):
             v / "orphaned-wells-ui.log", backupCount=2, maxBytes=5000000
         )
         logging.basicConfig(
-            level=logging.INFO, format=loggingFormat, handlers=[loggingFileHandler]
+            level=logging.INFO,
+            format=loggingFormat,
+            handlers=[loggingFileHandler, logging.StreamHandler()],
         )
         return v
 
