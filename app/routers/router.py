@@ -41,4 +41,7 @@ async def get_project_data(project_id: str):
     Return project data
     """
     records = data_manager.fetchProjectData(project_id)
-    return records
+    project_data = next(
+        (item for item in data_manager.projects if item.id_ == project_id), None
+    )
+    return {"project_data": project_data, "records": records}
