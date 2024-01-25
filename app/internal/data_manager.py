@@ -21,6 +21,7 @@ class Project(BaseModel):
     description: str = ""
     state: str = ""
     history: List = []
+    attributes: List = []
 
 
 class DataManager:
@@ -45,11 +46,12 @@ class DataManager:
 
     def addProject(self, document):
         p = Project(
-            id_=str(document["_id"]),
-            name=document["name"],
-            description=document["description"],
-            state=document["state"],
-            history=document["history"],
+            id_=str(document.get("_id", None)),
+            name=document.get("name", ""),
+            description=document.get("description", ""),
+            state=document.get("state", ""),
+            history=document.get("history", []),
+            attributes=document.get("attributes", []),
         )
         self.projects.append(p)
 
