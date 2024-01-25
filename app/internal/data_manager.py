@@ -38,7 +38,7 @@ class DataManager:
         # self.fetchProjects()
 
     def fetchProjects(self):
-        self.projects=[]
+        self.projects = []
         cursor = self.db.projects.find({})
         for document in cursor:
             self.addProject(document)

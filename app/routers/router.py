@@ -57,3 +57,13 @@ async def add_project(request: Request):
     # _log.info(f"adding project with data: {data}")
     new_id = data_manager.createProject(data)
     return new_id
+
+
+@router.post("/upload_document")
+async def upload_document(file: UploadFile = File(...)):
+    """
+    Fetch project with provided project id
+    Return project data
+    """
+    _log.info(f"uploading document: {file}")
+    return {"response": "success"}
