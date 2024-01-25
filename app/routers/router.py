@@ -29,6 +29,6 @@ router = APIRouter(
 @router.get("/get_projects")
 async def get_projects():
     """
-        Fetch all projects
+    Fetch all projects
     """
     return data_manager.projects

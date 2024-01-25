@@ -7,8 +7,9 @@ from pymongo.server_api import ServerApi
 
 # fetch environment variables
 load_dotenv()
-DB_USERNAME = os.getenv('DB_USERNAME')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_USERNAME = os.getenv("DB_USERNAME")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
 
 def connectToDatabase():
     username = urllib.parse.quote_plus(DB_USERNAME)
