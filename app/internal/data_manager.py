@@ -35,12 +35,14 @@ class DataManager:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
         self.projects = []
-        self.fetchProjects()
+        # self.fetchProjects()
 
     def fetchProjects(self):
+        self.projects=[]
         cursor = self.db.projects.find({})
         for document in cursor:
             self.addProject(document)
+        return self.projects
         # _log.info(f"projects is : {self.projects}")
 
     def createProject(self, project_info):

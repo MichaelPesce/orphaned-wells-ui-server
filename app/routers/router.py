@@ -31,7 +31,7 @@ async def get_projects():
     """
     Fetch all projects
     """
-    return data_manager.projects
+    return data_manager.fetchProjects()
 
 
 @router.get("/get_project/{project_id}")
