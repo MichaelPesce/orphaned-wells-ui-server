@@ -45,3 +45,15 @@ async def get_project_data(project_id: str):
         (item for item in data_manager.projects if item.id_ == project_id), None
     )
     return {"project_data": project_data, "records": records}
+
+
+@router.post("/add_project")
+async def add_project(request: Request):
+    """
+    Fetch project with provided project id
+    Return project data
+    """
+    data = await request.json()
+    # _log.info(f"adding project with data: {data}")
+    new_id = data_manager.createProject(data)
+    return new_id

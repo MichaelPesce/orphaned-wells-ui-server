@@ -22,6 +22,7 @@ class Project(BaseModel):
     state: str = ""
     history: List = []
     attributes: List = []
+    documentType: str = ""
 
 
 class DataManager:
@@ -41,8 +42,17 @@ class DataManager:
             self.addProject(document)
         # _log.info(f"projects is : {self.projects}")
 
-    def uploadProject(self, project_info):
-        _log.info(f"uploading project with data: {project_info}")
+    def createProject(self, project_info):
+        ## add project to db collection
+        db_response = self.db.projects.insert_one(project_info)
+        new_id = db_response.inserted_id
+
+        ## add project to project list:
+        cursor = self.db.projects.find({"_id": new_id})
+        for document in cursor:
+            self.addProject(document)
+
+        return str(new_id)
 
     def addProject(self, document):
         p = Project(
@@ -52,6 +62,7 @@ class DataManager:
             state=document.get("state", ""),
             history=document.get("history", []),
             attributes=document.get("attributes", []),
+            documentType=document.get("documentType", ""),
         )
         self.projects.append(p)
 
@@ -59,7 +70,7 @@ class DataManager:
         records = []
         cursor = self.db.records.find({"project_id": project_id})
         for document in cursor:
-            _log.info(f"found document: {document}")
+            # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
             records.append(document)
         return records
