@@ -69,7 +69,7 @@ setup(
             #     "json-schema-for-humans",  # pretty JSON schema in HTML
             #     "black",  # code formatting
             #     # other requirements
-                "pytest",  # test framework
+            "pytest",  # test framework
             #     "pytest-cov",  # code coverage
             #     "mongomock",  # mongodb mocking for testing
         ],
