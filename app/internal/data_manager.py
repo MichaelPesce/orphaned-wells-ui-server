@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 import time
 
-from typing import Optional, Dict, List
+from typing import Union, List
 from pydantic import BaseModel
 
 from app.internal.mongodb_connection import connectToDatabase
@@ -23,6 +23,7 @@ class Project(BaseModel):
     history: List = []
     attributes: List = []
     documentType: str = ""
+    dateCreated: Union[float, None] = None
 
 
 class DataManager:
@@ -43,6 +44,8 @@ class DataManager:
         # _log.info(f"projects is : {self.projects}")
 
     def createProject(self, project_info):
+        ## add timestamp to project
+        project_info["dateCreated"] = time.time()
         ## add project to db collection
         db_response = self.db.projects.insert_one(project_info)
         new_id = db_response.inserted_id
@@ -63,6 +66,7 @@ class DataManager:
             history=document.get("history", []),
             attributes=document.get("attributes", []),
             documentType=document.get("documentType", ""),
+            dateCreated=document.get("dateCreated", None),
         )
         self.projects.append(p)
 
