@@ -40,6 +40,9 @@ class DataManager:
             self.addProject(document)
         _log.info(f"projects is : {self.projects}")
 
+    def uploadProject(self, project_info):
+        _log.info(f'uploading project with data: {project_info}')
+
     def addProject(self, document):
         p = Project(
             id_=str(document["_id"]),
@@ -49,6 +52,16 @@ class DataManager:
             history=document["history"],
         )
         self.projects.append(p)
+
+    def fetchProjectData(self, project_id):
+        records = []
+        cursor = self.db.records.find({"project_id": project_id})
+        _log.info(f'found cursor: {cursor}')
+        for document in cursor:
+            _log.info(f'found document: {document}')
+            document["_id"] = str(document["_id"])
+            records.append(document)
+        return records
 
 
 data_manager = DataManager()
