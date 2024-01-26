@@ -55,9 +55,9 @@ async def upload_to_google_storage(file_path, file_name):
     async with aiofiles.open(file_path, "rb") as afp:
         f = await afp.read()
     url = await async_upload_to_bucket(file_name, f)
-    _log(f"uploaded document to cloud storage: {url}")
+    _log.info(f"uploaded document to cloud storage: {url}")
 
-def parse_image(file_path, file_name, mime_type):
+def process_image(file_path, file_name, mime_type):
     with open(file_path, "rb") as image:
         image_content = image.read()
 
@@ -70,7 +70,6 @@ def parse_image(file_path, file_name, mime_type):
 
     # our predefined attributes will be located in the entities object
     document_entities = document_object.entities
-
     '''
     entities has the following (useful) attributes: 
     <attribute>: <example value>
@@ -87,4 +86,17 @@ def parse_image(file_path, file_name, mime_type):
             text: "1972-08-25"
         }
     '''
-    
+    attributes = {}
+    for entity in document_entities:
+        # print(f"found entity: {entity}")
+        attribute = entity.type_
+        confidence = entity.confidence
+        raw_text = entity.mention_text
+        # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
+        normalized_value = entity.normalized_value
+        attributes[attribute] = {
+            "confidence": confidence,
+            "raw_text": raw_text,
+            # "normalized_value": normalized_value,
+        }
+    return attributes

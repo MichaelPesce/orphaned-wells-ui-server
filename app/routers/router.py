@@ -17,7 +17,7 @@ import asyncio
 # import copy
 
 from app.internal.data_manager import data_manager
-from app.internal.image_handling import convert_tiff, upload_to_google_storage
+from app.internal.image_handling import convert_tiff, upload_to_google_storage, process_image
 
 _log = logging.getLogger(__name__)
 
@@ -66,12 +66,13 @@ async def upload_document(
     background_tasks: BackgroundTasks, file: UploadFile = File(...)
 ):
     """
-    Fetch project with provided project id
+    Upload document, process document, and create record in database
     Return project data
     """
     _log.info(f"uploading document: {file}")
     output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
+    mime_type = file.content_type
     ## read document file
     try:
         async with aiofiles.open(output_path, "wb") as out_file:
@@ -83,6 +84,7 @@ async def upload_document(
                 filename, file_ext, data_manager.app_settings.img_dir
             )
             file_ext = ".png"
+            mime_type = "image/png"
     except Exception as e:
         _log.error(f"unable to read image file: {e}")
     _log.info(f"uploading document to: {output_path}")
@@ -93,7 +95,16 @@ async def upload_document(
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
     )
-
+    
     ## send to google doc AI
+    processed_attributes = process_image(
+        file_path=output_path,
+        file_name=f"{filename}{file_ext}",
+        mime_type=mime_type
+    )
 
-    return {"response": "success"}
+    ## gotta create the record in the db
+    ## WE NEED THE PROJECT ID
+    # data_manager.createRecord(processed_attributes)
+
+    return {"processed_attributes": processed_attributes}

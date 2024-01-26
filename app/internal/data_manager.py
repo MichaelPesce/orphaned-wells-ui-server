@@ -80,6 +80,15 @@ class DataManager:
             document["_id"] = str(document["_id"])
             records.append(document)
         return records
+    
+    def createRecord(self, record):
+        ## add timestamp to project
+        record["dateCreated"] = time.time()
+        ## add record to db collection
+        db_response = self.db.records.insert_one(record)
+        new_id = db_response.inserted_id
+
+        return str(new_id)
 
 
 data_manager = DataManager()
