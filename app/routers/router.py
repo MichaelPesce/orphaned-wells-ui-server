@@ -62,25 +62,29 @@ async def add_project(request: Request):
 
 
 @router.post("/upload_document")
-async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_document(
+    background_tasks: BackgroundTasks, file: UploadFile = File(...)
+):
     """
     Fetch project with provided project id
     Return project data
     """
     _log.info(f"uploading document: {file}")
-    output_path = f'{data_manager.app_settings.img_dir}/{file.filename}'
+    output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     ## read document file
     try:
-        async with aiofiles.open(output_path, 'wb') as out_file:
+        async with aiofiles.open(output_path, "wb") as out_file:
             content = await file.read()  # async read
             await out_file.write(content)
-        if file_ext == '.tif' or file_ext == '.tiff':
+        if file_ext == ".tif" or file_ext == ".tiff":
             _log.info(f"converting to png")
-            output_path = convert_tiff(filename, file_ext, data_manager.app_settings.img_dir)
+            output_path = convert_tiff(
+                filename, file_ext, data_manager.app_settings.img_dir
+            )
             file_ext = ".png"
     except Exception as e:
-        _log.error(f'unable to read image file: {e}')
+        _log.error(f"unable to read image file: {e}")
     _log.info(f"uploading document to: {output_path}")
 
     ## upload to cloud storage (this will overwrite any existing files of the same name):
@@ -89,7 +93,7 @@ async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = 
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
     )
-    
-    ## send to google doc AI 
+
+    ## send to google doc AI
 
     return {"response": "success"}
