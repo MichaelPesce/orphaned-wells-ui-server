@@ -33,12 +33,17 @@ where you installed the package, run the following command:
 pip install -r requirements-dev.txt
 ```
 
-### 2. Add credentials file
+### 2. Add credential/environment files
 
 In order to use Google Cloud's document AI features, you must have access to a valid project and processor. Additionally, to connect to a database, you must have a valid username and password. The backend assumes that you will have the proper credentials stored in an environment file called **.env**, located in **< orphaned-wells-ui-server-path >/backend/app/internal/**
 
 **You must create that file and put it in that location, and the following variables must be stored in that file**:
     PROJECT_ID, LOCATION, PROCESSOR_ID, DB_USERNAME, DB_PASSWORD
+
+In order to store uploaded images in addition to processing them, credentials for a GCP Storage Bucket are needed. The backend looks for a **creds.json** file located in **< orphaned-wells-ui-server-path >/backend/app/internal/**. You can generate this file using the gcloud api, see https://cloud.google.com/document-ai/docs/libraries#authentication.
+
+**You must create that file and put it in that location, and the following variables must be stored in that file**:
+    client_id, client_secret, quota_project_id, refresh_token, type
 
 # Running the server
 
