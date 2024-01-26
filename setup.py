@@ -47,13 +47,18 @@ setup(
     install_requires=[
         "pymongo>3",  # database interface
         "annotated-types",
+        "aiofiles",
+        "aiohttp",
         "anyio",
         "click",
         "dnspython",
         "exceptiongroup",
         "fastapi",
+        "gcloud-aio-storage",
+        "google-cloud-storage",
         "h11",
         "idna",
+        "pillow",
         "pydantic>2",
         "pydantic_core",
         "pydantic_settings",

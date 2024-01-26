@@ -1,4 +1,5 @@
 creds.py
+creds.json
 .DS_Store
 .env
 
