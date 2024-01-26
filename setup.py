@@ -56,6 +56,7 @@ setup(
         "fastapi",
         "gcloud-aio-storage",
         "google-cloud-storage",
+        "google-cloud-documentai",
         "h11",
         "idna",
         "pillow",
