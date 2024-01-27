@@ -97,6 +97,7 @@ def process_image(file_path, file_name, mime_type):
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
+            "value": raw_text,
             # "normalized_value": normalized_value,
         }
     return attributes

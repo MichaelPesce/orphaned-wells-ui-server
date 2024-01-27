@@ -84,10 +84,11 @@ class DataManager:
     def createRecord(self, record):
         ## add timestamp to project
         record["dateCreated"] = time.time()
+        # _log.info(f"adding record to db: {record}")
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
-
+        # _log.info(f"added record, record is now: {record}")
         return str(new_id)
 
 

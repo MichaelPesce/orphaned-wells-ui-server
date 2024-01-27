@@ -61,9 +61,9 @@ async def add_project(request: Request):
     return new_id
 
 
-@router.post("/upload_document")
+@router.post("/upload_document/{project_id}")
 async def upload_document(
-    background_tasks: BackgroundTasks, file: UploadFile = File(...)
+    project_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...)
 ):
     """
     Upload document, process document, and create record in database
@@ -105,6 +105,10 @@ async def upload_document(
 
     ## gotta create the record in the db
     ## WE NEED THE PROJECT ID
-    # data_manager.createRecord(processed_attributes)
+    record = {
+        "project_id": project_id,
+        "attributes": processed_attributes,
+    }
+    new_record_id = data_manager.createRecord(record)
 
-    return {"processed_attributes": processed_attributes}
+    return {"new_record_id": new_record_id}
