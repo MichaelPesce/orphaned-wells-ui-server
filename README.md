@@ -35,15 +35,14 @@ pip install -r requirements-dev.txt
 
 ### 2. Add credential/environment files
 
-In order to use Google Cloud's document AI features, you must have access to a valid project and processor. Additionally, to connect to a database, you must have a valid username and password. The backend assumes that you will have the proper credentials stored in an environment file called **.env**, located in **< orphaned-wells-ui-server-path >/app/internal/**
-
-**You must create that file and put it in that location, and the following variables must be stored in that file**:
-    PROJECT_ID, LOCATION, PROCESSOR_ID, DB_USERNAME, DB_PASSWORD
-
-In order to store uploaded images in addition to processing them, credentials for a GCP Storage Bucket are needed. The backend looks for a **creds.json** file located in **< orphaned-wells-ui-server-path >/app/internal/**. You can generate this file using the gcloud api, see https://cloud.google.com/document-ai/docs/libraries#authentication.
-
-**You must create that file and put it in that location, and the following variables must be stored in that file**:
-    client_id, client_secret, quota_project_id, refresh_token, type
+Credentials are necessary for backend functionality. This includes Google Cloud's document AI features, MongoDB database access, and Google Cloud Storage for storing documents/images. To access these functionalities, you must create the following credential files and place them in the **< orphaned-wells-ui-server-path >/app/internal/** directory:
+1. **.env** 
+    - Must contain **PROJECT_ID**, **LOCATION**, **PROCESSOR_ID**, **DB_USERNAME**, **DB_PASSWORD**, **STORAGE_SERVICE_KEY** (3rd item on this list)
+2. **creds.json**
+    - Must contain GCP Storage Bucket credentials. To generate this file using gcloud api, see https://cloud.google.com/document-ai/docs/libraries#authentication.
+3. **STORAGE_SERVICE_KEY** file
+    - Name doesn't matter as long as it matches what you store in .env
+    - Must contain google cloud client credentials. See https://docs.gspread.org/en/latest/oauth2.html#for-bots-using-service-account.
 
 # Running the server
 
