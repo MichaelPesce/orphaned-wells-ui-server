@@ -17,7 +17,11 @@ import asyncio
 # import copy
 
 from app.internal.data_manager import data_manager
-from app.internal.image_handling import convert_tiff, upload_to_google_storage, process_image
+from app.internal.image_handling import (
+    convert_tiff,
+    upload_to_google_storage,
+    process_image,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -105,12 +109,10 @@ async def upload_document(
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
     )
-    
+
     ## send to google doc AI
     processed_attributes = process_image(
-        file_path=output_path,
-        file_name=f"{filename}{file_ext}",
-        mime_type=mime_type
+        file_path=output_path, file_name=f"{filename}{file_ext}", mime_type=mime_type
     )
 
     ## gotta create the record in the db

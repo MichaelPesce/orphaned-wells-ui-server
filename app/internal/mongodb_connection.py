@@ -13,6 +13,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 
 ca = certifi.where()
 
+
 def connectToDatabase():
     username = urllib.parse.quote_plus(DB_USERNAME)
     password = urllib.parse.quote_plus(DB_PASSWORD)

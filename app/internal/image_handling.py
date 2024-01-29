@@ -59,7 +59,7 @@ def process_image(file_path, file_name, mime_type):
 
     # our predefined attributes will be located in the entities object
     document_entities = document_object.entities
-    '''
+    """
     entities has the following (useful) attributes: 
     <attribute>: <example value>
     type_: "Spud_Date"
@@ -74,7 +74,7 @@ def process_image(file_path, file_name, mime_type):
             }
             text: "1972-08-25"
         }
-    '''
+    """
     attributes = {}
     for entity in document_entities:
         # print(f"found entity: {entity}")
@@ -90,6 +90,7 @@ def process_image(file_path, file_name, mime_type):
             # "normalized_value": normalized_value,
         }
     return attributes
+
 
 ## Google Cloud Storage Functions
 async def async_upload_to_bucket(
@@ -109,7 +110,7 @@ async def upload_to_google_storage(file_path, file_name):
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(filename, bucket_name = "uploaded_documents_v0"):
+def generate_download_signed_url_v4(filename, bucket_name="uploaded_documents_v0"):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
@@ -118,8 +119,10 @@ def generate_download_signed_url_v4(filename, bucket_name = "uploaded_documents_
     To generate STORAGE_SERVICE_KEY, follow steps here:
     https://docs.gspread.org/en/latest/oauth2.html#for-bots-using-service-account
     """
-    
-    storage_client = storage.Client.from_service_account_json(f"./internal/{STORAGE_SERVICE_KEY}")
+
+    storage_client = storage.Client.from_service_account_json(
+        f"./internal/{STORAGE_SERVICE_KEY}"
+    )
 
     # blob_name: path to file in google cloud bucket
     blob_name = f"uploads/{filename}"

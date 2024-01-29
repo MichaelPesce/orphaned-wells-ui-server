@@ -82,7 +82,7 @@ class DataManager:
             document["_id"] = str(document["_id"])
             records.append(document)
         return records
-    
+
     def fetchRecordData(self, record_id):
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -93,7 +93,7 @@ class DataManager:
             return document
         _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
         return {}
-    
+
     def createRecord(self, record):
         ## add timestamp to project
         record["dateCreated"] = time.time()
