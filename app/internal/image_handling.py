@@ -119,7 +119,7 @@ def generate_download_signed_url_v4(filename, bucket_name = "uploaded_documents_
     https://docs.gspread.org/en/latest/oauth2.html#for-bots-using-service-account
     """
     
-    storage_client = storage.Client.from_service_account_json(STORAGE_SERVICE_KEY)
+    storage_client = storage.Client.from_service_account_json(f"./internal/{STORAGE_SERVICE_KEY}")
 
     # blob_name: path to file in google cloud bucket
     blob_name = f"uploads/{filename}"

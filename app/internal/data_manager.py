@@ -4,6 +4,7 @@ import time
 
 from typing import Union, List
 from pydantic import BaseModel
+from bson import ObjectId
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
@@ -83,12 +84,15 @@ class DataManager:
         return records
     
     def fetchRecordData(self, record_id):
-        cursor = self.db.records.find({"record_id": record_id})
+        _id = ObjectId(record_id)
+        cursor = self.db.records.find({"_id": _id})
         for document in cursor:
             # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
             document["img_url"] = generate_download_signed_url_v4(document["filename"])
             return document
+        _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
+        return {}
     
     def createRecord(self, record):
         ## add timestamp to project
