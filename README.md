@@ -49,7 +49,7 @@ Credentials are necessary for backend functionality. This includes Google Cloud'
 ### Ensure that the `uow-server-env` Conda environment is active
 
 ```console
-conda activate uow-ui-env
+conda activate uow-server-env
 ```
 
 ### Start server on port 8001
