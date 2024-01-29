@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
+from app.internal.image_handling import generate_download_signed_url_v4
 
 
 _log = logging.getLogger(__name__)
@@ -80,6 +81,14 @@ class DataManager:
             document["_id"] = str(document["_id"])
             records.append(document)
         return records
+    
+    def fetchRecordData(self, record_id):
+        cursor = self.db.records.find({"record_id": record_id})
+        for document in cursor:
+            # _log.info(f"found document: {document}")
+            document["_id"] = str(document["_id"])
+            document["img_url"] = generate_download_signed_url_v4(document["filename"])
+            return document
     
     def createRecord(self, record):
         ## add timestamp to project

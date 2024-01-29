@@ -49,6 +49,16 @@ async def get_project_data(project_id: str):
     return {"project_data": project_data, "records": records}
 
 
+@router.get("/get_record/{record_id}")
+async def get_project_data(record_id: str):
+    """
+    Fetch project with provided project id
+    Return project data
+    """
+    record = data_manager.fetchRecordData(record_id)
+    return record
+
+
 @router.post("/add_project")
 async def add_project(request: Request):
     """
@@ -104,10 +114,10 @@ async def upload_document(
     )
 
     ## gotta create the record in the db
-    ## WE NEED THE PROJECT ID
     record = {
         "project_id": project_id,
         "attributes": processed_attributes,
+        "filename": f"{filename}{file_ext}",
     }
     new_record_id = data_manager.createRecord(record)
 
