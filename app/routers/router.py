@@ -50,7 +50,7 @@ async def get_project_data(project_id: str):
 
 
 @router.get("/get_record/{record_id}")
-async def get_project_data(record_id: str):
+async def get_record_data(record_id: str):
     """
     Fetch project with provided project id
     Return project data
