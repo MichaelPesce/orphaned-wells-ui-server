@@ -1,4 +1,5 @@
 import os
+import certifi
 from dotenv import load_dotenv
 import urllib.parse
 from pymongo.mongo_client import MongoClient
@@ -7,8 +8,11 @@ from pymongo.server_api import ServerApi
 
 # fetch environment variables
 load_dotenv()
-DB_USERNAME = os.getenv('DB_USERNAME')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
+DB_USERNAME = os.getenv("DB_USERNAME")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+ca = certifi.where()
+
 
 def connectToDatabase():
     username = urllib.parse.quote_plus(DB_USERNAME)
@@ -16,7 +20,7 @@ def connectToDatabase():
     db_name = "uow"
 
     uri = f"mongodb+srv://{username}:{password}@cluster0.lh1kted.mongodb.net/?retryWrites=true&w=majority"
-    client = MongoClient(uri, server_api=ServerApi("1"))
+    client = MongoClient(uri, server_api=ServerApi("1"), tlsCAFile=ca)
     # Send a ping to confirm a successful connection
     try:
         client.admin.command("ping")

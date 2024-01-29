@@ -47,16 +47,24 @@ setup(
     install_requires=[
         "pymongo>3",  # database interface
         "annotated-types",
+        "aiofiles",
+        "aiohttp",
         "anyio",
         "click",
         "dnspython",
         "exceptiongroup",
         "fastapi",
+        "gcloud-aio-storage",
+        "google-cloud-storage",
+        "google-cloud-documentai",
         "h11",
         "idna",
+        "pillow",
         "pydantic>2",
         "pydantic_core",
+        "pydantic_settings",
         "python-dotenv",
+        "python-multipart",
         "sniffio",
         "starlette",
         "typing_extensions",
@@ -69,7 +77,7 @@ setup(
             #     "json-schema-for-humans",  # pretty JSON schema in HTML
             #     "black",  # code formatting
             #     # other requirements
-                "pytest",  # test framework
+            "pytest",  # test framework
             #     "pytest-cov",  # code coverage
             #     "mongomock",  # mongodb mocking for testing
         ],
