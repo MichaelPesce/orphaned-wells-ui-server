@@ -84,10 +84,16 @@ def process_image(file_path, file_name, mime_type, project_id, data_manager):
         raw_text = entity.mention_text
         # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
         normalized_value = entity.normalized_value
+        bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
+        coordinates = []
+        for i in range(4):
+            coordinate = bounding_poly.normalized_vertices[i]
+            coordinates.append([coordinate.x,coordinate.y])
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
             "value": raw_text,
+            "normalized_vertices": coordinates,
             # "normalized_value": normalized_value,
         }
     
