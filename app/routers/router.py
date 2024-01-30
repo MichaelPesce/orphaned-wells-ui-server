@@ -124,3 +124,12 @@ async def upload_document(
     new_record_id = data_manager.createRecord(record)
 
     return {"new_record_id": new_record_id}
+
+@router.get("/download_records/{project_id}", response_class=FileResponse)
+async def download_records(project_id: str):
+    """
+    Download records for given project ID
+    """
+    csv_output = data_manager.downloadRecords(project_id)
+
+    return csv_output
