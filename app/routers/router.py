@@ -83,7 +83,6 @@ async def upload_document(
     Upload document, process document, and create record in database
     Return project data
     """
-    _log.info(f"uploading document: {file}")
     output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     mime_type = file.content_type
@@ -101,7 +100,6 @@ async def upload_document(
             mime_type = "image/png"
     except Exception as e:
         _log.error(f"unable to read image file: {e}")
-    _log.info(f"uploading document to: {output_path}")
 
     ## upload to cloud storage (this will overwrite any existing files of the same name):
     background_tasks.add_task(
@@ -111,19 +109,16 @@ async def upload_document(
     )
 
     ## send to google doc AI
-    processed_attributes = process_image(
-        file_path=output_path, file_name=f"{filename}{file_ext}", mime_type=mime_type
+    background_tasks.add_task(
+        process_image,
+        file_path=output_path,
+        file_name=f"{filename}{file_ext}",
+        mime_type=mime_type, 
+        project_id=project_id,
+        data_manager=data_manager,
     )
 
-    ## gotta create the record in the db
-    record = {
-        "project_id": project_id,
-        "attributes": processed_attributes,
-        "filename": f"{filename}{file_ext}",
-    }
-    new_record_id = data_manager.createRecord(record)
-
-    return {"new_record_id": new_record_id}
+    return {"request": "being processed"}
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
 async def download_records(project_id: str):

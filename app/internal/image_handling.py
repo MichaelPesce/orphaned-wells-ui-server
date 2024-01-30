@@ -46,7 +46,7 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
 
 
 ## Document AI functions
-def process_image(file_path, file_name, mime_type):
+def process_image(file_path, file_name, mime_type, project_id, data_manager):
     with open(file_path, "rb") as image:
         image_content = image.read()
 
@@ -55,6 +55,7 @@ def process_image(file_path, file_name, mime_type):
 
     # Use the Document AI client to process the document
     result = docai_client.process_document(request=request)
+    _log.info(f"processed document in doc_ai")
     document_object = result.document
 
     # our predefined attributes will be located in the entities object
@@ -89,7 +90,16 @@ def process_image(file_path, file_name, mime_type):
             "value": raw_text,
             # "normalized_value": normalized_value,
         }
-    return attributes
+    
+    ## gotta create the record in the db
+    record = {
+        "project_id": project_id,
+        "attributes": attributes,
+        "filename": f"{file_name}",
+    }
+    new_record_id = data_manager.createRecord(record)
+    _log.info(f"created new record in db: {new_record_id}")
+    return new_record_id
 
 
 ## Google Cloud Storage Functions
