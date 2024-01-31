@@ -179,6 +179,35 @@ async def update_record(record_id: str, request: Request):
 
     return {"response": "success"}
 
+@router.post("/delete_project/{project_id}")
+async def update_pdelete_projectroject(project_id: str):
+    """Delete project.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        Success response
+    """
+    data_manager.deleteProject(project_id)
+
+    return {"response": "success"}
+
+
+@router.post("/delete_record/{record_id}")
+async def delete_record(record_id: str):
+    """Delete record.
+
+    Args:
+        record_id: Record identifier
+
+    Returns:
+        Success response
+    """
+    data_manager.deleteRecord(record_id)
+
+    return {"response": "success"}
+
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
 async def download_records(project_id: str):
