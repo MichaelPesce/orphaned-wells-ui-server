@@ -105,9 +105,28 @@ class DataManager:
         new_id = db_response.inserted_id
         # _log.info(f"added record, record is now: {record}")
         return str(new_id)
-    
+
+    def updateProject(self, project_id, new_data):
+        _log.info(f"updating {project_id} to be {new_data}")
+        _id = ObjectId(project_id)
+        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
+        myquery = {"_id": _id}
+        newvalues = {"$set": new_data}
+        # cursor = self.db.projects.update_one(myquery, newvalues)
+        # _log.info(f"successfully updated project? cursor is : {cursor}")
+        return "success"
+
+    def updateRecord(self, record_id, new_data):
+        # _log.info(f"updating {record_id} to be {new_data}")
+        _id = ObjectId(record_id)
+        myquery = {"_id": _id}
+        newvalues = {"$set": {"attributes": new_data["attributes"]}}
+        cursor = self.db.records.update_one(myquery, newvalues)
+        # _log.info(f"successfully updated record? cursor is : {cursor}")
+        return "success"
+
     def downloadRecords(self, project_id):
-        _log.info(f"downloading records for {project_id}")
+        # _log.info(f"downloading records for {project_id}")
         _id = ObjectId(project_id)
         project_cursor = self.db.projects.find({"_id": _id})
         for document in project_cursor:
@@ -120,7 +139,9 @@ class DataManager:
             record_attribute = {}
             for attribute in keys:
                 if attribute in document["attributes"]:
-                    record_attribute[attribute] = document["attributes"][attribute]["value"]
+                    record_attribute[attribute] = document["attributes"][attribute][
+                        "value"
+                    ]
                 else:
                     record_attribute[attribute] = "N/A"
             record_attributes.append(record_attribute)
@@ -128,7 +149,7 @@ class DataManager:
         # compute the output file directory and name
         output_dir = self.app_settings.csv_dir
         output_file = os.path.join(output_dir, f"{project_id}_{today}.csv")
-        with open(output_file, "w", newline='') as csvfile:
+        with open(output_file, "w", newline="") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=keys)
             writer.writeheader()
             writer.writerows(record_attributes)

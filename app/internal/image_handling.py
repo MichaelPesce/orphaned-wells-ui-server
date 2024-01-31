@@ -88,7 +88,7 @@ def process_image(file_path, file_name, mime_type, project_id, data_manager):
         coordinates = []
         for i in range(4):
             coordinate = bounding_poly.normalized_vertices[i]
-            coordinates.append([coordinate.x,coordinate.y])
+            coordinates.append([coordinate.x, coordinate.y])
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
@@ -96,7 +96,7 @@ def process_image(file_path, file_name, mime_type, project_id, data_manager):
             "normalized_vertices": coordinates,
             # "normalized_value": normalized_value,
         }
-    
+
     ## gotta create the record in the db
     record = {
         "project_id": project_id,

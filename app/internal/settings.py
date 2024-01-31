@@ -35,7 +35,7 @@ class AppSettings(BaseSettings):
             v = Path.home() / ".uow" / "uploaded_images"
         v.mkdir(parents=True, exist_ok=True)
         return v
-    
+
     @field_validator("csv_dir")
     def validate_csv_dir(cls, v):
         if v is None:

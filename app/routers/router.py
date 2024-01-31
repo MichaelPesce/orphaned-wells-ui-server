@@ -113,12 +113,35 @@ async def upload_document(
         process_image,
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
-        mime_type=mime_type, 
+        mime_type=mime_type,
         project_id=project_id,
         data_manager=data_manager,
     )
 
     return {"request": "being processed"}
+
+
+@router.post("/update_project/{project_id}")
+async def update_project(project_id: str, request: Request):
+    """
+    Update project for given project id with data in request body
+    """
+    data = await request.json()
+    data_manager.updateProject(project_id, data)
+
+    return {"response": "success"}
+
+
+@router.post("/update_record/{record_id}")
+async def update_record(record_id: str, request: Request):
+    """
+    Update record for given record id with data in request body
+    """
+    data = await request.json()
+    data_manager.updateRecord(record_id, data)
+
+    return {"response": "success"}
+
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
 async def download_records(project_id: str):
