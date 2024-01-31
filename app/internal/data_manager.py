@@ -121,18 +121,18 @@ class DataManager:
         newvalues = {"$set": {"attributes": new_data["attributes"]}}
         cursor = self.db.records.update_one(myquery, newvalues)
         return "success"
-    
+
     def deleteProject(self, project_id):
         _log.info(f"deleting {project_id}")
         _id = ObjectId(project_id)
-        myquery = { "_id": _id}
+        myquery = {"_id": _id}
         self.db.projects.delete_one(myquery)
         return "success"
 
     def deleteRecord(self, record_id):
         _log.info(f"deleting {record_id}")
         _id = ObjectId(record_id)
-        myquery = { "_id": _id}
+        myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
         return "success"
 

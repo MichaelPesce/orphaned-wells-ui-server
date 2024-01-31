@@ -179,6 +179,7 @@ async def update_record(record_id: str, request: Request):
 
     return {"response": "success"}
 
+
 @router.post("/delete_project/{project_id}")
 async def update_pdelete_projectroject(project_id: str):
     """Delete project.
