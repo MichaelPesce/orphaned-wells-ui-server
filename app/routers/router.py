@@ -42,9 +42,13 @@ async def get_projects():
 
 @router.get("/get_project/{project_id}")
 async def get_project_data(project_id: str):
-    """
-    Fetch project with provided project id
-    Return project data
+    """Fetch project data.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        Project data, all records associated with that project
     """
     records = data_manager.fetchProjectData(project_id)
     project_data = next(
@@ -55,9 +59,13 @@ async def get_project_data(project_id: str):
 
 @router.get("/get_record/{record_id}")
 async def get_record_data(record_id: str):
-    """
-    Fetch project with provided project id
-    Return project data
+    """Fetch document record data.
+
+    Args:
+        record_id: Record identifier
+
+    Returns:
+        Record data
     """
     record = data_manager.fetchRecordData(record_id)
     return record
@@ -65,9 +73,13 @@ async def get_record_data(record_id: str):
 
 @router.post("/add_project")
 async def add_project(request: Request):
-    """
-    Fetch project with provided project id
-    Return project data
+    """Add new project.
+
+    Args:
+        request data: Project data
+
+    Returns:
+        New project identifier
     """
     data = await request.json()
     # _log.info(f"adding project with data: {data}")
@@ -79,9 +91,14 @@ async def add_project(request: Request):
 async def upload_document(
     project_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...)
 ):
-    """
-    Upload document, process document, and create record in database
-    Return project data
+    """Upload document for processing.
+
+    Args:
+        project_id: Project identifier to be associated with this document
+        file: Document file
+
+    Returns:
+        Success response. Documents are processed asynchronously
     """
     output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
@@ -123,8 +140,14 @@ async def upload_document(
 
 @router.post("/update_project/{project_id}")
 async def update_project(project_id: str, request: Request):
-    """
-    Update project for given project id with data in request body
+    """Update project data.
+
+    Args:
+        project_id: Project identifier
+        request data: New data for provided project
+
+    Returns:
+        Success response
     """
     data = await request.json()
     data_manager.updateProject(project_id, data)
@@ -134,8 +157,14 @@ async def update_project(project_id: str, request: Request):
 
 @router.post("/update_record/{record_id}")
 async def update_record(record_id: str, request: Request):
-    """
-    Update record for given record id with data in request body
+    """Update record data.
+
+    Args:
+        record_id: Record identifier
+        request data: New data for provided record
+
+    Returns:
+        Success response
     """
     data = await request.json()
     data_manager.updateRecord(record_id, data)
@@ -145,8 +174,13 @@ async def update_record(record_id: str, request: Request):
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
 async def download_records(project_id: str):
-    """
-    Download records for given project ID
+    """Download records for given project ID.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        CSV file containing all records associated with that project
     """
     csv_output = data_manager.downloadRecords(project_id)
 
