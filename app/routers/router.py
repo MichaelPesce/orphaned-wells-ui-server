@@ -12,7 +12,6 @@ from fastapi import (
 from fastapi.responses import StreamingResponse, FileResponse
 import logging
 import aiofiles
-import asyncio
 
 # import copy
 
@@ -91,14 +90,14 @@ async def add_project(request: Request):
 async def upload_document(
     project_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...)
 ):
-    """Upload document for processing.
+    """Upload document for processing.Documents are processed asynchronously.
 
     Args:
         project_id: Project identifier to be associated with this document
         file: Document file
 
     Returns:
-        Success response. Documents are processed asynchronously
+        New document record identifier.
     """
     output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
@@ -117,6 +116,14 @@ async def upload_document(
             mime_type = "image/png"
     except Exception as e:
         _log.error(f"unable to read image file: {e}")
+        raise HTTPException(400, detail=f"Unable to process image file: {e}")
+
+    ## add record to DB without attributes
+    new_record = {
+        "project_id": project_id,
+        "filename": f"{filename}{file_ext}",
+    }
+    new_record_id = data_manager.createRecord(new_record)
 
     ## upload to cloud storage (this will overwrite any existing files of the same name):
     background_tasks.add_task(
@@ -132,10 +139,11 @@ async def upload_document(
         file_name=f"{filename}{file_ext}",
         mime_type=mime_type,
         project_id=project_id,
+        record_id=new_record_id,
         data_manager=data_manager,
     )
 
-    return {"request": "being processed"}
+    return {"record_id": new_record_id}
 
 
 @router.post("/update_project/{project_id}")

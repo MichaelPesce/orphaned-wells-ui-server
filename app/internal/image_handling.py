@@ -46,7 +46,7 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
 
 
 ## Document AI functions
-def process_image(file_path, file_name, mime_type, project_id, data_manager):
+def process_image(file_path, file_name, mime_type, project_id, record_id, data_manager):
     with open(file_path, "rb") as image:
         image_content = image.read()
 
@@ -103,9 +103,10 @@ def process_image(file_path, file_name, mime_type, project_id, data_manager):
         "attributes": attributes,
         "filename": f"{file_name}",
     }
-    new_record_id = data_manager.createRecord(record)
-    _log.info(f"created new record in db: {new_record_id}")
-    return new_record_id
+    # new_record_id = data_manager.createRecord(record)
+    data_manager.updateRecord(record_id, record)
+    _log.info(f"updated record in db: {record_id}")
+    return record_id
 
 
 ## Google Cloud Storage Functions
