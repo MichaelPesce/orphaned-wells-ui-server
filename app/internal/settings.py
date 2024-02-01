@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings
 class AppSettings(BaseSettings):
     log_dir: Union[Path, None] = None
     img_dir: Union[Path, None] = None
+    csv_dir: Union[Path, None] = None
 
     @field_validator("log_dir")
     def validate_log_dir(cls, v):
@@ -32,5 +33,12 @@ class AppSettings(BaseSettings):
     def validate_img_dir(cls, v):
         if v is None:
             v = Path.home() / ".uow" / "uploaded_images"
+        v.mkdir(parents=True, exist_ok=True)
+        return v
+
+    @field_validator("csv_dir")
+    def validate_csv_dir(cls, v):
+        if v is None:
+            v = Path.home() / ".uow" / "csv_outputs"
         v.mkdir(parents=True, exist_ok=True)
         return v

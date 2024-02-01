@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
 import time
+import os
+import csv
 
 from typing import Union, List
 from pydantic import BaseModel
@@ -51,6 +53,7 @@ class DataManager:
         ## add timestamp to project
         project_info["dateCreated"] = time.time()
         ## add project to db collection
+        _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
         new_id = db_response.inserted_id
 
@@ -97,12 +100,83 @@ class DataManager:
     def createRecord(self, record):
         ## add timestamp to project
         record["dateCreated"] = time.time()
-        # _log.info(f"adding record to db: {record}")
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
-        # _log.info(f"added record, record is now: {record}")
         return str(new_id)
+
+    def updateProject(self, project_id, new_data):
+        _log.info(f"updating {project_id} to be {new_data}")
+        _id = ObjectId(project_id)
+        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
+        myquery = {"_id": _id}
+        newvalues = {"$set": new_data}
+        # cursor = self.db.projects.update_one(myquery, newvalues)
+        # _log.info(f"successfully updated project? cursor is : {cursor}")
+        return "success"
+
+    def updateRecord(self, record_id, new_data):
+        # _log.info(f"updating {record_id} to be {new_data}")
+        _id = ObjectId(record_id)
+        myquery = {"_id": _id}
+        newvalues = {"$set": {"attributes": new_data["attributes"]}}
+        cursor = self.db.records.update_one(myquery, newvalues)
+        return "success"
+
+    def deleteProject(self, project_id):
+        _log.info(f"deleting {project_id}")
+        _id = ObjectId(project_id)
+        myquery = {"_id": _id}
+        self.db.projects.delete_one(myquery)
+        return "success"
+
+    def deleteRecord(self, record_id):
+        _log.info(f"deleting {record_id}")
+        _id = ObjectId(record_id)
+        myquery = {"_id": _id}
+        self.db.records.delete_one(myquery)
+        return "success"
+
+    def getProcessor(self, project_id):
+        _id = ObjectId(project_id)
+        try:
+            cursor = self.db.projects.find({"_id": _id})
+            document = cursor[0]
+            return document["processorId"]
+        except Exception as e:
+            _log.error(f"unable to find processor id: {e}")
+            return None
+
+    def downloadRecords(self, project_id):
+        # _log.info(f"downloading records for {project_id}")
+        _id = ObjectId(project_id)
+        project_cursor = self.db.projects.find({"_id": _id})
+        for document in project_cursor:
+            keys = document["attributes"]
+            project_name = document["name"]
+        today = time.time()
+        cursor = self.db.records.find({"project_id": project_id})
+        record_attributes = []
+        for document in cursor:
+            record_attribute = {}
+            for attribute in keys:
+                if attribute in document["attributes"]:
+                    record_attribute[attribute] = document["attributes"][attribute][
+                        "value"
+                    ]
+                else:
+                    record_attribute[attribute] = "N/A"
+            record_attributes.append(record_attribute)
+
+        # compute the output file directory and name
+        output_dir = self.app_settings.csv_dir
+        output_file = os.path.join(output_dir, f"{project_id}_{today}.csv")
+        with open(output_file, "w", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=keys)
+            writer.writeheader()
+            writer.writerows(record_attributes)
+
+        return output_file
 
 
 data_manager = DataManager()

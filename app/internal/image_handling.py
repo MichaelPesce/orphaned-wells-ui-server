@@ -22,7 +22,6 @@ os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
-RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, PROCESSOR_ID)
 
 
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
@@ -46,15 +45,26 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
 
 
 ## Document AI functions
-def process_image(file_path, file_name, mime_type):
+def process_image(
+    file_path, file_name, mime_type, project_id, record_id, processor_id, data_manager
+):
     with open(file_path, "rb") as image:
         image_content = image.read()
+
+    if processor_id is None:
+        _log.info(
+            f"processor id is none, rolling with default processor: {PROCESSOR_ID}"
+        )
+        processor_id = PROCESSOR_ID
+
+    RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, processor_id)
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
     request = documentai.ProcessRequest(name=RESOURCE_NAME, raw_document=raw_document)
 
     # Use the Document AI client to process the document
     result = docai_client.process_document(request=request)
+    _log.info(f"processed document in doc_ai")
     document_object = result.document
 
     # our predefined attributes will be located in the entities object
@@ -83,13 +93,29 @@ def process_image(file_path, file_name, mime_type):
         raw_text = entity.mention_text
         # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
         normalized_value = entity.normalized_value
+        bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
+        coordinates = []
+        for i in range(4):
+            coordinate = bounding_poly.normalized_vertices[i]
+            coordinates.append([coordinate.x, coordinate.y])
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
             "value": raw_text,
+            "normalized_vertices": coordinates,
             # "normalized_value": normalized_value,
         }
-    return attributes
+
+    ## gotta create the record in the db
+    record = {
+        "project_id": project_id,
+        "attributes": attributes,
+        "filename": f"{file_name}",
+    }
+    # new_record_id = data_manager.createRecord(record)
+    data_manager.updateRecord(record_id, record)
+    _log.info(f"updated record in db: {record_id}")
+    return record_id
 
 
 ## Google Cloud Storage Functions
