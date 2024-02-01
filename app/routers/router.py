@@ -9,9 +9,10 @@ from fastapi import (
     UploadFile,
     BackgroundTasks,
 )
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse
 import logging
 import aiofiles
+import requests
 
 # import copy
 
@@ -21,6 +22,7 @@ from app.internal.image_handling import (
     upload_to_google_storage,
     process_image,
 )
+import app.internal.auth as auth
 
 _log = logging.getLogger(__name__)
 
@@ -227,3 +229,46 @@ async def download_records(project_id: str):
     csv_output = data_manager.downloadRecords(project_id)
 
     return csv_output
+
+
+@router.post("/auth_login")
+async def auth_login(request: Request):
+    """Update record data.
+
+    Args:
+        record_id: Record identifier
+        request data: New data for provided record
+
+    Returns:
+        Success response
+    """
+    code = await request.json()
+    token_uri, client_id, client_secret = auth.get_google_credentials()
+
+    data = {
+        'code': code,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': 'postmessage',
+        'grant_type': 'authorization_code'
+    }
+
+    response = requests.post(token_uri, data=data)
+    _log.info(f"response json: {response.json()}")
+    return response.json()
+
+
+@router.post("/auth_refresh")
+async def auth_refresh(request: Request):
+    refresh_token = await request.json()
+    token_uri, client_id, client_secret = auth.get_google_credentials()
+    data = {
+        'refresh_token': refresh_token,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'grant_type': 'refresh_token'
+    }
+
+    response = requests.post(token_uri, data=data)
+
+    return response.json()
