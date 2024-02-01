@@ -136,7 +136,7 @@ class DataManager:
         myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
         return "success"
-    
+
     def getProcessor(self, project_id):
         _id = ObjectId(project_id)
         try:

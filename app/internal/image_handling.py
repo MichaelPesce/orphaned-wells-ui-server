@@ -24,7 +24,6 @@ docai_client = documentai.DocumentProcessorServiceClient(
 )
 
 
-
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
     # print(f'converting: {filename}.{file_ext} to {convert_to}')
     filepath = f"{output_directory}/{filename}{file_ext}"
@@ -46,14 +45,18 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
 
 
 ## Document AI functions
-def process_image(file_path, file_name, mime_type, project_id, record_id, processor_id, data_manager):
+def process_image(
+    file_path, file_name, mime_type, project_id, record_id, processor_id, data_manager
+):
     with open(file_path, "rb") as image:
         image_content = image.read()
 
     if processor_id is None:
-        _log.info(f"processor id is none, rolling with default processor: {PROCESSOR_ID}")
+        _log.info(
+            f"processor id is none, rolling with default processor: {PROCESSOR_ID}"
+        )
         processor_id = PROCESSOR_ID
-    
+
     RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, processor_id)
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
