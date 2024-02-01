@@ -53,6 +53,7 @@ class DataManager:
         ## add timestamp to project
         project_info["dateCreated"] = time.time()
         ## add project to db collection
+        _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
         new_id = db_response.inserted_id
 
@@ -135,6 +136,16 @@ class DataManager:
         myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
         return "success"
+    
+    def getProcessor(self, project_id):
+        _id = ObjectId(project_id)
+        try:
+            cursor = self.db.projects.find({"_id": _id})
+            document = cursor[0]
+            return document["processorId"]
+        except Exception as e:
+            _log.error(f"unable to find processor id: {e}")
+            return None
 
     def downloadRecords(self, project_id):
         # _log.info(f"downloading records for {project_id}")
