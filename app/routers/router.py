@@ -1,22 +1,28 @@
 # import io
 import os
+import logging
+import aiofiles
+import requests
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from typing import Annotated
+import jwt
 from fastapi import (
-    Body,
+    # Body,
     Request,
     APIRouter,
     HTTPException,
     File,
     UploadFile,
     BackgroundTasks,
+    Depends
 )
-from fastapi.responses import JSONResponse, FileResponse
-import logging
-import aiofiles
-import requests
+from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordBearer
 
 # import copy
 
-from app.internal.data_manager import data_manager
+from app.internal.data_manager import data_manager, Project
 from app.internal.image_handling import (
     convert_tiff,
     upload_to_google_storage,
@@ -26,6 +32,9 @@ import app.internal.auth as auth
 
 _log = logging.getLogger(__name__)
 
+token_uri, client_id, client_secret = auth.get_google_credentials()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 router = APIRouter(
     prefix="",
     tags=["uow"],
@@ -33,12 +42,68 @@ router = APIRouter(
 )
 
 
-@router.get("/get_projects")
-async def get_projects():
+@router.post("/token")
+async def authenticate(token: str = Depends(oauth2_scheme)):
+    try:
+        user_info = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        return user_info
+    except Exception as e: # should probably specify exception type
+        _log.info(f"unable to authenticate: {e}")
+        raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
+        ## return something to inform the frontend to prompt the user to log back in
+
+    return "user info"
+
+
+@router.post("/auth_login")
+async def auth_login(request: Request):
+    """Update record data.
+
+    Args:
+        record_id: Record identifier
+        request data: New data for provided record
+
+    Returns:
+        Success response
+    """
+    code = await request.json()
+    # token_uri, client_id, client_secret = auth.get_google_credentials()
+
+    data = {
+        'code': code,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': 'postmessage',
+        'grant_type': 'authorization_code'
+    }
+
+    response = requests.post(token_uri, data=data)
+    # _log.info(f"response json: {response.json()}")
+    return response.json()
+
+
+@router.post("/auth_refresh")
+async def auth_refresh(request: Request):
+    refresh_token = await request.json()
+    # token_uri, client_id, client_secret = auth.get_google_credentials()
+    data = {
+        'refresh_token': refresh_token,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'grant_type': 'refresh_token'
+    }
+
+    response = requests.post(token_uri, data=data)
+
+    return response.json()
+
+@router.get("/get_projects", response_model=list)
+async def get_projects(user_info: dict = Depends(authenticate)):
     """
     Fetch all projects
     """
-    return data_manager.fetchProjects()
+    resp = data_manager.fetchProjects()
+    return resp
 
 
 @router.get("/get_project/{project_id}")
@@ -230,45 +295,3 @@ async def download_records(project_id: str):
 
     return csv_output
 
-
-@router.post("/auth_login")
-async def auth_login(request: Request):
-    """Update record data.
-
-    Args:
-        record_id: Record identifier
-        request data: New data for provided record
-
-    Returns:
-        Success response
-    """
-    code = await request.json()
-    token_uri, client_id, client_secret = auth.get_google_credentials()
-
-    data = {
-        'code': code,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': 'postmessage',
-        'grant_type': 'authorization_code'
-    }
-
-    response = requests.post(token_uri, data=data)
-    _log.info(f"response json: {response.json()}")
-    return response.json()
-
-
-@router.post("/auth_refresh")
-async def auth_refresh(request: Request):
-    refresh_token = await request.json()
-    token_uri, client_id, client_secret = auth.get_google_credentials()
-    data = {
-        'refresh_token': refresh_token,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'grant_type': 'refresh_token'
-    }
-
-    response = requests.post(token_uri, data=data)
-
-    return response.json()
