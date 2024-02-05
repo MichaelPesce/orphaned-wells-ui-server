@@ -48,11 +48,9 @@ async def authenticate(token: str = Depends(oauth2_scheme)):
         user_info = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
         return user_info
     except Exception as e: # should probably specify exception type
+        ## return something to inform the frontend to prompt the user to log back in
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
-        ## return something to inform the frontend to prompt the user to log back in
-
-    return "user info"
 
 
 @router.post("/auth_login")
@@ -107,7 +105,7 @@ async def get_projects(user_info: dict = Depends(authenticate)):
 
 
 @router.get("/get_project/{project_id}")
-async def get_project_data(project_id: str):
+async def get_project_data(project_id: str, user_info: dict = Depends(authenticate)):
     """Fetch project data.
 
     Args:
@@ -124,7 +122,7 @@ async def get_project_data(project_id: str):
 
 
 @router.get("/get_record/{record_id}")
-async def get_record_data(record_id: str):
+async def get_record_data(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch document record data.
 
     Args:
@@ -138,7 +136,7 @@ async def get_record_data(record_id: str):
 
 
 @router.post("/add_project")
-async def add_project(request: Request):
+async def add_project(request: Request, user_info: dict = Depends(authenticate)):
     """Add new project.
 
     Args:
@@ -155,7 +153,10 @@ async def add_project(request: Request):
 
 @router.post("/upload_document/{project_id}")
 async def upload_document(
-    project_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...)
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    user_info: dict = Depends(authenticate)
 ):
     """Upload document for processing.Documents are processed asynchronously.
 
@@ -218,7 +219,7 @@ async def upload_document(
 
 
 @router.post("/update_project/{project_id}")
-async def update_project(project_id: str, request: Request):
+async def update_project(project_id: str, request: Request, user_info: dict = Depends(authenticate)):
     """Update project data.
 
     Args:
@@ -235,7 +236,7 @@ async def update_project(project_id: str, request: Request):
 
 
 @router.post("/update_record/{record_id}")
-async def update_record(record_id: str, request: Request):
+async def update_record(record_id: str, request: Request, user_info: dict = Depends(authenticate)):
     """Update record data.
 
     Args:
@@ -252,7 +253,7 @@ async def update_record(record_id: str, request: Request):
 
 
 @router.post("/delete_project/{project_id}")
-async def update_pdelete_projectroject(project_id: str):
+async def update_pdelete_projectroject(project_id: str, user_info: dict = Depends(authenticate)):
     """Delete project.
 
     Args:
@@ -267,7 +268,7 @@ async def update_pdelete_projectroject(project_id: str):
 
 
 @router.post("/delete_record/{record_id}")
-async def delete_record(record_id: str):
+async def delete_record(record_id: str, user_info: dict = Depends(authenticate)):
     """Delete record.
 
     Args:
@@ -282,7 +283,7 @@ async def delete_record(record_id: str):
 
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
-async def download_records(project_id: str):
+async def download_records(project_id: str, user_info: dict = Depends(authenticate)):
     """Download records for given project ID.
 
     Args:
