@@ -46,6 +46,7 @@ router = APIRouter(
 async def authenticate(token: str = Depends(oauth2_scheme)):
     try:
         user_info = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        # _log.info(f"user_info: {user_info}")
         return user_info
     except Exception as e: # should probably specify exception type
         ## return something to inform the frontend to prompt the user to log back in
@@ -65,8 +66,6 @@ async def auth_login(request: Request):
         Success response
     """
     code = await request.json()
-    # token_uri, client_id, client_secret = auth.get_google_credentials()
-
     data = {
         'code': code,
         'client_id': client_id,
@@ -76,8 +75,17 @@ async def auth_login(request: Request):
     }
 
     response = requests.post(token_uri, data=data)
-    # _log.info(f"response json: {response.json()}")
-    return response.json()
+    user_tokens = response.json()
+    try:
+        user_info = id_token.verify_oauth2_token(user_tokens["id_token"], google_requests.Request(), client_id)
+        data_manager.checkForUser(user_info)
+    except Exception as e: # should probably specify exception type
+        ## return something to inform the frontend to prompt the user to log back in
+        _log.info(f"unable to authenticate: {e}")
+        raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
+
+    # _log.info(f"login response: {response.json()}")
+    return user_tokens
 
 
 @router.post("/auth_refresh")

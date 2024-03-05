@@ -41,6 +41,30 @@ class DataManager:
         self.projects = []
         # self.fetchProjects()
 
+    def checkForUser(self, user_info):
+        _log.info(f"checking for user {user_info}")
+        # cursor = self.db.users.find({"email": user_info["email"]})
+        # if cursor.count() > 0:
+        if self.db.users.count_documents({ "email": user_info["email"] }, limit = 1) > 0:
+            _log.info("found user")
+            ## TODO: update user data each time they login?
+            return True
+        else:
+            _log.info("did not find user")
+            return self.addUser(user_info)
+
+    def addUser(self, user_info):
+        _log.info(f"adding user {user_info}")
+        user = {
+            "email": user_info.get("email", ""),
+            "name": user_info.get("name", ""),
+            "picture": user_info.get("picture", ""),
+            "hd": user_info.get("hd", ""),
+            "time_created": time.time(),
+        }
+        db_response = self.db.users.insert_one(user)
+        return db_response
+
     def fetchProjects(self):
         self.projects = []
         cursor = self.db.projects.find({})
