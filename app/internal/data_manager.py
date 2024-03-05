@@ -138,7 +138,7 @@ class DataManager:
         for document in cursor:
             # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
-            document["img_url"] = generate_download_signed_url_v4(document["contributor"], document["filename"])
+            document["img_url"] = generate_download_signed_url_v4(document["project_id"], document["filename"])
             return document
         _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
         return {}

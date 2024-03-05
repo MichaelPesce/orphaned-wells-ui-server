@@ -210,7 +210,7 @@ async def upload_document(
         upload_to_google_storage,
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
-        folder=f"uploads/{user_info['email']}"
+        folder=f"uploads/{project_id}"
     )
 
     ## send to google doc AI
