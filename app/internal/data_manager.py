@@ -38,7 +38,7 @@ class DataManager:
     def __init__(self, **kwargs) -> None:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
-        self.projects = []
+        # self.projects = []
         # self.fetchProjects()
 
     def checkForUser(self, user_info):
@@ -66,12 +66,22 @@ class DataManager:
         return db_response
 
     def fetchProjects(self):
-        self.projects = []
+        projects = []
         cursor = self.db.projects.find({})
         for document in cursor:
-            self.addProject(document)
-        return self.projects
-        # _log.info(f"projects is : {self.projects}")
+            projects.append(
+                Project(
+                    id_=str(document.get("_id", None)),
+                    name=document.get("name", ""),
+                    description=document.get("description", ""),
+                    state=document.get("state", ""),
+                    history=document.get("history", []),
+                    attributes=document.get("attributes", []),
+                    documentType=document.get("documentType", ""),
+                    dateCreated=document.get("dateCreated", None),
+                )
+            )
+        return projects
 
     def createProject(self, project_info):
         ## add timestamp to project
@@ -83,32 +93,26 @@ class DataManager:
 
         ## add project to project list:
         cursor = self.db.projects.find({"_id": new_id})
-        for document in cursor:
-            self.addProject(document)
+        # for document in cursor:
+        #     self.addProject(document)
 
         return str(new_id)
 
-    def addProject(self, document):
-        p = Project(
-            id_=str(document.get("_id", None)),
-            name=document.get("name", ""),
-            description=document.get("description", ""),
-            state=document.get("state", ""),
-            history=document.get("history", []),
-            attributes=document.get("attributes", []),
-            documentType=document.get("documentType", ""),
-            dateCreated=document.get("dateCreated", None),
-        )
-        self.projects.append(p)
-
     def fetchProjectData(self, project_id):
+        ## get project data
+        _id = ObjectId(project_id)
+        cursor = self.db.projects.find({"_id": _id})
+        project_data = cursor[0]
+        project_data["_id"] = str(project_data["_id"])
+
+        ## get project's records
         records = []
         cursor = self.db.records.find({"project_id": project_id})
         for document in cursor:
             # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
             records.append(document)
-        return records
+        return project_data, records
 
     def fetchRecordData(self, record_id):
         _id = ObjectId(record_id)

@@ -122,10 +122,7 @@ async def get_project_data(project_id: str, user_info: dict = Depends(authentica
     Returns:
         Project data, all records associated with that project
     """
-    records = data_manager.fetchProjectData(project_id)
-    project_data = next(
-        (item for item in data_manager.projects if item.id_ == project_id), None
-    )
+    project_data, records = data_manager.fetchProjectData(project_id)
     return {"project_data": project_data, "records": records}
 
 
@@ -154,6 +151,7 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
         New project identifier
     """
     data = await request.json()
+    data["user"] = user_info.get("email","")
     # _log.info(f"adding project with data: {data}")
     new_id = data_manager.createProject(data)
     return new_id
@@ -198,6 +196,7 @@ async def upload_document(
     new_record = {
         "project_id": project_id,
         "filename": f"{filename}{file_ext}",
+        "user": user_info.get("email","")
     }
     new_record_id = data_manager.createRecord(new_record)
 
@@ -261,7 +260,7 @@ async def update_record(record_id: str, request: Request, user_info: dict = Depe
 
 
 @router.post("/delete_project/{project_id}")
-async def update_pdelete_projectroject(project_id: str, user_info: dict = Depends(authenticate)):
+async def delete_project(project_id: str, user_info: dict = Depends(authenticate)):
     """Delete project.
 
     Args:
