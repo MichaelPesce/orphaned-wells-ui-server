@@ -108,7 +108,7 @@ async def get_projects(user_info: dict = Depends(authenticate)):
     """
     Fetch all projects
     """
-    resp = data_manager.fetchProjects()
+    resp = data_manager.fetchProjects(user_info.get("email",""))
     return resp
 
 
@@ -122,7 +122,9 @@ async def get_project_data(project_id: str, user_info: dict = Depends(authentica
     Returns:
         Project data, all records associated with that project
     """
-    project_data, records = data_manager.fetchProjectData(project_id)
+    project_data, records = data_manager.fetchProjectData(project_id, user_info.get("email",""))
+    if project_data is None:
+        raise HTTPException(403, detail=f"You do not have access to this project, please contact the project creator to gain access.")
     return {"project_data": project_data, "records": records}
 
 
@@ -151,9 +153,9 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
         New project identifier
     """
     data = await request.json()
-    data["user"] = user_info.get("email","")
+    
     # _log.info(f"adding project with data: {data}")
-    new_id = data_manager.createProject(data)
+    new_id = data_manager.createProject(data, user_info)
     return new_id
 
 

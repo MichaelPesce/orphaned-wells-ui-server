@@ -60,14 +60,24 @@ class DataManager:
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
+            "projects": [],
             "time_created": time.time(),
         }
         db_response = self.db.users.insert_one(user)
         return db_response
+    
+    def getUserProjectList(self, user):
+        myquery = {"email": user}
+        cursor = self.db.users.find(myquery)
+        projects = cursor[0]["projects"]
+        return projects
 
-    def fetchProjects(self):
+    def fetchProjects(self, user):
+        user_projects = self.getUserProjectList(user)
         projects = []
-        cursor = self.db.projects.find({})
+        # cursor = self.db.projects.find()
+        # cursor = self.db.projects.find({"creator": user})
+        cursor = self.db.projects.find({"_id":{"$in":user_projects}})
         for document in cursor:
             projects.append(
                 Project(
@@ -83,24 +93,32 @@ class DataManager:
             )
         return projects
 
-    def createProject(self, project_info):
-        ## add timestamp to project
+    def createProject(self, project_info, user_info):
+        ## add user abd timestamp to project
+        project_info["creator"] = user_info.get("email","")
         project_info["dateCreated"] = time.time()
         ## add project to db collection
         _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
         new_id = db_response.inserted_id
 
-        ## add project to project list:
-        cursor = self.db.projects.find({"_id": new_id})
-        # for document in cursor:
-        #     self.addProject(document)
+        ## add project to user's project list:
+        user_projects = self.getUserProjectList(user_info.get("email",""))
+        myquery = {"email": user_info.get("email","")}
+        user_projects.append(new_id)
+        newvalues = {"$set": {"projects": user_projects}}
+        self.db.users.update_one(myquery, newvalues)
 
         return str(new_id)
 
-    def fetchProjectData(self, project_id):
-        ## get project data
+    def fetchProjectData(self, project_id, user):
+        ## get user's projects, check if user has access to this project
+        user_projects = self.getUserProjectList(user)
         _id = ObjectId(project_id)
+        if not _id in user_projects:
+            return None, None
+
+        ## get project data
         cursor = self.db.projects.find({"_id": _id})
         project_data = cursor[0]
         project_data["_id"] = str(project_data["_id"])
