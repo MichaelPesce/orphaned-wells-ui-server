@@ -27,6 +27,7 @@ class Project(BaseModel):
     history: List = []
     attributes: List = []
     documentType: str = ""
+    creator: Union[str, dict] = ""
     dateCreated: Union[float, None] = None
 
 
@@ -85,14 +86,15 @@ class DataManager:
                     history=document.get("history", []),
                     attributes=document.get("attributes", []),
                     documentType=document.get("documentType", ""),
+                    creator=document.get("creator", ""),
                     dateCreated=document.get("dateCreated", None),
                 )
             )
         return projects
 
     def createProject(self, project_info, user_info):
-        ## add user abd timestamp to project
-        project_info["creator"] = user_info.get("email","")
+        ## add user and timestamp to project
+        project_info["creator"] = user_info
         project_info["dateCreated"] = time.time()
         ## add project to db collection
         # _log.info(f"creating project with data: {project_info}")
