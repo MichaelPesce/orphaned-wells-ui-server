@@ -198,7 +198,7 @@ async def upload_document(
     new_record = {
         "project_id": project_id,
         "filename": f"{filename}{file_ext}",
-        "user": user_info.get("email","")
+        "contributor": user_info
     }
     new_record_id = data_manager.createRecord(new_record)
 
