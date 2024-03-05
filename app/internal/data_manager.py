@@ -42,9 +42,6 @@ class DataManager:
         # self.fetchProjects()
 
     def checkForUser(self, user_info):
-        _log.info(f"checking for user {user_info}")
-        # cursor = self.db.users.find({"email": user_info["email"]})
-        # if cursor.count() > 0:
         if self.db.users.count_documents({ "email": user_info["email"] }, limit = 1) > 0:
             _log.info("found user")
             ## TODO: update user data each time they login?
@@ -54,7 +51,7 @@ class DataManager:
             return self.addUser(user_info)
 
     def addUser(self, user_info):
-        _log.info(f"adding user {user_info}")
+        # _log.info(f"adding user {user_info}")
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
@@ -98,7 +95,7 @@ class DataManager:
         project_info["creator"] = user_info.get("email","")
         project_info["dateCreated"] = time.time()
         ## add project to db collection
-        _log.info(f"creating project with data: {project_info}")
+        # _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
         new_id = db_response.inserted_id
 
@@ -121,13 +118,14 @@ class DataManager:
         ## get project data
         cursor = self.db.projects.find({"_id": _id})
         project_data = cursor[0]
-        project_data["_id"] = str(project_data["_id"])
+        project_data["id_"] = str(project_data["_id"])
+        del project_data["_id"]
 
         ## get project's records
         records = []
+        # _log.info(f"checking for records with project_id {project_id}")
         cursor = self.db.records.find({"project_id": project_id})
         for document in cursor:
-            # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
             records.append(document)
         return project_data, records
