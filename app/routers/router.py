@@ -86,7 +86,6 @@ async def auth_login(request: Request):
         ## return something to inform the frontend to prompt the user to log back in
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
-        # _log.info(f"user_info: {user_info}")
     role = data_manager.checkForUser(user_info)
     if role is None or role == "pending":
         _log.info(f"user is not authorized")
@@ -98,18 +97,29 @@ async def auth_login(request: Request):
 
 @router.post("/auth_refresh")
 async def auth_refresh(request: Request):
+    _log.info("attempting to refresh tokens")
     refresh_token = await request.json()
-    # token_uri, client_id, client_secret = auth.get_google_credentials()
     data = {
         'refresh_token': refresh_token,
         'client_id': client_id,
         'client_secret': client_secret,
         'grant_type': 'refresh_token'
     }
-
     response = requests.post(token_uri, data=data)
+    user_tokens = response.json()
+    try:
+        user_info = id_token.verify_oauth2_token(user_tokens["id_token"], google_requests.Request(), client_id)
+    except Exception as e:
+        _log.info(f"unable to authenticate: {e}")
+        raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
+    role = data_manager.checkForUser(user_info)
+    if role is None or role == "pending":
+        _log.info(f"user is not authorized")
+        raise HTTPException(status_code=403, detail=user_info)
+    else:
+        _log.info(f"user has role {role}")
+        return user_tokens
 
-    return response.json()
 
 @router.get("/get_projects", response_model=list)
 async def get_projects(user_info: dict = Depends(authenticate)):
