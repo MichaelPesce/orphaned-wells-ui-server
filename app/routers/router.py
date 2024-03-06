@@ -15,7 +15,7 @@ from fastapi import (
     File,
     UploadFile,
     BackgroundTasks,
-    Depends
+    Depends,
 )
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -45,10 +45,12 @@ router = APIRouter(
 @router.post("/token")
 async def authenticate(token: str = Depends(oauth2_scheme)):
     try:
-        user_info = id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+        user_info = id_token.verify_oauth2_token(
+            token, google_requests.Request(), client_id
+        )
         # _log.info(f"user_info: {user_info}")
         return user_info
-    except Exception as e: # should probably specify exception type
+    except Exception as e:  # should probably specify exception type
         ## return something to inform the frontend to prompt the user to log back in
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
@@ -67,11 +69,11 @@ async def auth_login(request: Request):
     """
     code = await request.json()
     data = {
-        'code': code,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': 'postmessage',
-        'grant_type': 'authorization_code'
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": "postmessage",
+        "grant_type": "authorization_code",
     }
 
     response = requests.post(token_uri, data=data)
@@ -81,8 +83,10 @@ async def auth_login(request: Request):
     # _log.info(f"access token: {access_token}\nrefresh token: {refresh_token}\nid token: {user_tokens['id_token']}")
     # id_token = user_tokens["id_token"]
     try:
-        user_info = id_token.verify_oauth2_token(user_tokens["id_token"], google_requests.Request(), client_id)
-    except Exception as e: # should probably specify exception type
+        user_info = id_token.verify_oauth2_token(
+            user_tokens["id_token"], google_requests.Request(), client_id
+        )
+    except Exception as e:  # should probably specify exception type
         ## return something to inform the frontend to prompt the user to log back in
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
@@ -100,15 +104,17 @@ async def auth_refresh(request: Request):
     _log.info("attempting to refresh tokens")
     refresh_token = await request.json()
     data = {
-        'refresh_token': refresh_token,
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'grant_type': 'refresh_token'
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "refresh_token",
     }
     response = requests.post(token_uri, data=data)
     user_tokens = response.json()
     try:
-        user_info = id_token.verify_oauth2_token(user_tokens["id_token"], google_requests.Request(), client_id)
+        user_info = id_token.verify_oauth2_token(
+            user_tokens["id_token"], google_requests.Request(), client_id
+        )
     except Exception as e:
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
@@ -126,7 +132,7 @@ async def get_projects(user_info: dict = Depends(authenticate)):
     """
     Fetch all projects
     """
-    resp = data_manager.fetchProjects(user_info.get("email",""))
+    resp = data_manager.fetchProjects(user_info.get("email", ""))
     return resp
 
 
@@ -140,9 +146,14 @@ async def get_project_data(project_id: str, user_info: dict = Depends(authentica
     Returns:
         Project data, all records associated with that project
     """
-    project_data, records = data_manager.fetchProjectData(project_id, user_info.get("email",""))
+    project_data, records = data_manager.fetchProjectData(
+        project_id, user_info.get("email", "")
+    )
     if project_data is None:
-        raise HTTPException(403, detail=f"You do not have access to this project, please contact the project creator to gain access.")
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
     return {"project_data": project_data, "records": records}
 
 
@@ -171,7 +182,7 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
         New project identifier
     """
     data = await request.json()
-    
+
     # _log.info(f"adding project with data: {data}")
     new_id = data_manager.createProject(data, user_info)
     return new_id
@@ -182,7 +193,7 @@ async def upload_document(
     project_id: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    user_info: dict = Depends(authenticate)
+    user_info: dict = Depends(authenticate),
 ):
     """Upload document for processing.Documents are processed asynchronously.
 
@@ -216,7 +227,7 @@ async def upload_document(
     new_record = {
         "project_id": project_id,
         "filename": f"{filename}{file_ext}",
-        "contributor": user_info
+        "contributor": user_info,
     }
     new_record_id = data_manager.createRecord(new_record)
 
@@ -228,7 +239,7 @@ async def upload_document(
         upload_to_google_storage,
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
-        folder=f"uploads/{project_id}"
+        folder=f"uploads/{project_id}",
     )
 
     ## send to google doc AI
@@ -247,7 +258,9 @@ async def upload_document(
 
 
 @router.post("/update_project/{project_id}")
-async def update_project(project_id: str, request: Request, user_info: dict = Depends(authenticate)):
+async def update_project(
+    project_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Update project data.
 
     Args:
@@ -264,7 +277,9 @@ async def update_project(project_id: str, request: Request, user_info: dict = De
 
 
 @router.post("/update_record/{record_id}")
-async def update_record(record_id: str, request: Request, user_info: dict = Depends(authenticate)):
+async def update_record(
+    record_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Update record data.
 
     Args:
@@ -323,4 +338,3 @@ async def download_records(project_id: str, user_info: dict = Depends(authentica
     csv_output = data_manager.downloadRecords(project_id)
 
     return csv_output
-

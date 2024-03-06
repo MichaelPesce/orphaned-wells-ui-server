@@ -138,7 +138,9 @@ async def upload_to_google_storage(file_path, file_name, folder="uploads"):
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(project_id, filename, bucket_name="uploaded_documents_v0"):
+def generate_download_signed_url_v4(
+    project_id, filename, bucket_name="uploaded_documents_v0"
+):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use

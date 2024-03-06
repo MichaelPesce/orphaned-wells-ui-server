@@ -41,7 +41,7 @@ class DataManager:
         self.db = connectToDatabase()
 
     def checkForUser(self, user_info):
-        cursor = self.db.users.find({ "email": user_info["email"] })
+        cursor = self.db.users.find({"email": user_info["email"]})
         foundUser = False
         for document in cursor:
             foundUser = True
@@ -65,7 +65,7 @@ class DataManager:
         }
         db_response = self.db.users.insert_one(user)
         return db_response
-    
+
     def getUserProjectList(self, user):
         myquery = {"email": user}
         cursor = self.db.users.find(myquery)
@@ -75,7 +75,7 @@ class DataManager:
     def fetchProjects(self, user):
         user_projects = self.getUserProjectList(user)
         projects = []
-        cursor = self.db.projects.find({"_id":{"$in":user_projects}})
+        cursor = self.db.projects.find({"_id": {"$in": user_projects}})
         for document in cursor:
             projects.append(
                 Project(
@@ -102,8 +102,8 @@ class DataManager:
         new_id = db_response.inserted_id
 
         ## add project to user's project list:
-        user_projects = self.getUserProjectList(user_info.get("email",""))
-        myquery = {"email": user_info.get("email","")}
+        user_projects = self.getUserProjectList(user_info.get("email", ""))
+        myquery = {"email": user_info.get("email", "")}
         user_projects.append(new_id)
         newvalues = {"$set": {"projects": user_projects}}
         self.db.users.update_one(myquery, newvalues)
@@ -138,7 +138,9 @@ class DataManager:
         for document in cursor:
             # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
-            document["img_url"] = generate_download_signed_url_v4(document["project_id"], document["filename"])
+            document["img_url"] = generate_download_signed_url_v4(
+                document["project_id"], document["filename"]
+            )
             return document
         _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
         return {}
