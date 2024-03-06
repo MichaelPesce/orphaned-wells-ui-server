@@ -115,6 +115,8 @@ def process_image(
     # new_record_id = data_manager.createRecord(record)
     data_manager.updateRecord(record_id, record)
     _log.info(f"updated record in db: {record_id}")
+    ## TODO: Remove image from local file system. Have to make sure upload to Cloud Storage is complete as well
+
     return record_id
 
 

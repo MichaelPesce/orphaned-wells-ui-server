@@ -39,17 +39,18 @@ class DataManager:
     def __init__(self, **kwargs) -> None:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
-        # self.projects = []
-        # self.fetchProjects()
 
     def checkForUser(self, user_info):
-        if self.db.users.count_documents({ "email": user_info["email"] }, limit = 1) > 0:
-            _log.info("found user")
+        cursor = self.db.users.find({ "email": user_info["email"] })
+        foundUser = False
+        for document in cursor:
+            foundUser = True
+            role = document.get("role", None)
             ## TODO: update user data each time they login?
-            return True
-        else:
-            _log.info("did not find user")
-            return self.addUser(user_info)
+        if not foundUser:
+            self.addUser(user_info)
+            role = "pending"
+        return role
 
     def addUser(self, user_info):
         # _log.info(f"adding user {user_info}")
@@ -58,6 +59,7 @@ class DataManager:
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
+            "role": "pending",
             "projects": [],
             "time_created": time.time(),
         }
@@ -73,8 +75,6 @@ class DataManager:
     def fetchProjects(self, user):
         user_projects = self.getUserProjectList(user)
         projects = []
-        # cursor = self.db.projects.find()
-        # cursor = self.db.projects.find({"creator": user})
         cursor = self.db.projects.find({"_id":{"$in":user_projects}})
         for document in cursor:
             projects.append(

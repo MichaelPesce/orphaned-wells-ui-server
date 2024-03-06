@@ -76,16 +76,24 @@ async def auth_login(request: Request):
 
     response = requests.post(token_uri, data=data)
     user_tokens = response.json()
+    # access_token = user_tokens["access_token"]
+    # refresh_token = user_tokens["refresh_token"]
+    # _log.info(f"access token: {access_token}\nrefresh token: {refresh_token}\nid token: {user_tokens['id_token']}")
+    # id_token = user_tokens["id_token"]
     try:
         user_info = id_token.verify_oauth2_token(user_tokens["id_token"], google_requests.Request(), client_id)
-        data_manager.checkForUser(user_info)
     except Exception as e: # should probably specify exception type
         ## return something to inform the frontend to prompt the user to log back in
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
-
-    # _log.info(f"login response: {response.json()}")
-    return user_tokens
+        # _log.info(f"user_info: {user_info}")
+    role = data_manager.checkForUser(user_info)
+    if role is None or role == "pending":
+        _log.info(f"user is not authorized")
+        raise HTTPException(status_code=403, detail=user_info)
+    else:
+        _log.info(f"user has role {role}")
+        return user_tokens
 
 
 @router.post("/auth_refresh")
