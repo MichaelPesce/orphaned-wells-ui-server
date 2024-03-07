@@ -78,16 +78,11 @@ async def auth_login(request: Request):
 
     response = requests.post(token_uri, data=data)
     user_tokens = response.json()
-    # access_token = user_tokens["access_token"]
-    # refresh_token = user_tokens["refresh_token"]
-    # _log.info(f"access token: {access_token}\nrefresh token: {refresh_token}\nid token: {user_tokens['id_token']}")
-    # id_token = user_tokens["id_token"]
     try:
         user_info = id_token.verify_oauth2_token(
             user_tokens["id_token"], google_requests.Request(), client_id
         )
     except Exception as e:  # should probably specify exception type
-        ## return something to inform the frontend to prompt the user to log back in
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
     role = data_manager.checkForUser(user_info)

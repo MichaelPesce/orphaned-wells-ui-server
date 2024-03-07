@@ -47,6 +47,7 @@ class DataManager:
             foundUser = True
             role = document.get("role", None)
             ## TODO: update user data each time they login?
+            self.updateUser(user_info)
         if not foundUser:
             self.addUser(user_info)
             role = "pending"
@@ -65,11 +66,23 @@ class DataManager:
         }
         db_response = self.db.users.insert_one(user)
         return db_response
+    
+    def updateUser(self, user_info):
+        # _log.info(f"updating user {user_info}")
+        email = user_info.get("email", "")
+        user = {
+            "name": user_info.get("name", ""),
+            "picture": user_info.get("picture", ""),
+        }
+        myquery = {"email": email}
+        newvalues = {"$set": user}
+        cursor = self.db.users.update_one(myquery, newvalues)
+        return cursor
 
     def getUserProjectList(self, user):
         myquery = {"email": user}
         cursor = self.db.users.find(myquery)
-        projects = cursor[0]["projects"]
+        projects = cursor[0].get("projects",[])
         return projects
 
     def fetchProjects(self, user):
