@@ -66,7 +66,7 @@ class DataManager:
         }
         db_response = self.db.users.insert_one(user)
         return db_response
-    
+
     def updateUser(self, user_info):
         # _log.info(f"updating user {user_info}")
         email = user_info.get("email", "")
@@ -83,7 +83,7 @@ class DataManager:
     def getUserProjectList(self, user):
         myquery = {"email": user}
         cursor = self.db.users.find(myquery)
-        projects = cursor[0].get("projects",[])
+        projects = cursor[0].get("projects", [])
         return projects
 
     def fetchProjects(self, user):
