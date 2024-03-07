@@ -1,28 +1,39 @@
 # import io
 import os
+import logging
+import aiofiles
+import requests
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from typing import Annotated
+import jwt
 from fastapi import (
-    Body,
+    # Body,
     Request,
     APIRouter,
     HTTPException,
     File,
     UploadFile,
     BackgroundTasks,
+    Depends,
 )
-from fastapi.responses import StreamingResponse, FileResponse
-import logging
-import aiofiles
+from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordBearer
 
 # import copy
 
-from app.internal.data_manager import data_manager
+from app.internal.data_manager import data_manager, Project
 from app.internal.image_handling import (
     convert_tiff,
     upload_to_google_storage,
     process_image,
 )
+import app.internal.auth as auth
 
 _log = logging.getLogger(__name__)
+
+token_uri, client_id, client_secret = auth.get_google_credentials()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 router = APIRouter(
     prefix="",
@@ -31,16 +42,97 @@ router = APIRouter(
 )
 
 
-@router.get("/get_projects")
-async def get_projects():
+@router.post("/token")
+async def authenticate(token: str = Depends(oauth2_scheme)):
+    try:
+        user_info = id_token.verify_oauth2_token(
+            token, google_requests.Request(), client_id
+        )
+        # _log.info(f"user_info: {user_info}")
+        return user_info
+    except Exception as e:  # should probably specify exception type
+        ## return something to inform the frontend to prompt the user to log back in
+        _log.info(f"unable to authenticate: {e}")
+        raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
+
+
+@router.post("/auth_login")
+async def auth_login(request: Request):
+    """Update record data.
+
+    Args:
+        record_id: Record identifier
+        request data: New data for provided record
+
+    Returns:
+        Success response
+    """
+    code = await request.json()
+    data = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": "postmessage",
+        "grant_type": "authorization_code",
+    }
+
+    response = requests.post(token_uri, data=data)
+    user_tokens = response.json()
+    try:
+        user_info = id_token.verify_oauth2_token(
+            user_tokens["id_token"], google_requests.Request(), client_id
+        )
+    except Exception as e:  # should probably specify exception type
+        _log.info(f"unable to authenticate: {e}")
+        raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
+    role = data_manager.checkForUser(user_info)
+    if role is None or role == "pending":
+        _log.info(f"user is not authorized")
+        raise HTTPException(status_code=403, detail=user_info)
+    else:
+        _log.info(f"user has role {role}")
+        return user_tokens
+
+
+@router.post("/auth_refresh")
+async def auth_refresh(request: Request):
+    _log.info("attempting to refresh tokens")
+    refresh_token = await request.json()
+    data = {
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "grant_type": "refresh_token",
+    }
+    response = requests.post(token_uri, data=data)
+    user_tokens = response.json()
+    try:
+        user_info = id_token.verify_oauth2_token(
+            user_tokens["id_token"], google_requests.Request(), client_id
+        )
+    except Exception as e:
+        _log.info(f"unable to authenticate: {e}")
+        raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
+    role = data_manager.checkForUser(user_info)
+    if role is None or role == "pending":
+        _log.info(f"user is not authorized")
+        raise HTTPException(status_code=403, detail=user_info)
+    else:
+        _log.info(f"user has role {role}")
+        return user_tokens
+
+
+@router.get("/get_projects", response_model=list)
+async def get_projects(user_info: dict = Depends(authenticate)):
     """
     Fetch all projects
     """
-    return data_manager.fetchProjects()
+    resp = data_manager.fetchProjects(user_info.get("email", ""))
+    return resp
 
 
 @router.get("/get_project/{project_id}")
-async def get_project_data(project_id: str):
+async def get_project_data(project_id: str, user_info: dict = Depends(authenticate)):
     """Fetch project data.
 
     Args:
@@ -49,15 +141,19 @@ async def get_project_data(project_id: str):
     Returns:
         Project data, all records associated with that project
     """
-    records = data_manager.fetchProjectData(project_id)
-    project_data = next(
-        (item for item in data_manager.projects if item.id_ == project_id), None
+    project_data, records = data_manager.fetchProjectData(
+        project_id, user_info.get("email", "")
     )
+    if project_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
     return {"project_data": project_data, "records": records}
 
 
 @router.get("/get_record/{record_id}")
-async def get_record_data(record_id: str):
+async def get_record_data(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch document record data.
 
     Args:
@@ -71,7 +167,7 @@ async def get_record_data(record_id: str):
 
 
 @router.post("/add_project")
-async def add_project(request: Request):
+async def add_project(request: Request, user_info: dict = Depends(authenticate)):
     """Add new project.
 
     Args:
@@ -81,14 +177,18 @@ async def add_project(request: Request):
         New project identifier
     """
     data = await request.json()
+
     # _log.info(f"adding project with data: {data}")
-    new_id = data_manager.createProject(data)
+    new_id = data_manager.createProject(data, user_info)
     return new_id
 
 
 @router.post("/upload_document/{project_id}")
 async def upload_document(
-    project_id: str, background_tasks: BackgroundTasks, file: UploadFile = File(...)
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    user_info: dict = Depends(authenticate),
 ):
     """Upload document for processing.Documents are processed asynchronously.
 
@@ -99,12 +199,12 @@ async def upload_document(
     Returns:
         New document record identifier.
     """
-    output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
+    original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     mime_type = file.content_type
     ## read document file
     try:
-        async with aiofiles.open(output_path, "wb") as out_file:
+        async with aiofiles.open(original_output_path, "wb") as out_file:
             content = await file.read()  # async read
             await out_file.write(content)
         if file_ext == ".tif" or file_ext == ".tiff":
@@ -114,6 +214,8 @@ async def upload_document(
             )
             file_ext = ".png"
             mime_type = "image/png"
+        else:
+            output_path = original_output_path
     except Exception as e:
         _log.error(f"unable to read image file: {e}")
         raise HTTPException(400, detail=f"Unable to process image file: {e}")
@@ -122,6 +224,7 @@ async def upload_document(
     new_record = {
         "project_id": project_id,
         "filename": f"{filename}{file_ext}",
+        "contributor": user_info,
     }
     new_record_id = data_manager.createRecord(new_record)
 
@@ -133,6 +236,7 @@ async def upload_document(
         upload_to_google_storage,
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
+        folder=f"uploads/{project_id}",
     )
 
     ## send to google doc AI
@@ -147,11 +251,21 @@ async def upload_document(
         data_manager=data_manager,
     )
 
+    ## remove file after 120 seconds to allow for the operations to finish
+    ## if file was converted to PNG, remove original file as well
+    files_to_delete = [output_path]
+    if original_output_path != output_path:
+        files_to_delete.append(original_output_path)
+    background_tasks.add_task(
+        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=120
+    )
     return {"record_id": new_record_id}
 
 
 @router.post("/update_project/{project_id}")
-async def update_project(project_id: str, request: Request):
+async def update_project(
+    project_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Update project data.
 
     Args:
@@ -168,7 +282,9 @@ async def update_project(project_id: str, request: Request):
 
 
 @router.post("/update_record/{record_id}")
-async def update_record(record_id: str, request: Request):
+async def update_record(
+    record_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Update record data.
 
     Args:
@@ -185,7 +301,7 @@ async def update_record(record_id: str, request: Request):
 
 
 @router.post("/delete_project/{project_id}")
-async def update_pdelete_projectroject(project_id: str):
+async def delete_project(project_id: str, user_info: dict = Depends(authenticate)):
     """Delete project.
 
     Args:
@@ -200,7 +316,7 @@ async def update_pdelete_projectroject(project_id: str):
 
 
 @router.post("/delete_record/{record_id}")
-async def delete_record(record_id: str):
+async def delete_record(record_id: str, user_info: dict = Depends(authenticate)):
     """Delete record.
 
     Args:
@@ -215,7 +331,11 @@ async def delete_record(record_id: str):
 
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
-async def download_records(project_id: str):
+async def download_records(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user_info: dict = Depends(authenticate),
+):
     """Download records for given project ID.
 
     Args:
@@ -225,5 +345,8 @@ async def download_records(project_id: str):
         CSV file containing all records associated with that project
     """
     csv_output = data_manager.downloadRecords(project_id)
-
+    ## remove file after 30 seconds to allow for the user download to finish
+    background_tasks.add_task(
+        data_manager.deleteFiles, filepaths=[csv_output], sleep_time=30
+    )
     return csv_output

@@ -27,6 +27,7 @@ class Project(BaseModel):
     history: List = []
     attributes: List = []
     documentType: str = ""
+    creator: Union[str, dict] = ""
     dateCreated: Union[float, None] = None
 
 
@@ -38,53 +39,112 @@ class DataManager:
     def __init__(self, **kwargs) -> None:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
-        self.projects = []
-        # self.fetchProjects()
 
-    def fetchProjects(self):
-        self.projects = []
-        cursor = self.db.projects.find({})
+    def checkForUser(self, user_info):
+        cursor = self.db.users.find({"email": user_info["email"]})
+        foundUser = False
         for document in cursor:
-            self.addProject(document)
-        return self.projects
-        # _log.info(f"projects is : {self.projects}")
+            foundUser = True
+            role = document.get("role", None)
+            ## TODO: update user data each time they login?
+            self.updateUser(user_info)
+        if not foundUser:
+            self.addUser(user_info)
+            role = "pending"
+        return role
 
-    def createProject(self, project_info):
-        ## add timestamp to project
+    def addUser(self, user_info):
+        # _log.info(f"adding user {user_info}")
+        user = {
+            "email": user_info.get("email", ""),
+            "name": user_info.get("name", ""),
+            "picture": user_info.get("picture", ""),
+            "hd": user_info.get("hd", ""),
+            "role": "pending",
+            "projects": [],
+            "time_created": time.time(),
+        }
+        db_response = self.db.users.insert_one(user)
+        return db_response
+
+    def updateUser(self, user_info):
+        # _log.info(f"updating user {user_info}")
+        email = user_info.get("email", "")
+        user = {
+            "name": user_info.get("name", ""),
+            "picture": user_info.get("picture", ""),
+            "hd": user_info.get("hd", ""),
+        }
+        myquery = {"email": email}
+        newvalues = {"$set": user}
+        cursor = self.db.users.update_one(myquery, newvalues)
+        return cursor
+
+    def getUserProjectList(self, user):
+        myquery = {"email": user}
+        cursor = self.db.users.find(myquery)
+        projects = cursor[0].get("projects", [])
+        return projects
+
+    def fetchProjects(self, user):
+        user_projects = self.getUserProjectList(user)
+        projects = []
+        cursor = self.db.projects.find({"_id": {"$in": user_projects}})
+        for document in cursor:
+            projects.append(
+                Project(
+                    id_=str(document.get("_id", None)),
+                    name=document.get("name", ""),
+                    description=document.get("description", ""),
+                    state=document.get("state", ""),
+                    history=document.get("history", []),
+                    attributes=document.get("attributes", []),
+                    documentType=document.get("documentType", ""),
+                    creator=document.get("creator", ""),
+                    dateCreated=document.get("dateCreated", None),
+                )
+            )
+        return projects
+
+    def createProject(self, project_info, user_info):
+        ## add user and timestamp to project
+        project_info["creator"] = user_info
         project_info["dateCreated"] = time.time()
         ## add project to db collection
-        _log.info(f"creating project with data: {project_info}")
+        # _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
         new_id = db_response.inserted_id
 
-        ## add project to project list:
-        cursor = self.db.projects.find({"_id": new_id})
-        for document in cursor:
-            self.addProject(document)
+        ## add project to user's project list:
+        user_projects = self.getUserProjectList(user_info.get("email", ""))
+        myquery = {"email": user_info.get("email", "")}
+        user_projects.append(new_id)
+        newvalues = {"$set": {"projects": user_projects}}
+        self.db.users.update_one(myquery, newvalues)
 
         return str(new_id)
 
-    def addProject(self, document):
-        p = Project(
-            id_=str(document.get("_id", None)),
-            name=document.get("name", ""),
-            description=document.get("description", ""),
-            state=document.get("state", ""),
-            history=document.get("history", []),
-            attributes=document.get("attributes", []),
-            documentType=document.get("documentType", ""),
-            dateCreated=document.get("dateCreated", None),
-        )
-        self.projects.append(p)
+    def fetchProjectData(self, project_id, user):
+        ## get user's projects, check if user has access to this project
+        user_projects = self.getUserProjectList(user)
+        _id = ObjectId(project_id)
+        if not _id in user_projects:
+            return None, None
 
-    def fetchProjectData(self, project_id):
+        ## get project data
+        cursor = self.db.projects.find({"_id": _id})
+        project_data = cursor[0]
+        project_data["id_"] = str(project_data["_id"])
+        del project_data["_id"]
+
+        ## get project's records
         records = []
+        # _log.info(f"checking for records with project_id {project_id}")
         cursor = self.db.records.find({"project_id": project_id})
         for document in cursor:
-            # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
             records.append(document)
-        return records
+        return project_data, records
 
     def fetchRecordData(self, record_id):
         _id = ObjectId(record_id)
@@ -92,7 +152,9 @@ class DataManager:
         for document in cursor:
             # _log.info(f"found document: {document}")
             document["_id"] = str(document["_id"])
-            document["img_url"] = generate_download_signed_url_v4(document["filename"])
+            document["img_url"] = generate_download_signed_url_v4(
+                document["project_id"], document["filename"]
+            )
             return document
         _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
         return {}
@@ -152,7 +214,7 @@ class DataManager:
         _id = ObjectId(project_id)
         project_cursor = self.db.projects.find({"_id": _id})
         for document in project_cursor:
-            keys = document["attributes"]
+            keys = document.get("attributes", [])
             project_name = document["name"]
         today = time.time()
         cursor = self.db.records.find({"project_id": project_id})
@@ -160,7 +222,7 @@ class DataManager:
         for document in cursor:
             record_attribute = {}
             for attribute in keys:
-                if attribute in document["attributes"]:
+                if attribute in document.get("attributes", []):
                     record_attribute[attribute] = document["attributes"][attribute][
                         "value"
                     ]
@@ -177,6 +239,14 @@ class DataManager:
             writer.writerows(record_attributes)
 
         return output_file
+
+    def deleteFiles(self, filepaths, sleep_time=5):
+        _log.info(f"deleting files: {filepaths} in {sleep_time} seconds")
+        time.sleep(sleep_time)
+        for filepath in filepaths:
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                _log.info(f"deleted {filepath}")
 
 
 data_manager = DataManager()

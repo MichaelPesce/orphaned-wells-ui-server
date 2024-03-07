@@ -115,12 +115,14 @@ def process_image(
     # new_record_id = data_manager.createRecord(record)
     data_manager.updateRecord(record_id, record)
     _log.info(f"updated record in db: {record_id}")
+    ## TODO: Remove image from local file system. Have to make sure upload to Cloud Storage is complete as well
+
     return record_id
 
 
 ## Google Cloud Storage Functions
 async def async_upload_to_bucket(
-    blob_name, file_obj, folder="uploads", bucket_name="uploaded_documents_v0"
+    blob_name, file_obj, folder, bucket_name="uploaded_documents_v0"
 ):
     """Upload image file to bucket."""
     async with aiohttp.ClientSession() as session:
@@ -129,14 +131,16 @@ async def async_upload_to_bucket(
         return status["selfLink"]
 
 
-async def upload_to_google_storage(file_path, file_name):
+async def upload_to_google_storage(file_path, file_name, folder="uploads"):
     async with aiofiles.open(file_path, "rb") as afp:
         f = await afp.read()
-    url = await async_upload_to_bucket(file_name, f)
+    url = await async_upload_to_bucket(file_name, f, folder=folder)
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(filename, bucket_name="uploaded_documents_v0"):
+def generate_download_signed_url_v4(
+    project_id, filename, bucket_name="uploaded_documents_v0"
+):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
@@ -151,7 +155,7 @@ def generate_download_signed_url_v4(filename, bucket_name="uploaded_documents_v0
     )
 
     # blob_name: path to file in google cloud bucket
-    blob_name = f"uploads/{filename}"
+    blob_name = f"uploads/{project_id}/{filename}"
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 
