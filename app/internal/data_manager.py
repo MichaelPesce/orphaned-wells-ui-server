@@ -73,6 +73,7 @@ class DataManager:
         user = {
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
+            "hd": user_info.get("hd", ""),
         }
         myquery = {"email": email}
         newvalues = {"$set": user}
