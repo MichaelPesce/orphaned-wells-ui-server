@@ -199,12 +199,12 @@ async def upload_document(
     Returns:
         New document record identifier.
     """
-    output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
+    original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     mime_type = file.content_type
     ## read document file
     try:
-        async with aiofiles.open(output_path, "wb") as out_file:
+        async with aiofiles.open(original_output_path, "wb") as out_file:
             content = await file.read()  # async read
             await out_file.write(content)
         if file_ext == ".tif" or file_ext == ".tiff":
@@ -214,6 +214,8 @@ async def upload_document(
             )
             file_ext = ".png"
             mime_type = "image/png"
+        else:
+            output_path = original_output_path
     except Exception as e:
         _log.error(f"unable to read image file: {e}")
         raise HTTPException(400, detail=f"Unable to process image file: {e}")
@@ -250,12 +252,15 @@ async def upload_document(
     )
 
     ## remove file after 120 seconds to allow for the operations to finish
+    ## if file was converted to PNG, remove original file as well
+    files_to_delete = [output_path]
+    if original_output_path != output_path:
+        files_to_delete.append(original_output_path)
     background_tasks.add_task(
-        data_manager.deleteFile,
-        filepath=output_path,
+        data_manager.deleteFiles,
+        filepaths=files_to_delete,
         sleep_time=120
     )
-
     return {"record_id": new_record_id}
 
 
@@ -340,8 +345,8 @@ async def download_records(project_id: str, background_tasks: BackgroundTasks, u
     csv_output = data_manager.downloadRecords(project_id)
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
-        data_manager.deleteFile,
-        filepath=csv_output,
+        data_manager.deleteFiles,
+        filepaths=[csv_output],
         sleep_time=30
     )
     return csv_output

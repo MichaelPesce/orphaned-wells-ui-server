@@ -214,7 +214,7 @@ class DataManager:
         _id = ObjectId(project_id)
         project_cursor = self.db.projects.find({"_id": _id})
         for document in project_cursor:
-            keys = document["attributes"]
+            keys = document.get("attributes", [])
             project_name = document["name"]
         today = time.time()
         cursor = self.db.records.find({"project_id": project_id})
@@ -222,7 +222,7 @@ class DataManager:
         for document in cursor:
             record_attribute = {}
             for attribute in keys:
-                if attribute in document["attributes"]:
+                if attribute in document.get("attributes", []):
                     record_attribute[attribute] = document["attributes"][attribute][
                         "value"
                     ]
@@ -240,11 +240,13 @@ class DataManager:
 
         return output_file
     
-    def deleteFile(self, filepath, sleep_time=5):
-        _log.info(f"deleting file: {filepath} in {sleep_time} seconds")
+    def deleteFiles(self, filepaths, sleep_time=5):
+        _log.info(f"deleting files: {filepaths} in {sleep_time} seconds")
         time.sleep(sleep_time)
-        os.remove(filepath)
-        _log.info(f"deleted {filepath}")
+        for filepath in filepaths:
+            if os.path.isfile(filepath):
+                os.remove(filepath)
+                _log.info(f"deleted {filepath}")
 
 
 data_manager = DataManager()
