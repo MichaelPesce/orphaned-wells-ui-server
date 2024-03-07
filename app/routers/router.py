@@ -249,6 +249,13 @@ async def upload_document(
         data_manager=data_manager,
     )
 
+    ## remove file after 120 seconds to allow for the operations to finish
+    background_tasks.add_task(
+        data_manager.deleteFile,
+        filepath=output_path,
+        sleep_time=120
+    )
+
     return {"record_id": new_record_id}
 
 
@@ -321,7 +328,7 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
 
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
-async def download_records(project_id: str, user_info: dict = Depends(authenticate)):
+async def download_records(project_id: str, background_tasks: BackgroundTasks, user_info: dict = Depends(authenticate)):
     """Download records for given project ID.
 
     Args:
@@ -331,5 +338,10 @@ async def download_records(project_id: str, user_info: dict = Depends(authentica
         CSV file containing all records associated with that project
     """
     csv_output = data_manager.downloadRecords(project_id)
-
+    ## remove file after 30 seconds to allow for the user download to finish
+    background_tasks.add_task(
+        data_manager.deleteFile,
+        filepath=csv_output,
+        sleep_time=30
+    )
     return csv_output

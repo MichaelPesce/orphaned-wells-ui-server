@@ -239,6 +239,12 @@ class DataManager:
             writer.writerows(record_attributes)
 
         return output_file
+    
+    def deleteFile(self, filepath, sleep_time=5):
+        _log.info(f"deleting file: {filepath} in {sleep_time} seconds")
+        time.sleep(sleep_time)
+        os.remove(filepath)
+        _log.info(f"deleted {filepath}")
 
 
 data_manager = DataManager()
