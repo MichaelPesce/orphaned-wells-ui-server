@@ -239,7 +239,7 @@ class DataManager:
             writer.writerows(record_attributes)
 
         return output_file
-    
+
     def deleteFiles(self, filepaths, sleep_time=5):
         _log.info(f"deleting files: {filepaths} in {sleep_time} seconds")
         time.sleep(sleep_time)

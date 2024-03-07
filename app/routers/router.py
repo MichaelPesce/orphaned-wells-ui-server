@@ -257,9 +257,7 @@ async def upload_document(
     if original_output_path != output_path:
         files_to_delete.append(original_output_path)
     background_tasks.add_task(
-        data_manager.deleteFiles,
-        filepaths=files_to_delete,
-        sleep_time=120
+        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=120
     )
     return {"record_id": new_record_id}
 
@@ -333,7 +331,11 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
 
 
 @router.get("/download_records/{project_id}", response_class=FileResponse)
-async def download_records(project_id: str, background_tasks: BackgroundTasks, user_info: dict = Depends(authenticate)):
+async def download_records(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user_info: dict = Depends(authenticate),
+):
     """Download records for given project ID.
 
     Args:
@@ -345,8 +347,6 @@ async def download_records(project_id: str, background_tasks: BackgroundTasks, u
     csv_output = data_manager.downloadRecords(project_id)
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
-        data_manager.deleteFiles,
-        filepaths=[csv_output],
-        sleep_time=30
+        data_manager.deleteFiles, filepaths=[csv_output], sleep_time=30
     )
     return csv_output
