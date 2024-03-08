@@ -44,6 +44,14 @@ router = APIRouter(
 
 @router.post("/token")
 async def authenticate(token: str = Depends(oauth2_scheme)):
+    """Function authenticating API calls; required as a dependency for all API calls.
+
+    Args:
+        id_token: token provided upon signin
+
+    Returns:
+        user account information
+    """
     try:
         user_info = id_token.verify_oauth2_token(
             token, google_requests.Request(), client_id
@@ -58,14 +66,13 @@ async def authenticate(token: str = Depends(oauth2_scheme)):
 
 @router.post("/auth_login")
 async def auth_login(request: Request):
-    """Update record data.
+    """Function for logging into google account.
 
     Args:
-        record_id: Record identifier
-        request data: New data for provided record
+        code: code provided by react google sign in
 
     Returns:
-        Success response
+        user tokens (id_token, access_token, refresh_token)
     """
     code = await request.json()
     data = {
@@ -89,14 +96,24 @@ async def auth_login(request: Request):
     if role is None or role == "pending":
         _log.info(f"user is not authorized")
         raise HTTPException(status_code=403, detail=user_info)
-    else:
+    elif role == "user" or role == "admin":
         _log.info(f"user has role {role}")
         return user_tokens
+    else:
+        _log.info(f"role not recognized: {role}")
+        raise HTTPException(status_code=403, detail=user_info)
 
 
 @router.post("/auth_refresh")
 async def auth_refresh(request: Request):
-    _log.info("attempting to refresh tokens")
+    """Function for refreshing user tokens.
+
+    Args:
+        refresh_token: refresh token provided upon signin
+
+    Returns:
+        user tokens (id_token, access_token, refresh_token)
+    """
     refresh_token = await request.json()
     data = {
         "refresh_token": refresh_token,
@@ -351,8 +368,14 @@ async def download_records(
     )
     return csv_output
 
+## admin functions
 @router.get("/get_pending_users")
 async def get_pending_users(user_info: dict = Depends(authenticate)):
+    """Fetch all users from DB with role 'pending'. Checks if user has proper role (admin)
+
+    Returns:
+        List of pending users
+    """
     if data_manager.hasRole(user_info, "admin"):
         pending_users = data_manager.getPendingUsers()
         return pending_users
