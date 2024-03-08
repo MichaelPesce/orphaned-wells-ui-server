@@ -248,5 +248,31 @@ class DataManager:
                 os.remove(filepath)
                 _log.info(f"deleted {filepath}")
 
+    def hasRole(self, user_info, role="admin"):
+        email = user_info.get("email","")
+        cursor = self.db.users.find({"email": email})
+        try:
+            document = cursor[0]
+            if document.get("role","") == role:
+                return True
+            else:
+                return False
+        except:
+            return False
+    
+    def getPendingUsers(self):
+        cursor = self.db.users.find({"role": "pending"})
+        pending_users = []
+        for document in cursor:
+            pending_users.append(
+                {
+                    "email": document.get("email",""),
+                    "name": document.get("name",""),
+                    "hd": document.get("hd",""),
+                    "picture": document.get("picture",""),
+                }
+            )
+        return pending_users
+
 
 data_manager = DataManager()

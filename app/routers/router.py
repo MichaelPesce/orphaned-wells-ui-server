@@ -350,3 +350,11 @@ async def download_records(
         data_manager.deleteFiles, filepaths=[csv_output], sleep_time=30
     )
     return csv_output
+
+@router.get("/get_pending_users")
+async def get_pending_users(user_info: dict = Depends(authenticate)):
+    if data_manager.hasRole(user_info, "admin"):
+        pending_users = data_manager.getPendingUsers()
+        return pending_users
+    else:
+        raise HTTPException(status_code=403, detail=f"User is not authorized to access this page")
