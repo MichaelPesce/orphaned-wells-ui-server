@@ -49,11 +49,11 @@ class DataManager:
             ## TODO: update user data each time they login?
             self.updateUser(user_info)
         if not foundUser:
-            self.addUser(user_info)
             role = "pending"
+            self.addUser(user_info, role)
         return role
 
-    def addUser(self, user_info):
+    def addUser(self, user_info, role="pending"):
         # _log.info(f"adding user {user_info}")
         user = {
             "email": user_info.get("email", ""),
@@ -79,6 +79,15 @@ class DataManager:
         newvalues = {"$set": user}
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
+    
+    def approveUser(self, user_email):
+        user = {
+            "role": "user"
+        }
+        myquery = {"email": user_email}
+        newvalues = {"$set": user}
+        self.db.users.update_one(myquery, newvalues)
+        return "success"
 
     def getUserProjectList(self, user):
         myquery = {"email": user}

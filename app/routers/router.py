@@ -381,3 +381,35 @@ async def get_pending_users(user_info: dict = Depends(authenticate)):
         return pending_users
     else:
         raise HTTPException(status_code=403, detail=f"User is not authorized to access this page")
+
+@router.post("/approve_user/{email}")
+async def approve_user(email: str, user_info: dict = Depends(authenticate)):
+    """Approve user for use of application by changing role from 'pending' to 'user'
+
+    Args:
+        email: User email address
+
+    Returns:
+        approved user information
+    """
+    if data_manager.hasRole(user_info, "admin"):
+        return data_manager.approveUser(email)
+    else:
+        raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
+    
+
+@router.post("/add_user/{email}")
+async def add_user(email: str, user_info: dict = Depends(authenticate)):
+    """Add user to application database with role 'pending'
+
+    Args:
+        email: User email address
+
+    Returns:
+        added user information
+    """
+    if data_manager.hasRole(user_info, "admin"):
+        return data_manager.addUser({"email": email}, "pending")
+    else:
+        raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
+    
