@@ -409,7 +409,10 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
         added user information
     """
     if data_manager.hasRole(user_info, "admin"):
-        return data_manager.addUser({"email": email}, "pending")
+        ## TODO check if provided email is a valid email address
+        db_response = data_manager.addUser({"email": email}, "pending")
+        return {"Added": email}
+
     else:
         raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
     
