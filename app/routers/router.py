@@ -406,12 +406,18 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
         email: User email address
 
     Returns:
-        added user information
+        user status
     """
     if data_manager.hasRole(user_info, "admin"):
         ## TODO check if provided email is a valid email address
-        db_response = data_manager.addUser({"email": email}, "pending")
-        return {"Added": email}
+
+        ## this function will check for and then add user if it is not found
+        role = data_manager.checkForUser({"email": email}, update=False)
+        if role != "pending":
+            ## 406 Not acceptable: user provided an email that is already associated with an account
+            raise HTTPException(status_code=406, detail=f"User is already created.")
+        else:
+            return {"pending": email}
 
     else:
         raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")

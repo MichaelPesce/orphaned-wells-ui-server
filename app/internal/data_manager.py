@@ -40,15 +40,15 @@ class DataManager:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
 
-    def checkForUser(self, user_info):
+    def checkForUser(self, user_info, update=True, add=True):
         cursor = self.db.users.find({"email": user_info["email"]})
         foundUser = False
         for document in cursor:
             foundUser = True
             role = document.get("role", None)
-            ## TODO: update user data each time they login?
-            self.updateUser(user_info)
-        if not foundUser:
+            if update:
+                self.updateUser(user_info)
+        if not foundUser and add:
             role = "pending"
             self.addUser(user_info, role)
         return role
@@ -60,7 +60,7 @@ class DataManager:
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
-            "role": "pending",
+            "role": role,
             "projects": [],
             "time_created": time.time(),
         }
