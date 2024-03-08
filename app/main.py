@@ -27,12 +27,12 @@ app.include_router(router.router)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    if "d" in sys.argv or "dev" in sys.argv:
+    if "-d" in sys.argv or "--dev" in sys.argv:
         _log.info(f"starting app in dev")
         uvicorn.run("__main__:app", host="127.0.0.1", port=8001, reload=True)
-    elif "p" in sys.argv or "prod" in sys.argv:
+    elif "-p" in sys.argv or "--prod" in sys.argv:
         _log.info(f"starting app in prod")
-        uvicorn.run("__main__:app", host="0.0.0.0", port=8001, reload=False, workers=8)
+        uvicorn.run("__main__:app", host="127.0.0.1", port=8001, reload=False, workers=8)
     else:
         _log.info(f"starting app in dev")
         multiprocessing.freeze_support()
