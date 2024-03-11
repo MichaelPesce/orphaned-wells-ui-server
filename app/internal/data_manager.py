@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 import os
 import csv
+from enum import Enum
 
 from typing import Union, List
 from pydantic import BaseModel
@@ -15,6 +16,15 @@ from app.internal.image_handling import generate_download_signed_url_v4
 
 _log = logging.getLogger(__name__)
 
+class Roles(int, Enum):
+    """Roles for user accessibility.
+    Only approved users should be able to access the app. 
+    Only special users (admins) should be capable of approving other users.
+    """
+
+    pending = -1
+    base_user = 1
+    admin = 10
 
 class Project(BaseModel):
     """Information about a project."""
@@ -45,15 +55,15 @@ class DataManager:
         foundUser = False
         for document in cursor:
             foundUser = True
-            role = document.get("role", None)
+            role = document.get("role",Roles.pending)
             if update:
                 self.updateUser(user_info)
         if not foundUser and add:
-            role = "pending"
+            role = Roles.pending
             self.addUser(user_info, role)
         return role
 
-    def addUser(self, user_info, role="pending"):
+    def addUser(self, user_info, role=Roles.pending):
         # _log.info(f"adding user {user_info}")
         user = {
             "email": user_info.get("email", ""),
@@ -82,7 +92,7 @@ class DataManager:
     
     def approveUser(self, user_email):
         user = {
-            "role": "user"
+            "role": Roles.base_user
         }
         myquery = {"email": user_email}
         newvalues = {"$set": user}
@@ -257,12 +267,12 @@ class DataManager:
                 os.remove(filepath)
                 _log.info(f"deleted {filepath}")
 
-    def hasRole(self, user_info, role="admin"):
+    def hasRole(self, user_info, role=Roles.admin):
         email = user_info.get("email","")
         cursor = self.db.users.find({"email": email})
         try:
             document = cursor[0]
-            if document.get("role","") == role:
+            if document.get("role",Roles.pending) == role:
                 return True
             else:
                 return False
@@ -270,7 +280,7 @@ class DataManager:
             return False
     
     def getPendingUsers(self):
-        cursor = self.db.users.find({"role": "pending"})
+        cursor = self.db.users.find({"role": Roles.pending})
         pending_users = []
         for document in cursor:
             pending_users.append(

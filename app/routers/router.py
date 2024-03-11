@@ -22,7 +22,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 # import copy
 
-from app.internal.data_manager import data_manager, Project
+from app.internal.data_manager import data_manager, Project, Roles
 from app.internal.image_handling import (
     convert_tiff,
     upload_to_google_storage,
@@ -93,15 +93,15 @@ async def auth_login(request: Request):
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
     role = data_manager.checkForUser(user_info)
-    if role is None or role == "pending":
+    if role < Roles.base_user:
         _log.info(f"user is not authorized")
         raise HTTPException(status_code=403, detail=user_info)
-    elif role == "user" or role == "admin":
+    else:
         _log.info(f"user has role {role}")
         return user_tokens
-    else:
-        _log.info(f"role not recognized: {role}")
-        raise HTTPException(status_code=403, detail=user_info)
+    # else:
+    #     _log.info(f"role not recognized: {role}")
+    #     raise HTTPException(status_code=403, detail=user_info)
 
 
 @router.post("/auth_refresh")
@@ -131,7 +131,7 @@ async def auth_refresh(request: Request):
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
     role = data_manager.checkForUser(user_info)
-    if role is None or role == "pending":
+    if role < Roles.base_user:
         _log.info(f"user is not authorized")
         raise HTTPException(status_code=403, detail=user_info)
     else:
@@ -376,7 +376,7 @@ async def get_pending_users(user_info: dict = Depends(authenticate)):
     Returns:
         List of pending users
     """
-    if data_manager.hasRole(user_info, "admin"):
+    if data_manager.hasRole(user_info, Roles.admin):
         pending_users = data_manager.getPendingUsers()
         return pending_users
     else:
@@ -392,7 +392,7 @@ async def approve_user(email: str, user_info: dict = Depends(authenticate)):
     Returns:
         approved user information
     """
-    if data_manager.hasRole(user_info, "admin"):
+    if data_manager.hasRole(user_info, Roles.admin):
         return data_manager.approveUser(email)
     else:
         raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
@@ -408,12 +408,12 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
     Returns:
         user status
     """
-    if data_manager.hasRole(user_info, "admin"):
+    if data_manager.hasRole(user_info, Roles.admin):
         ## TODO check if provided email is a valid email address
 
         ## this function will check for and then add user if it is not found
         role = data_manager.checkForUser({"email": email}, update=False)
-        if role != "pending":
+        if role > 0:
             ## 406 Not acceptable: user provided an email that is already associated with an account
             raise HTTPException(status_code=406, detail=f"User is already created.")
         else:
