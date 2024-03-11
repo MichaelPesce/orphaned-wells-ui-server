@@ -369,16 +369,16 @@ async def download_records(
     return csv_output
 
 ## admin functions
-@router.get("/get_pending_users")
-async def get_pending_users(user_info: dict = Depends(authenticate)):
-    """Fetch all users from DB with role 'pending'. Checks if user has proper role (admin)
+@router.get("/get_users")
+async def get_users(user_info: dict = Depends(authenticate)):
+    """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
 
     Returns:
-        List of pending users
+        List of users, role types
     """
     if data_manager.hasRole(user_info, Roles.admin):
-        pending_users = data_manager.getPendingUsers()
-        return pending_users
+        users = data_manager.getUsers(Roles.base_user)
+        return users
     else:
         raise HTTPException(status_code=403, detail=f"User is not authorized to access this page")
 

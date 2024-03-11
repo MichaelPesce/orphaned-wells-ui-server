@@ -279,19 +279,24 @@ class DataManager:
         except:
             return False
     
-    def getPendingUsers(self):
-        cursor = self.db.users.find({"role": Roles.pending})
-        pending_users = []
+    def getUsers(self, role, includeLowerRoles=True):
+        if includeLowerRoles: # get all users with provided role or lower
+            query = {"role": {"$lte": role}}
+        else: # get only users with provided role
+            query = {"role": role}
+        cursor = self.db.users.find(query)
+        users = []
         for document in cursor:
-            pending_users.append(
+            users.append(
                 {
                     "email": document.get("email",""),
                     "name": document.get("name",""),
                     "hd": document.get("hd",""),
                     "picture": document.get("picture",""),
+                    "role": document.get("role",-1),
                 }
             )
-        return pending_users
+        return users
 
 
 data_manager = DataManager()
