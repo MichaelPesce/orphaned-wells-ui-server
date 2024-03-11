@@ -297,6 +297,11 @@ class DataManager:
                 }
             )
         return users
+    
+    def deleteUser(self, user):
+        query = {"email": user}
+        delete_response = self.db.users.delete_one(query)
+        return user
 
 
 data_manager = DataManager()

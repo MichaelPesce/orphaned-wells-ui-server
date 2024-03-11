@@ -421,4 +421,21 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
 
     else:
         raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
-    
+
+
+@router.post("/delete_user/{email}")
+async def delete_user(email: str, user_info: dict = Depends(authenticate)):
+    """Add user to application database with role 'pending'
+
+    Args:
+        email: User email address
+
+    Returns:
+        user status
+    """
+    if data_manager.hasRole(user_info, Roles.admin):
+        data_manager.deleteUser(email)
+        return {"Deleted", email}
+
+    else:
+        raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
