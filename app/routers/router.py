@@ -368,6 +368,7 @@ async def download_records(
     )
     return csv_output
 
+
 ## admin functions
 @router.get("/get_users")
 async def get_users(user_info: dict = Depends(authenticate)):
@@ -380,7 +381,10 @@ async def get_users(user_info: dict = Depends(authenticate)):
         users = data_manager.getUsers(Roles.base_user)
         return users
     else:
-        raise HTTPException(status_code=403, detail=f"User is not authorized to access this page")
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to access this page"
+        )
+
 
 @router.post("/approve_user/{email}")
 async def approve_user(email: str, user_info: dict = Depends(authenticate)):
@@ -395,8 +399,10 @@ async def approve_user(email: str, user_info: dict = Depends(authenticate)):
     if data_manager.hasRole(user_info, Roles.admin):
         return data_manager.approveUser(email)
     else:
-        raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
-    
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )
+
 
 @router.post("/add_user/{email}")
 async def add_user(email: str, user_info: dict = Depends(authenticate)):
@@ -420,7 +426,9 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
             return {"pending": email}
 
     else:
-        raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )
 
 
 @router.post("/delete_user/{email}")
@@ -438,4 +446,6 @@ async def delete_user(email: str, user_info: dict = Depends(authenticate)):
         return {"Deleted", email}
 
     else:
-        raise HTTPException(status_code=403, detail=f"User is not authorized to perform this operation")
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )

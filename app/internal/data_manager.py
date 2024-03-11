@@ -16,15 +16,17 @@ from app.internal.image_handling import generate_download_signed_url_v4
 
 _log = logging.getLogger(__name__)
 
+
 class Roles(int, Enum):
     """Roles for user accessibility.
-    Only approved users should be able to access the app. 
+    Only approved users should be able to access the app.
     Only special users (admins) should be capable of approving other users.
     """
 
     pending = -1
     base_user = 1
     admin = 10
+
 
 class Project(BaseModel):
     """Information about a project."""
@@ -55,7 +57,7 @@ class DataManager:
         foundUser = False
         for document in cursor:
             foundUser = True
-            role = document.get("role",Roles.pending)
+            role = document.get("role", Roles.pending)
             if update:
                 self.updateUser(user_info)
         if not foundUser and add:
@@ -89,11 +91,9 @@ class DataManager:
         newvalues = {"$set": user}
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
-    
+
     def approveUser(self, user_email):
-        user = {
-            "role": Roles.base_user
-        }
+        user = {"role": Roles.base_user}
         myquery = {"email": user_email}
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
@@ -268,36 +268,36 @@ class DataManager:
                 _log.info(f"deleted {filepath}")
 
     def hasRole(self, user_info, role=Roles.admin):
-        email = user_info.get("email","")
+        email = user_info.get("email", "")
         cursor = self.db.users.find({"email": email})
         try:
             document = cursor[0]
-            if document.get("role",Roles.pending) == role:
+            if document.get("role", Roles.pending) == role:
                 return True
             else:
                 return False
         except:
             return False
-    
+
     def getUsers(self, role, includeLowerRoles=True):
-        if includeLowerRoles: # get all users with provided role or lower
+        if includeLowerRoles:  # get all users with provided role or lower
             query = {"role": {"$lte": role}}
-        else: # get only users with provided role
+        else:  # get only users with provided role
             query = {"role": role}
         cursor = self.db.users.find(query)
         users = []
         for document in cursor:
             users.append(
                 {
-                    "email": document.get("email",""),
-                    "name": document.get("name",""),
-                    "hd": document.get("hd",""),
-                    "picture": document.get("picture",""),
-                    "role": document.get("role",-1),
+                    "email": document.get("email", ""),
+                    "name": document.get("name", ""),
+                    "hd": document.get("hd", ""),
+                    "picture": document.get("picture", ""),
+                    "role": document.get("role", -1),
                 }
             )
         return users
-    
+
     def deleteUser(self, user):
         query = {"email": user}
         delete_response = self.db.users.delete_one(query)
