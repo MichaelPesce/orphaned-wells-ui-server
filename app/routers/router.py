@@ -425,13 +425,13 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
 
 @router.post("/delete_user/{email}")
 async def delete_user(email: str, user_info: dict = Depends(authenticate)):
-    """Add user to application database with role 'pending'
+    """Delete user from application database
 
     Args:
         email: User email address
 
     Returns:
-        user status
+        result
     """
     if data_manager.hasRole(user_info, Roles.admin):
         data_manager.deleteUser(email)
