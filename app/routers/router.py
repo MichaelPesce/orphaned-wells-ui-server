@@ -22,7 +22,7 @@ from fastapi.security import OAuth2PasswordBearer
 
 # import copy
 
-from app.internal.data_manager import data_manager, Project
+from app.internal.data_manager import data_manager, Project, Roles
 from app.internal.image_handling import (
     convert_tiff,
     upload_to_google_storage,
@@ -44,6 +44,14 @@ router = APIRouter(
 
 @router.post("/token")
 async def authenticate(token: str = Depends(oauth2_scheme)):
+    """Function authenticating API calls; required as a dependency for all API calls.
+
+    Args:
+        id_token: token provided upon signin
+
+    Returns:
+        user account information
+    """
     try:
         user_info = id_token.verify_oauth2_token(
             token, google_requests.Request(), client_id
@@ -58,14 +66,13 @@ async def authenticate(token: str = Depends(oauth2_scheme)):
 
 @router.post("/auth_login")
 async def auth_login(request: Request):
-    """Update record data.
+    """Function for logging into google account.
 
     Args:
-        record_id: Record identifier
-        request data: New data for provided record
+        code: code provided by react google sign in
 
     Returns:
-        Success response
+        user tokens (id_token, access_token, refresh_token)
     """
     code = await request.json()
     data = {
@@ -86,17 +93,27 @@ async def auth_login(request: Request):
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
     role = data_manager.checkForUser(user_info)
-    if role is None or role == "pending":
+    if role < Roles.base_user:
         _log.info(f"user is not authorized")
         raise HTTPException(status_code=403, detail=user_info)
     else:
         _log.info(f"user has role {role}")
         return user_tokens
+    # else:
+    #     _log.info(f"role not recognized: {role}")
+    #     raise HTTPException(status_code=403, detail=user_info)
 
 
 @router.post("/auth_refresh")
 async def auth_refresh(request: Request):
-    _log.info("attempting to refresh tokens")
+    """Function for refreshing user tokens.
+
+    Args:
+        refresh_token: refresh token provided upon signin
+
+    Returns:
+        user tokens (id_token, access_token, refresh_token)
+    """
     refresh_token = await request.json()
     data = {
         "refresh_token": refresh_token,
@@ -114,7 +131,7 @@ async def auth_refresh(request: Request):
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
     role = data_manager.checkForUser(user_info)
-    if role is None or role == "pending":
+    if role < Roles.base_user:
         _log.info(f"user is not authorized")
         raise HTTPException(status_code=403, detail=user_info)
     else:
@@ -350,3 +367,85 @@ async def download_records(
         data_manager.deleteFiles, filepaths=[csv_output], sleep_time=30
     )
     return csv_output
+
+
+## admin functions
+@router.get("/get_users")
+async def get_users(user_info: dict = Depends(authenticate)):
+    """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
+
+    Returns:
+        List of users, role types
+    """
+    if data_manager.hasRole(user_info, Roles.admin):
+        users = data_manager.getUsers(Roles.base_user)
+        return users
+    else:
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to access this page"
+        )
+
+
+@router.post("/approve_user/{email}")
+async def approve_user(email: str, user_info: dict = Depends(authenticate)):
+    """Approve user for use of application by changing role from 'pending' to 'user'
+
+    Args:
+        email: User email address
+
+    Returns:
+        approved user information
+    """
+    if data_manager.hasRole(user_info, Roles.admin):
+        return data_manager.approveUser(email)
+    else:
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )
+
+
+@router.post("/add_user/{email}")
+async def add_user(email: str, user_info: dict = Depends(authenticate)):
+    """Add user to application database with role 'pending'
+
+    Args:
+        email: User email address
+
+    Returns:
+        user status
+    """
+    if data_manager.hasRole(user_info, Roles.admin):
+        ## TODO check if provided email is a valid email address
+
+        ## this function will check for and then add user if it is not found
+        role = data_manager.checkForUser({"email": email}, update=False)
+        if role > 0:
+            ## 406 Not acceptable: user provided an email that is already associated with an account
+            raise HTTPException(status_code=406, detail=f"User is already created.")
+        else:
+            return {"pending": email}
+
+    else:
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )
+
+
+@router.post("/delete_user/{email}")
+async def delete_user(email: str, user_info: dict = Depends(authenticate)):
+    """Delete user from application database
+
+    Args:
+        email: User email address
+
+    Returns:
+        result
+    """
+    if data_manager.hasRole(user_info, Roles.admin):
+        data_manager.deleteUser(email)
+        return {"Deleted", email}
+
+    else:
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )

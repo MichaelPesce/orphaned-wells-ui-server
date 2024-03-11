@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 import os
 import csv
+from enum import Enum
 
 from typing import Union, List
 from pydantic import BaseModel
@@ -14,6 +15,17 @@ from app.internal.image_handling import generate_download_signed_url_v4
 
 
 _log = logging.getLogger(__name__)
+
+
+class Roles(int, Enum):
+    """Roles for user accessibility.
+    Only approved users should be able to access the app.
+    Only special users (admins) should be capable of approving other users.
+    """
+
+    pending = -1
+    base_user = 1
+    admin = 10
 
 
 class Project(BaseModel):
@@ -40,27 +52,27 @@ class DataManager:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
 
-    def checkForUser(self, user_info):
+    def checkForUser(self, user_info, update=True, add=True):
         cursor = self.db.users.find({"email": user_info["email"]})
         foundUser = False
         for document in cursor:
             foundUser = True
-            role = document.get("role", None)
-            ## TODO: update user data each time they login?
-            self.updateUser(user_info)
-        if not foundUser:
-            self.addUser(user_info)
-            role = "pending"
+            role = document.get("role", Roles.pending)
+            if update:
+                self.updateUser(user_info)
+        if not foundUser and add:
+            role = Roles.pending
+            self.addUser(user_info, role)
         return role
 
-    def addUser(self, user_info):
+    def addUser(self, user_info, role=Roles.pending):
         # _log.info(f"adding user {user_info}")
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
-            "role": "pending",
+            "role": role,
             "projects": [],
             "time_created": time.time(),
         }
@@ -79,6 +91,13 @@ class DataManager:
         newvalues = {"$set": user}
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
+
+    def approveUser(self, user_email):
+        user = {"role": Roles.base_user}
+        myquery = {"email": user_email}
+        newvalues = {"$set": user}
+        self.db.users.update_one(myquery, newvalues)
+        return "success"
 
     def getUserProjectList(self, user):
         myquery = {"email": user}
@@ -247,6 +266,42 @@ class DataManager:
             if os.path.isfile(filepath):
                 os.remove(filepath)
                 _log.info(f"deleted {filepath}")
+
+    def hasRole(self, user_info, role=Roles.admin):
+        email = user_info.get("email", "")
+        cursor = self.db.users.find({"email": email})
+        try:
+            document = cursor[0]
+            if document.get("role", Roles.pending) == role:
+                return True
+            else:
+                return False
+        except:
+            return False
+
+    def getUsers(self, role, includeLowerRoles=True):
+        if includeLowerRoles:  # get all users with provided role or lower
+            query = {"role": {"$lte": role}}
+        else:  # get only users with provided role
+            query = {"role": role}
+        cursor = self.db.users.find(query)
+        users = []
+        for document in cursor:
+            users.append(
+                {
+                    "email": document.get("email", ""),
+                    "name": document.get("name", ""),
+                    "hd": document.get("hd", ""),
+                    "picture": document.get("picture", ""),
+                    "role": document.get("role", -1),
+                }
+            )
+        return users
+
+    def deleteUser(self, user):
+        query = {"email": user}
+        delete_response = self.db.users.delete_one(query)
+        return user
 
 
 data_manager = DataManager()
