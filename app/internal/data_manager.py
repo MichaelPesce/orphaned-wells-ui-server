@@ -232,28 +232,31 @@ class DataManager:
         # _log.info(f"downloading records for {project_id}")
         _id = ObjectId(project_id)
         project_cursor = self.db.projects.find({"_id": _id})
-        for document in project_cursor:
-            keys = document.get("attributes", [])
-            project_name = document["name"]
+        attributes = ["file"]
+        document = project_cursor.next()
+        for each in document.get("attributes", {}):
+            attributes.append(each["name"])
+        project_name = document.get("name","")
         today = time.time()
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
         for document in cursor:
             record_attribute = {}
-            for attribute in keys:
+            for attribute in attributes:
                 if attribute in document.get("attributes", []):
                     record_attribute[attribute] = document["attributes"][attribute][
                         "value"
                     ]
                 else:
                     record_attribute[attribute] = "N/A"
+            record_attribute["file"] = document.get("filename", "")
             record_attributes.append(record_attribute)
 
         # compute the output file directory and name
         output_dir = self.app_settings.csv_dir
         output_file = os.path.join(output_dir, f"{project_id}_{today}.csv")
         with open(output_file, "w", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=keys)
+            writer = csv.DictWriter(csvfile, fieldnames=attributes)
             writer.writeheader()
             writer.writerows(record_attributes)
 
