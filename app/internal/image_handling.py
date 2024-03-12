@@ -95,8 +95,10 @@ def process_image(
         raw_text = entity.mention_text
         # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
         # normalized_value = entity.normalized_value.text
-        # if normalized_value:
-        #     _log.info(f"normalized_value: {normalized_value}")
+        if normalized_value:
+            value = normalized_value
+        else:
+            value = raw_text
         try:
             bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
             coordinates = []
@@ -109,7 +111,8 @@ def process_image(
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
-            "value": raw_text,
+            "text_value": text_value,
+            "value": value,
             "normalized_vertices": coordinates,
             "normalized_value": normalized_value,
         }
