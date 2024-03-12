@@ -87,12 +87,16 @@ def process_image(
     """
     attributes = {}
     for entity in document_entities:
-        # print(f"found entity: {entity}")
+        text_value = entity.text_anchor.content
+        normalized_value = entity.normalized_value.text
+
         attribute = entity.type_
         confidence = entity.confidence
         raw_text = entity.mention_text
         # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
-        normalized_value = entity.normalized_value
+        # normalized_value = entity.normalized_value.text
+        # if normalized_value:
+        #     _log.info(f"normalized_value: {normalized_value}")
         try:
             bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
             coordinates = []
@@ -107,7 +111,7 @@ def process_image(
             "raw_text": raw_text,
             "value": raw_text,
             "normalized_vertices": coordinates,
-            # "normalized_value": normalized_value,
+            "normalized_value": normalized_value,
         }
 
     ## gotta create the record in the db
@@ -118,7 +122,7 @@ def process_image(
         "status": "digitized",
     }
     # new_record_id = data_manager.createRecord(record)
-    data_manager.updateRecord(record_id, record)
+    data_manager.updateRecord(record_id, record, update_type="record")
     _log.info(f"updated record in db: {record_id}")
     ## TODO: Remove image from local file system. Have to make sure upload to Cloud Storage is complete as well
 

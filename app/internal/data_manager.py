@@ -202,7 +202,10 @@ class DataManager:
             return "failure"
         _id = ObjectId(record_id)
         search_query = {"_id": _id}
-        update_query = {"$set": {update_type: new_data.get(update_type, None)}}
+        if update_type == "record":
+            update_query = {"$set": new_data}
+        else:
+            update_query = {"$set": {update_type: new_data.get(update_type, None)}}
         self.db.records.update_one(search_query, update_query)
         return "success"
 
