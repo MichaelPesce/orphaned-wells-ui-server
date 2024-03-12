@@ -102,7 +102,7 @@ class DataManager:
     def getUserProjectList(self, user):
         myquery = {"email": user}
         cursor = self.db.users.find(myquery)
-        projects = cursor[0].get("projects", [])
+        projects = cursor.next().get("projects", [])
         return projects
 
     def fetchProjects(self, user):
@@ -152,7 +152,7 @@ class DataManager:
 
         ## get project data
         cursor = self.db.projects.find({"_id": _id})
-        project_data = cursor[0]
+        project_data = cursor.next()
         project_data["id_"] = str(project_data["_id"])
         del project_data["_id"]
 
@@ -196,12 +196,14 @@ class DataManager:
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
 
-    def updateRecord(self, record_id, new_data):
+    def updateRecord(self, record_id, new_data, update_type=None):
         # _log.info(f"updating {record_id} to be {new_data}")
+        if update_type is None:
+            return "failure"
         _id = ObjectId(record_id)
-        myquery = {"_id": _id}
-        newvalues = {"$set": {"attributes": new_data["attributes"]}}
-        cursor = self.db.records.update_one(myquery, newvalues)
+        search_query = {"_id": _id}
+        update_query = {"$set": {update_type: new_data.get(update_type, None)}}
+        self.db.records.update_one(search_query, update_query)
         return "success"
 
     def deleteProject(self, project_id):
@@ -222,7 +224,7 @@ class DataManager:
         _id = ObjectId(project_id)
         try:
             cursor = self.db.projects.find({"_id": _id})
-            document = cursor[0]
+            document = cursor.next()
             return document["processorId"]
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
@@ -274,7 +276,7 @@ class DataManager:
         email = user_info.get("email", "")
         cursor = self.db.users.find({"email": email})
         try:
-            document = cursor[0]
+            document = cursor.next()
             if document.get("role", Roles.pending) == role:
                 return True
             else:

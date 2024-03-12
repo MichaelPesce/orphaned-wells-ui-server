@@ -314,8 +314,10 @@ async def update_record(
     Returns:
         Success response
     """
-    data = await request.json()
-    data_manager.updateRecord(record_id, data)
+    req = await request.json()
+    data = req.get("data", None)
+    update_type = req.get("type", None)
+    data_manager.updateRecord(record_id, data, update_type)
 
     return {"response": "success"}
 
