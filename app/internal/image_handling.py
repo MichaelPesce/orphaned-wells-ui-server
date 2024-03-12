@@ -93,11 +93,15 @@ def process_image(
         raw_text = entity.mention_text
         # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
         normalized_value = entity.normalized_value
-        bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
-        coordinates = []
-        for i in range(4):
-            coordinate = bounding_poly.normalized_vertices[i]
-            coordinates.append([coordinate.x, coordinate.y])
+        try:
+            bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
+            coordinates = []
+            for i in range(4):
+                coordinate = bounding_poly.normalized_vertices[i]
+                coordinates.append([coordinate.x, coordinate.y])
+        except Exception as e:
+            coordinates = None
+            _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
