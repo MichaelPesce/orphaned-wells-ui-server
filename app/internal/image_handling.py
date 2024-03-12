@@ -115,6 +115,7 @@ def process_image(
         "project_id": project_id,
         "attributes": attributes,
         "filename": f"{file_name}",
+        "status": "digitized",
     }
     # new_record_id = data_manager.createRecord(record)
     data_manager.updateRecord(record_id, record)
