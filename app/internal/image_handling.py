@@ -43,6 +43,17 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
         print(f"failed to convert {filename}: {e}")
         return filepath
 
+def get_coordinates(entity, attribute):
+    try:
+        bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
+        coordinates = []
+        for i in range(4):
+            coordinate = bounding_poly.normalized_vertices[i]
+            coordinates.append([coordinate.x, coordinate.y])
+    except Exception as e:
+        coordinates = None
+        _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
+    return coordinates
 
 ## Document AI functions
 def process_image(
@@ -93,21 +104,44 @@ def process_image(
         attribute = entity.type_
         confidence = entity.confidence
         raw_text = entity.mention_text
-        # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
-        # normalized_value = entity.normalized_value.text
+        # if attribute == "CASING_LINER_AND_CEMENT":
+        #     _log.info(f"casing lining entity: {entity}")
         if normalized_value:
             value = normalized_value
         else:
             value = raw_text
-        try:
-            bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
-            coordinates = []
-            for i in range(4):
-                coordinate = bounding_poly.normalized_vertices[i]
-                coordinates.append([coordinate.x, coordinate.y])
-        except Exception as e:
-            coordinates = None
-            _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
+        coordinates = get_coordinates(entity, attribute)
+        # try:
+        #     bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
+        #     coordinates = []
+        #     for i in range(4):
+        #         coordinate = bounding_poly.normalized_vertices[i]
+        #         coordinates.append([coordinate.x, coordinate.y])
+        # except Exception as e:
+        #     coordinates = None
+        #     _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
+        subattributes = {}
+        for prop in entity.properties:
+            sub_text_value = prop.text_anchor.content
+            sub_normalized_value = prop.normalized_value.text
+            sub_attribute = prop.type_
+            sub_confidence = prop.confidence
+            sub_raw_text = prop.mention_text
+            sub_coordinates = get_coordinates(prop, sub_attribute)
+            if sub_normalized_value:
+                sub_value = sub_normalized_value
+            else:
+                sub_value = sub_raw_text
+            subattributes[sub_attribute] = {
+                "confidence": sub_confidence,
+                "raw_text": sub_raw_text,
+                "text_value": sub_text_value,
+                "value": sub_value,
+                "normalized_vertices": sub_coordinates,
+                "normalized_value": sub_normalized_value,
+            }
+        if len(subattributes) == 0:
+            subattributes = None
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
@@ -115,6 +149,7 @@ def process_image(
             "value": value,
             "normalized_vertices": coordinates,
             "normalized_value": normalized_value,
+            "subattributes": subattributes,
         }
 
     ## gotta create the record in the db
