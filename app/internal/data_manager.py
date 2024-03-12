@@ -241,7 +241,7 @@ class DataManager:
         document = project_cursor.next()
         for each in document.get("attributes", {}):
             attributes.append(each["name"])
-        project_name = document.get("name","")
+        project_name = document.get("name", "")
         today = time.time()
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []

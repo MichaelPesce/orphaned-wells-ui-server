@@ -43,6 +43,7 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
         print(f"failed to convert {filename}: {e}")
         return filepath
 
+
 def get_coordinates(entity, attribute):
     try:
         bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
@@ -54,6 +55,7 @@ def get_coordinates(entity, attribute):
         coordinates = None
         _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
     return coordinates
+
 
 ## Document AI functions
 def process_image(
