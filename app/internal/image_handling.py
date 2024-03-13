@@ -125,9 +125,11 @@ def process_image(
                 sub_value = sub_raw_text
             counter = 2
             original_sub_attribute = sub_attribute
-            while sub_attribute in subattributes: ## if we make it inside this loop, then this subattribute appears multiple times
+            while (
+                sub_attribute in subattributes
+            ):  ## if we make it inside this loop, then this subattribute appears multiple times
                 sub_attribute = f"{original_sub_attribute}_{counter}"
-                counter+=1
+                counter += 1
 
             subattributes[sub_attribute] = {
                 "confidence": sub_confidence,
@@ -142,9 +144,11 @@ def process_image(
 
         counter = 2
         original_attribute = attribute
-        while attribute in attributes: ## if we make it inside this loop, then this attribute appears multiple times
+        while (
+            attribute in attributes
+        ):  ## if we make it inside this loop, then this attribute appears multiple times
             attribute = f"{original_attribute}_{counter}"
-            counter+=1
+            counter += 1
 
         attributes[attribute] = {
             "confidence": confidence,
