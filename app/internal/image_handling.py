@@ -44,6 +44,19 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
         return filepath
 
 
+def get_coordinates(entity, attribute):
+    try:
+        bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
+        coordinates = []
+        for i in range(4):
+            coordinate = bounding_poly.normalized_vertices[i]
+            coordinates.append([coordinate.x, coordinate.y])
+    except Exception as e:
+        coordinates = None
+        _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
+    return coordinates
+
+
 ## Document AI functions
 def process_image(
     file_path, file_name, mime_type, project_id, record_id, processor_id, data_manager
@@ -87,23 +100,64 @@ def process_image(
     """
     attributes = {}
     for entity in document_entities:
-        # print(f"found entity: {entity}")
+        text_value = entity.text_anchor.content
+        normalized_value = entity.normalized_value.text
+
         attribute = entity.type_
         confidence = entity.confidence
         raw_text = entity.mention_text
-        # gotta do something with this; it shows up for each attribute but only need it for specific ones (date)
-        normalized_value = entity.normalized_value
-        bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
-        coordinates = []
-        for i in range(4):
-            coordinate = bounding_poly.normalized_vertices[i]
-            coordinates.append([coordinate.x, coordinate.y])
+        if normalized_value:
+            value = normalized_value
+        else:
+            value = raw_text
+        coordinates = get_coordinates(entity, attribute)
+        subattributes = {}
+        for prop in entity.properties:
+            sub_text_value = prop.text_anchor.content
+            sub_normalized_value = prop.normalized_value.text
+            sub_attribute = prop.type_
+            sub_confidence = prop.confidence
+            sub_raw_text = prop.mention_text
+            sub_coordinates = get_coordinates(prop, sub_attribute)
+            if sub_normalized_value:
+                sub_value = sub_normalized_value
+            else:
+                sub_value = sub_raw_text
+            counter = 2
+            original_sub_attribute = sub_attribute
+            while (
+                sub_attribute in subattributes
+            ):  ## if we make it inside this loop, then this subattribute appears multiple times
+                sub_attribute = f"{original_sub_attribute}_{counter}"
+                counter += 1
+
+            subattributes[sub_attribute] = {
+                "confidence": sub_confidence,
+                "raw_text": sub_raw_text,
+                "text_value": sub_text_value,
+                "value": sub_value,
+                "normalized_vertices": sub_coordinates,
+                "normalized_value": sub_normalized_value,
+            }
+        if len(subattributes) == 0:
+            subattributes = None
+
+        counter = 2
+        original_attribute = attribute
+        while (
+            attribute in attributes
+        ):  ## if we make it inside this loop, then this attribute appears multiple times
+            attribute = f"{original_attribute}_{counter}"
+            counter += 1
+
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
-            "value": raw_text,
+            "text_value": text_value,
+            "value": value,
             "normalized_vertices": coordinates,
-            # "normalized_value": normalized_value,
+            "normalized_value": normalized_value,
+            "subattributes": subattributes,
         }
 
     ## gotta create the record in the db
@@ -111,9 +165,10 @@ def process_image(
         "project_id": project_id,
         "attributes": attributes,
         "filename": f"{file_name}",
+        "status": "digitized",
     }
     # new_record_id = data_manager.createRecord(record)
-    data_manager.updateRecord(record_id, record)
+    data_manager.updateRecord(record_id, record, update_type="record")
     _log.info(f"updated record in db: {record_id}")
     ## TODO: Remove image from local file system. Have to make sure upload to Cloud Storage is complete as well
 

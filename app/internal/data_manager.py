@@ -102,7 +102,7 @@ class DataManager:
     def getUserProjectList(self, user):
         myquery = {"email": user}
         cursor = self.db.users.find(myquery)
-        projects = cursor[0].get("projects", [])
+        projects = cursor.next().get("projects", [])
         return projects
 
     def fetchProjects(self, user):
@@ -152,7 +152,7 @@ class DataManager:
 
         ## get project data
         cursor = self.db.projects.find({"_id": _id})
-        project_data = cursor[0]
+        project_data = cursor.next()
         project_data["id_"] = str(project_data["_id"])
         del project_data["_id"]
 
@@ -168,15 +168,20 @@ class DataManager:
     def fetchRecordData(self, record_id):
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
-        for document in cursor:
-            # _log.info(f"found document: {document}")
-            document["_id"] = str(document["_id"])
-            document["img_url"] = generate_download_signed_url_v4(
-                document["project_id"], document["filename"]
-            )
-            return document
-        _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
-        return {}
+        document = cursor.next()
+        document["_id"] = str(document["_id"])
+        document["img_url"] = generate_download_signed_url_v4(
+            document["project_id"], document["filename"]
+        )
+
+        ## get project name
+        projectId = document.get("project_id", "")
+        _id = ObjectId(projectId)
+        cursor = self.db.projects.find({"_id": _id})
+        project = cursor.next()
+        project_name = project.get("name", "")
+        document["project_name"] = project_name
+        return document
 
     def createRecord(self, record):
         ## add timestamp to project
@@ -196,12 +201,17 @@ class DataManager:
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
 
-    def updateRecord(self, record_id, new_data):
+    def updateRecord(self, record_id, new_data, update_type=None):
         # _log.info(f"updating {record_id} to be {new_data}")
+        if update_type is None:
+            return "failure"
         _id = ObjectId(record_id)
-        myquery = {"_id": _id}
-        newvalues = {"$set": {"attributes": new_data["attributes"]}}
-        cursor = self.db.records.update_one(myquery, newvalues)
+        search_query = {"_id": _id}
+        if update_type == "record":
+            update_query = {"$set": new_data}
+        else:
+            update_query = {"$set": {update_type: new_data.get(update_type, None)}}
+        self.db.records.update_one(search_query, update_query)
         return "success"
 
     def deleteProject(self, project_id):
@@ -222,7 +232,7 @@ class DataManager:
         _id = ObjectId(project_id)
         try:
             cursor = self.db.projects.find({"_id": _id})
-            document = cursor[0]
+            document = cursor.next()
             return document["processorId"]
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
@@ -232,28 +242,31 @@ class DataManager:
         # _log.info(f"downloading records for {project_id}")
         _id = ObjectId(project_id)
         project_cursor = self.db.projects.find({"_id": _id})
-        for document in project_cursor:
-            keys = document.get("attributes", [])
-            project_name = document["name"]
+        attributes = ["file"]
+        document = project_cursor.next()
+        for each in document.get("attributes", {}):
+            attributes.append(each["name"])
+        project_name = document.get("name", "")
         today = time.time()
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
         for document in cursor:
             record_attribute = {}
-            for attribute in keys:
+            for attribute in attributes:
                 if attribute in document.get("attributes", []):
                     record_attribute[attribute] = document["attributes"][attribute][
                         "value"
                     ]
                 else:
                     record_attribute[attribute] = "N/A"
+            record_attribute["file"] = document.get("filename", "")
             record_attributes.append(record_attribute)
 
         # compute the output file directory and name
         output_dir = self.app_settings.csv_dir
         output_file = os.path.join(output_dir, f"{project_id}_{today}.csv")
         with open(output_file, "w", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=keys)
+            writer = csv.DictWriter(csvfile, fieldnames=attributes)
             writer.writeheader()
             writer.writerows(record_attributes)
 
@@ -271,7 +284,7 @@ class DataManager:
         email = user_info.get("email", "")
         cursor = self.db.users.find({"email": email})
         try:
-            document = cursor[0]
+            document = cursor.next()
             if document.get("role", Roles.pending) == role:
                 return True
             else:

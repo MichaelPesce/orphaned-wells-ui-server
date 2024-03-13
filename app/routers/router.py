@@ -240,8 +240,11 @@ async def upload_document(
     ## add record to DB without attributes
     new_record = {
         "project_id": project_id,
+        "name": filename,
         "filename": f"{filename}{file_ext}",
         "contributor": user_info,
+        "status": "processing",
+        "review_status": "unreviewed",
     }
     new_record_id = data_manager.createRecord(new_record)
 
@@ -311,8 +314,10 @@ async def update_record(
     Returns:
         Success response
     """
-    data = await request.json()
-    data_manager.updateRecord(record_id, data)
+    req = await request.json()
+    data = req.get("data", None)
+    update_type = req.get("type", None)
+    data_manager.updateRecord(record_id, data, update_type)
 
     return {"response": "success"}
 
