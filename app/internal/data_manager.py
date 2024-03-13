@@ -173,13 +173,13 @@ class DataManager:
         document["img_url"] = generate_download_signed_url_v4(
             document["project_id"], document["filename"]
         )
-        
+
         ## get project name
-        projectId = document.get("project_id","")
+        projectId = document.get("project_id", "")
         _id = ObjectId(projectId)
         cursor = self.db.projects.find({"_id": _id})
         project = cursor.next()
-        project_name = project.get("name","")
+        project_name = project.get("name", "")
         document["project_name"] = project_name
         return document
 
