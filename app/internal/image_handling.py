@@ -106,22 +106,11 @@ def process_image(
         attribute = entity.type_
         confidence = entity.confidence
         raw_text = entity.mention_text
-        # if attribute == "CASING_LINER_AND_CEMENT":
-        #     _log.info(f"casing lining entity: {entity}")
         if normalized_value:
             value = normalized_value
         else:
             value = raw_text
         coordinates = get_coordinates(entity, attribute)
-        # try:
-        #     bounding_poly = entity.page_anchor.page_refs[0].bounding_poly
-        #     coordinates = []
-        #     for i in range(4):
-        #         coordinate = bounding_poly.normalized_vertices[i]
-        #         coordinates.append([coordinate.x, coordinate.y])
-        # except Exception as e:
-        #     coordinates = None
-        #     _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
         subattributes = {}
         for prop in entity.properties:
             sub_text_value = prop.text_anchor.content
@@ -134,6 +123,12 @@ def process_image(
                 sub_value = sub_normalized_value
             else:
                 sub_value = sub_raw_text
+            counter = 2
+            original_sub_attribute = sub_attribute
+            while sub_attribute in subattributes: ## if we make it inside this loop, then this subattribute appears multiple times
+                sub_attribute = f"{original_sub_attribute}_{counter}"
+                counter+=1
+
             subattributes[sub_attribute] = {
                 "confidence": sub_confidence,
                 "raw_text": sub_raw_text,
@@ -144,6 +139,13 @@ def process_image(
             }
         if len(subattributes) == 0:
             subattributes = None
+
+        counter = 2
+        original_attribute = attribute
+        while attribute in attributes: ## if we make it inside this loop, then this attribute appears multiple times
+            attribute = f"{original_attribute}_{counter}"
+            counter+=1
+
         attributes[attribute] = {
             "confidence": confidence,
             "raw_text": raw_text,
