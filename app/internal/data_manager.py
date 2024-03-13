@@ -168,15 +168,20 @@ class DataManager:
     def fetchRecordData(self, record_id):
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
-        for document in cursor:
-            # _log.info(f"found document: {document}")
-            document["_id"] = str(document["_id"])
-            document["img_url"] = generate_download_signed_url_v4(
-                document["project_id"], document["filename"]
-            )
-            return document
-        _log.info(f"RECORD WITH ID {record_id} NOT FOUND")
-        return {}
+        document = cursor.next()
+        document["_id"] = str(document["_id"])
+        document["img_url"] = generate_download_signed_url_v4(
+            document["project_id"], document["filename"]
+        )
+        
+        ## get project name
+        projectId = document.get("project_id","")
+        _id = ObjectId(projectId)
+        cursor = self.db.projects.find({"_id": _id})
+        project = cursor.next()
+        project_name = project.get("name","")
+        document["project_name"] = project_name
+        return document
 
     def createRecord(self, record):
         ## add timestamp to project
