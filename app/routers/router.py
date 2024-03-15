@@ -139,6 +139,25 @@ async def auth_refresh(request: Request):
         return user_tokens
 
 
+@router.post("/logout")
+async def logout(request: Request):
+    """Function for logging out and revoking tokens.
+
+    Args:
+        refresh_token: refresh token provided upon signin
+
+    Returns:
+        response code
+    """
+    refresh_token = await request.json()
+    response = requests.post(
+        "https://oauth2.googleapis.com/revoke",
+        params={"token": refresh_token},
+        headers={"content-type": "application/x-www-form-urlencoded"},
+    )
+    return {"logout_status": response.status_code}
+
+
 @router.get("/get_projects", response_model=list)
 async def get_projects(user_info: dict = Depends(authenticate)):
     """
