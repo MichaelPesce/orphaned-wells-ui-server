@@ -153,9 +153,9 @@ async def logout(request: Request):
     response = requests.post(
         "https://oauth2.googleapis.com/revoke",
         params={"token": refresh_token},
-        headers = {"content-type": "application/x-www-form-urlencoded"}
+        headers={"content-type": "application/x-www-form-urlencoded"},
     )
-    return { "logout_status" : response.status_code }
+    return {"logout_status": response.status_code}
 
 
 @router.get("/get_projects", response_model=list)
