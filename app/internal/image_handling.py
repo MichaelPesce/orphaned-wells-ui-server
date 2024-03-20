@@ -106,10 +106,7 @@ def process_image(
         attribute = entity.type_
         confidence = entity.confidence
         raw_text = entity.mention_text
-        if normalized_value:
-            value = normalized_value
-        else:
-            value = raw_text
+        value = raw_text
         coordinates = get_coordinates(entity, attribute)
         subattributes = {}
         for prop in entity.properties:
@@ -119,10 +116,7 @@ def process_image(
             sub_confidence = prop.confidence
             sub_raw_text = prop.mention_text
             sub_coordinates = get_coordinates(prop, sub_attribute)
-            if sub_normalized_value:
-                sub_value = sub_normalized_value
-            else:
-                sub_value = sub_raw_text
+            sub_value = sub_raw_text
             counter = 2
             original_sub_attribute = sub_attribute
             while (
