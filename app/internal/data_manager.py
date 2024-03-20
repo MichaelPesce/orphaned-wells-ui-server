@@ -160,8 +160,11 @@ class DataManager:
         records = []
         # _log.info(f"checking for records with project_id {project_id}")
         cursor = self.db.records.find({"project_id": project_id})
+        record_index = 1
         for document in cursor:
             document["_id"] = str(document["_id"])
+            document["recordIndex"] = record_index
+            record_index+=1
             records.append(document)
         return project_data, records
 
@@ -181,6 +184,12 @@ class DataManager:
         project = cursor.next()
         project_name = project.get("name", "")
         document["project_name"] = project_name
+
+        ## get record index
+        dateCreated = document.get("dateCreated",0)
+        # record_index = self.db.records.find({"dateCreated": {"$lte": dateCreated}}).count()
+        record_index = self.db.records.count_documents({"dateCreated": {"$lte": dateCreated}, "project_id": projectId})
+        document["recordIndex"] = record_index
         return document
 
     def createRecord(self, record):
