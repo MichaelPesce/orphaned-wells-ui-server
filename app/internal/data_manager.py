@@ -187,10 +187,21 @@ class DataManager:
 
         ## get record index
         dateCreated = document.get("dateCreated",0)
-        # record_index = self.db.records.find({"dateCreated": {"$lte": dateCreated}}).count()
         record_index = self.db.records.count_documents({"dateCreated": {"$lte": dateCreated}, "project_id": projectId})
         document["recordIndex"] = record_index
         return document
+    
+    def fetchNextRecord(self, dateCreated, projectId):
+        cursor = self.db.records.find({"dateCreated": {"$gt": dateCreated}, "project_id": projectId})
+        for document in cursor:
+            record_id = str(document.get("_id",""))
+            return self.fetchRecordData(record_id)
+        cursor = self.db.records.find({"project_id": projectId})
+        document = cursor.next()
+        record_id = str(document.get("_id",""))
+        return self.fetchRecordData(record_id)
+        
+
 
     def createRecord(self, record):
         ## add timestamp to project

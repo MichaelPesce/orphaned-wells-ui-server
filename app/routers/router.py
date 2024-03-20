@@ -202,6 +202,21 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
     return record
 
 
+@router.post("/get_next_record")
+async def get_next_record(request: Request, user_info: dict = Depends(authenticate)):
+    """Fetch document record data.
+
+    Args:
+        record_id: Record identifier
+
+    Returns:
+        Record data
+    """
+    data = await request.json()
+    record = data_manager.fetchNextRecord(data.get("dateCreated",""), data.get("project_id",""))
+    return record
+
+
 @router.post("/add_project")
 async def add_project(request: Request, user_info: dict = Depends(authenticate)):
     """Add new project.
