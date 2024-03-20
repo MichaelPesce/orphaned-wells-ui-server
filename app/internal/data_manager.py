@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Union, List
 from pydantic import BaseModel
 from bson import ObjectId
+from pymongo import ASCENDING, DESCENDING
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
@@ -159,7 +160,7 @@ class DataManager:
         ## get project's records
         records = []
         # _log.info(f"checking for records with project_id {project_id}")
-        cursor = self.db.records.find({"project_id": project_id})
+        cursor = self.db.records.find({"project_id": project_id}).sort("dateCreated", ASCENDING)
         record_index = 1
         for document in cursor:
             document["_id"] = str(document["_id"])
@@ -192,16 +193,24 @@ class DataManager:
         return document
     
     def fetchNextRecord(self, dateCreated, projectId):
-        cursor = self.db.records.find({"dateCreated": {"$gt": dateCreated}, "project_id": projectId})
+        cursor = self.db.records.find({"dateCreated": {"$gt": dateCreated}, "project_id": projectId}).sort("dateCreated", ASCENDING)
         for document in cursor:
             record_id = str(document.get("_id",""))
             return self.fetchRecordData(record_id)
-        cursor = self.db.records.find({"project_id": projectId})
+        cursor = self.db.records.find({"project_id": projectId}).sort("dateCreated", ASCENDING)
         document = cursor.next()
         record_id = str(document.get("_id",""))
         return self.fetchRecordData(record_id)
         
-
+    def fetchPreviousRecord(self, dateCreated, projectId):
+        cursor = self.db.records.find({"dateCreated": {"$lt": dateCreated}, "project_id": projectId}).sort("dateCreated", DESCENDING)
+        for document in cursor:
+            record_id = str(document.get("_id",""))
+            return self.fetchRecordData(record_id)
+        cursor = self.db.records.find({"project_id": projectId}).sort("dateCreated", DESCENDING)
+        document = cursor.next()
+        record_id = str(document.get("_id",""))
+        return self.fetchRecordData(record_id)
 
     def createRecord(self, record):
         ## add timestamp to project
