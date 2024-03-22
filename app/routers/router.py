@@ -213,12 +213,16 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
         Record data
     """
     data = await request.json()
-    record = data_manager.fetchNextRecord(data.get("dateCreated",""), data.get("project_id",""))
+    record = data_manager.fetchNextRecord(
+        data.get("dateCreated", ""), data.get("project_id", "")
+    )
     return record
 
 
 @router.post("/get_previous_record")
-async def get_previous_record(request: Request, user_info: dict = Depends(authenticate)):
+async def get_previous_record(
+    request: Request, user_info: dict = Depends(authenticate)
+):
     """Fetch document record data.
 
     Args:
@@ -228,7 +232,9 @@ async def get_previous_record(request: Request, user_info: dict = Depends(authen
         Record data
     """
     data = await request.json()
-    record = data_manager.fetchPreviousRecord(data.get("dateCreated",""), data.get("project_id",""))
+    record = data_manager.fetchPreviousRecord(
+        data.get("dateCreated", ""), data.get("project_id", "")
+    )
     return record
 
 

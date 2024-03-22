@@ -160,12 +160,14 @@ class DataManager:
         ## get project's records
         records = []
         # _log.info(f"checking for records with project_id {project_id}")
-        cursor = self.db.records.find({"project_id": project_id}).sort("dateCreated", ASCENDING)
+        cursor = self.db.records.find({"project_id": project_id}).sort(
+            "dateCreated", ASCENDING
+        )
         record_index = 1
         for document in cursor:
             document["_id"] = str(document["_id"])
             document["recordIndex"] = record_index
-            record_index+=1
+            record_index += 1
             records.append(document)
         return project_data, records
 
@@ -187,29 +189,39 @@ class DataManager:
         document["project_name"] = project_name
 
         ## get record index
-        dateCreated = document.get("dateCreated",0)
-        record_index = self.db.records.count_documents({"dateCreated": {"$lte": dateCreated}, "project_id": projectId})
+        dateCreated = document.get("dateCreated", 0)
+        record_index = self.db.records.count_documents(
+            {"dateCreated": {"$lte": dateCreated}, "project_id": projectId}
+        )
         document["recordIndex"] = record_index
         return document
-    
+
     def fetchNextRecord(self, dateCreated, projectId):
-        cursor = self.db.records.find({"dateCreated": {"$gt": dateCreated}, "project_id": projectId}).sort("dateCreated", ASCENDING)
+        cursor = self.db.records.find(
+            {"dateCreated": {"$gt": dateCreated}, "project_id": projectId}
+        ).sort("dateCreated", ASCENDING)
         for document in cursor:
-            record_id = str(document.get("_id",""))
+            record_id = str(document.get("_id", ""))
             return self.fetchRecordData(record_id)
-        cursor = self.db.records.find({"project_id": projectId}).sort("dateCreated", ASCENDING)
+        cursor = self.db.records.find({"project_id": projectId}).sort(
+            "dateCreated", ASCENDING
+        )
         document = cursor.next()
-        record_id = str(document.get("_id",""))
+        record_id = str(document.get("_id", ""))
         return self.fetchRecordData(record_id)
-        
+
     def fetchPreviousRecord(self, dateCreated, projectId):
-        cursor = self.db.records.find({"dateCreated": {"$lt": dateCreated}, "project_id": projectId}).sort("dateCreated", DESCENDING)
+        cursor = self.db.records.find(
+            {"dateCreated": {"$lt": dateCreated}, "project_id": projectId}
+        ).sort("dateCreated", DESCENDING)
         for document in cursor:
-            record_id = str(document.get("_id",""))
+            record_id = str(document.get("_id", ""))
             return self.fetchRecordData(record_id)
-        cursor = self.db.records.find({"project_id": projectId}).sort("dateCreated", DESCENDING)
+        cursor = self.db.records.find({"project_id": projectId}).sort(
+            "dateCreated", DESCENDING
+        )
         document = cursor.next()
-        record_id = str(document.get("_id",""))
+        record_id = str(document.get("_id", ""))
         return self.fetchRecordData(record_id)
 
     def createRecord(self, record):
