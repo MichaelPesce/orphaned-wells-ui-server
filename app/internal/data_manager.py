@@ -288,6 +288,7 @@ class DataManager:
         output_file = os.path.join(output_dir, f"{project_id}_{today}.{exportType}")
         project_cursor = self.db.projects.find({"_id": _id})
         attributes = ["file"]
+        subattributes = []
         document = project_cursor.next()
         for each in document.get("attributes", {}):
             if each["name"] in selectedColumns:
@@ -300,9 +301,17 @@ class DataManager:
                 record_attribute = {}
                 for attribute in attributes:
                     if attribute in document.get("attributes", []):
-                        record_attribute[attribute] = document["attributes"][attribute][
-                            "value"
-                        ]
+                        document_attribute = document["attributes"][attribute]
+                        record_attribute[attribute] = document_attribute["value"]
+
+                        ## add subattributes
+                        if document_attribute.get("subattributes", None):
+                            for subattribute in document_attribute["subattributes"]:
+                                document_subattribute = document_attribute["subattributes"][subattribute]
+                                record_attribute[subattribute] = document_subattribute["value"]
+                                if subattribute not in subattributes:
+                                    subattributes.append(subattribute)
+                            
                     else:
                         record_attribute[attribute] = "N/A"
                 record_attribute["file"] = document.get("filename", "")
@@ -310,7 +319,7 @@ class DataManager:
 
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=attributes)
+                writer = csv.DictWriter(csvfile, fieldnames=attributes+subattributes)
                 writer.writeheader()
                 writer.writerows(record_attributes)
         else:
@@ -318,8 +327,8 @@ class DataManager:
                 record_attribute = {}
                 for attribute in attributes:
                     if attribute in document.get("attributes", []):
-                        # record_attributes.append(document["attributes"][attribute])
-                        record_attribute[attribute] = document["attributes"][attribute]
+                        document_attribute = document["attributes"][attribute]
+                        record_attribute[attribute] = document_attribute
                     else:
                         record_attribute[attribute] = "N/A"
                 record_attribute["file"] = document.get("filename", "")
