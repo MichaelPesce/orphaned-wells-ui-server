@@ -131,6 +131,7 @@ class DataManager:
         ## add user and timestamp to project
         project_info["creator"] = user_info
         project_info["dateCreated"] = time.time()
+        project_info["settings"] = {}
         ## add project to db collection
         # _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
