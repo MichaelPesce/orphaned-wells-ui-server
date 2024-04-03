@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 import os
 import csv
+import json
 from enum import Enum
 
 from typing import Union, List
@@ -279,37 +280,51 @@ class DataManager:
             _log.error(f"unable to find processor id: {e}")
             return None
 
-    def downloadRecords(self, project_id):
+    def downloadRecords(self, project_id, exportType, selectedColumns):
         # _log.info(f"downloading records for {project_id}")
         _id = ObjectId(project_id)
+        today = time.time()
+        output_dir = self.app_settings.export_dir
+        output_file = os.path.join(output_dir, f"{project_id}_{today}.{exportType}")
         project_cursor = self.db.projects.find({"_id": _id})
         attributes = ["file"]
         document = project_cursor.next()
         for each in document.get("attributes", {}):
-            attributes.append(each["name"])
+            if each["name"] in selectedColumns:
+                attributes.append(each["name"])
         project_name = document.get("name", "")
-        today = time.time()
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
-        for document in cursor:
-            record_attribute = {}
-            for attribute in attributes:
-                if attribute in document.get("attributes", []):
-                    record_attribute[attribute] = document["attributes"][attribute][
-                        "value"
-                    ]
-                else:
-                    record_attribute[attribute] = "N/A"
-            record_attribute["file"] = document.get("filename", "")
-            record_attributes.append(record_attribute)
+        if exportType == "csv":
+            for document in cursor:
+                record_attribute = {}
+                for attribute in attributes:
+                    if attribute in document.get("attributes", []):
+                        record_attribute[attribute] = document["attributes"][attribute][
+                            "value"
+                        ]
+                    else:
+                        record_attribute[attribute] = "N/A"
+                record_attribute["file"] = document.get("filename", "")
+                record_attributes.append(record_attribute)
 
-        # compute the output file directory and name
-        output_dir = self.app_settings.csv_dir
-        output_file = os.path.join(output_dir, f"{project_id}_{today}.csv")
-        with open(output_file, "w", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=attributes)
-            writer.writeheader()
-            writer.writerows(record_attributes)
+            # compute the output file directory and name
+            with open(output_file, "w", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=attributes)
+                writer.writeheader()
+                writer.writerows(record_attributes)
+        else:
+            for document in cursor:
+                record_attribute = {}
+                for attribute in attributes:
+                    if attribute in document.get("attributes", []):
+                        record_attributes.append(document["attributes"][attribute])
+                    # else:
+                    #     record_attribute[attribute] = "N/A"
+                # record_attribute["file"] = document.get("filename", "")
+                # record_attributes.append(record_attribute)
+            with open(output_file, "w", newline="") as jsonfile:
+                json.dump(record_attributes, jsonfile)
 
         return output_file
 
