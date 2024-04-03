@@ -318,11 +318,12 @@ class DataManager:
                 record_attribute = {}
                 for attribute in attributes:
                     if attribute in document.get("attributes", []):
-                        record_attributes.append(document["attributes"][attribute])
-                    # else:
-                    #     record_attribute[attribute] = "N/A"
-                # record_attribute["file"] = document.get("filename", "")
-                # record_attributes.append(record_attribute)
+                        # record_attributes.append(document["attributes"][attribute])
+                        record_attribute[attribute] = document["attributes"][attribute]
+                    else:
+                        record_attribute[attribute] = "N/A"
+                record_attribute["file"] = document.get("filename", "")
+                record_attributes.append(record_attribute)
             with open(output_file, "w", newline="") as jsonfile:
                 json.dump(record_attributes, jsonfile)
 
