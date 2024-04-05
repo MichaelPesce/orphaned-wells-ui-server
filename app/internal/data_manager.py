@@ -240,7 +240,7 @@ class DataManager:
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
         myquery = {"_id": _id}
         newvalues = {"$set": new_data}
-        # cursor = self.db.projects.update_one(myquery, newvalues)
+        self.db.projects.update_one(myquery, newvalues)
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
 
@@ -290,11 +290,11 @@ class DataManager:
         project_cursor = self.db.projects.find({"_id": _id})
         attributes = ["file"]
         subattributes = []
-        document = project_cursor.next()
-        for each in document.get("attributes", {}):
+        project_document = project_cursor.next()
+        for each in project_document.get("attributes", {}):
             if each["name"] in selectedColumns:
                 attributes.append(each["name"])
-        project_name = document.get("name", "")
+        project_name = project_document.get("name", "")
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
         if exportType == "csv":
@@ -336,6 +336,14 @@ class DataManager:
                 record_attributes.append(record_attribute)
             with open(output_file, "w", newline="") as jsonfile:
                 json.dump(record_attributes, jsonfile)
+
+        ## update export attributes in project document
+        settings = project_document.get("settings", {})
+        settings["exportColumns"] = selectedColumns
+        update = {
+            "settings": settings
+        }
+        self.updateProject(project_id, update)
 
         return output_file
 
