@@ -308,11 +308,15 @@ class DataManager:
                         ## add subattributes
                         if document_attribute.get("subattributes", None):
                             for subattribute in document_attribute["subattributes"]:
-                                document_subattribute = document_attribute["subattributes"][subattribute]
-                                record_attribute[subattribute] = document_subattribute["value"]
+                                document_subattribute = document_attribute[
+                                    "subattributes"
+                                ][subattribute]
+                                record_attribute[subattribute] = document_subattribute[
+                                    "value"
+                                ]
                                 if subattribute not in subattributes:
                                     subattributes.append(subattribute)
-                            
+
                     else:
                         record_attribute[attribute] = "N/A"
                 record_attribute["file"] = document.get("filename", "")
@@ -320,7 +324,7 @@ class DataManager:
 
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=attributes+subattributes)
+                writer = csv.DictWriter(csvfile, fieldnames=attributes + subattributes)
                 writer.writeheader()
                 writer.writerows(record_attributes)
         else:
@@ -340,9 +344,7 @@ class DataManager:
         ## update export attributes in project document
         settings = project_document.get("settings", {})
         settings["exportColumns"] = selectedColumns
-        update = {
-            "settings": settings
-        }
+        update = {"settings": settings}
         self.updateProject(project_id, update)
 
         return output_file
