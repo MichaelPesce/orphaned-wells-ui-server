@@ -276,7 +276,9 @@ class DataManager:
         try:
             cursor = self.db.projects.find({"_id": _id})
             document = cursor.next()
-            return document["processorId"]
+            processor_id = document.get("processorId", None)
+            processor_attributes = document.get("attributes", None)
+            return processor_id, processor_attributes
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None
