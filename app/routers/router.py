@@ -407,9 +407,10 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     return {"response": "success"}
 
 
-@router.get("/download_records/{project_id}", response_class=FileResponse)
+@router.post("/download_records/{project_id}", response_class=FileResponse)
 async def download_records(
     project_id: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
 ):
@@ -421,12 +422,17 @@ async def download_records(
     Returns:
         CSV file containing all records associated with that project
     """
-    csv_output = data_manager.downloadRecords(project_id)
+    req = await request.json()
+    # _log.info(req)
+    exportType = req.get("exportType", "csv")
+    selectedColumns = req.get("columns", None)
+
+    export_file = data_manager.downloadRecords(project_id, exportType, selectedColumns)
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
-        data_manager.deleteFiles, filepaths=[csv_output], sleep_time=30
+        data_manager.deleteFiles, filepaths=[export_file], sleep_time=30
     )
-    return csv_output
+    return export_file
 
 
 ## admin functions

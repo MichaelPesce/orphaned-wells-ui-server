@@ -3,6 +3,7 @@ from pathlib import Path
 import time
 import os
 import csv
+import json
 from enum import Enum
 
 from typing import Union, List
@@ -130,6 +131,7 @@ class DataManager:
         ## add user and timestamp to project
         project_info["creator"] = user_info
         project_info["dateCreated"] = time.time()
+        project_info["settings"] = {}
         ## add project to db collection
         # _log.info(f"creating project with data: {project_info}")
         db_response = self.db.projects.insert_one(project_info)
@@ -238,7 +240,7 @@ class DataManager:
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
         myquery = {"_id": _id}
         newvalues = {"$set": new_data}
-        # cursor = self.db.projects.update_one(myquery, newvalues)
+        self.db.projects.update_one(myquery, newvalues)
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
 
@@ -279,37 +281,71 @@ class DataManager:
             _log.error(f"unable to find processor id: {e}")
             return None
 
-    def downloadRecords(self, project_id):
+    def downloadRecords(self, project_id, exportType, selectedColumns):
         # _log.info(f"downloading records for {project_id}")
         _id = ObjectId(project_id)
+        today = time.time()
+        output_dir = self.app_settings.export_dir
+        output_file = os.path.join(output_dir, f"{project_id}_{today}.{exportType}")
         project_cursor = self.db.projects.find({"_id": _id})
         attributes = ["file"]
-        document = project_cursor.next()
-        for each in document.get("attributes", {}):
-            attributes.append(each["name"])
-        project_name = document.get("name", "")
-        today = time.time()
+        subattributes = []
+        project_document = project_cursor.next()
+        for each in project_document.get("attributes", {}):
+            if each["name"] in selectedColumns:
+                attributes.append(each["name"])
+        project_name = project_document.get("name", "")
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
-        for document in cursor:
-            record_attribute = {}
-            for attribute in attributes:
-                if attribute in document.get("attributes", []):
-                    record_attribute[attribute] = document["attributes"][attribute][
-                        "value"
-                    ]
-                else:
-                    record_attribute[attribute] = "N/A"
-            record_attribute["file"] = document.get("filename", "")
-            record_attributes.append(record_attribute)
+        if exportType == "csv":
+            for document in cursor:
+                record_attribute = {}
+                for attribute in attributes:
+                    if attribute in document.get("attributes", []):
+                        document_attribute = document["attributes"][attribute]
+                        record_attribute[attribute] = document_attribute["value"]
 
-        # compute the output file directory and name
-        output_dir = self.app_settings.csv_dir
-        output_file = os.path.join(output_dir, f"{project_id}_{today}.csv")
-        with open(output_file, "w", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=attributes)
-            writer.writeheader()
-            writer.writerows(record_attributes)
+                        ## add subattributes
+                        if document_attribute.get("subattributes", None):
+                            for subattribute in document_attribute["subattributes"]:
+                                document_subattribute = document_attribute[
+                                    "subattributes"
+                                ][subattribute]
+                                record_attribute[subattribute] = document_subattribute[
+                                    "value"
+                                ]
+                                if subattribute not in subattributes:
+                                    subattributes.append(subattribute)
+
+                    else:
+                        record_attribute[attribute] = "N/A"
+                record_attribute["file"] = document.get("filename", "")
+                record_attributes.append(record_attribute)
+
+            # compute the output file directory and name
+            with open(output_file, "w", newline="") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=attributes + subattributes)
+                writer.writeheader()
+                writer.writerows(record_attributes)
+        else:
+            for document in cursor:
+                record_attribute = {}
+                for attribute in attributes:
+                    if attribute in document.get("attributes", []):
+                        document_attribute = document["attributes"][attribute]
+                        record_attribute[attribute] = document_attribute
+                    else:
+                        record_attribute[attribute] = "N/A"
+                record_attribute["file"] = document.get("filename", "")
+                record_attributes.append(record_attribute)
+            with open(output_file, "w", newline="") as jsonfile:
+                json.dump(record_attributes, jsonfile)
+
+        ## update export attributes in project document
+        settings = project_document.get("settings", {})
+        settings["exportColumns"] = selectedColumns
+        update = {"settings": settings}
+        self.updateProject(project_id, update)
 
         return output_file
 
