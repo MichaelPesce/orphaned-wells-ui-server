@@ -304,7 +304,7 @@ async def upload_document(
     new_record_id = data_manager.createRecord(new_record)
 
     ## fetch processor id
-    processor_id = data_manager.getProcessor(project_id)
+    processor_id, processor_attributes = data_manager.getProcessor(project_id)
 
     ## upload to cloud storage (this will overwrite any existing files of the same name):
     background_tasks.add_task(
@@ -323,6 +323,7 @@ async def upload_document(
         project_id=project_id,
         record_id=new_record_id,
         processor_id=processor_id,
+        processor_attributes=processor_attributes,
         data_manager=data_manager,
     )
 

@@ -59,7 +59,14 @@ def get_coordinates(entity, attribute):
 
 ## Document AI functions
 def process_image(
-    file_path, file_name, mime_type, project_id, record_id, processor_id, data_manager
+    file_path,
+    file_name,
+    mime_type,
+    project_id,
+    record_id,
+    processor_id,
+    processor_attributes,
+    data_manager,
 ):
     with open(file_path, "rb") as image:
         image_content = image.read()
@@ -160,6 +167,21 @@ def process_image(
             "subattributes": subattributes,
         }
 
+    ## add attributes that weren't found:
+    found_attributes = attributes.keys()
+    for processor_attribute in processor_attributes:
+        attr = processor_attribute["name"]
+        if attr not in found_attributes:
+            attributes[attr] = {
+                "confidence": None,
+                "raw_text": "",
+                "text_value": "",
+                "value": "",
+                "normalized_vertices": None,
+                "normalized_value": None,
+                "subattributes": None,
+            }
+
     ## gotta create the record in the db
     record = {
         "project_id": project_id,
@@ -170,7 +192,6 @@ def process_image(
     # new_record_id = data_manager.createRecord(record)
     data_manager.updateRecord(record_id, record, update_type="record")
     _log.info(f"updated record in db: {record_id}")
-    ## TODO: Remove image from local file system. Have to make sure upload to Cloud Storage is complete as well
 
     return record_id
 
