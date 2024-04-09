@@ -59,7 +59,14 @@ def get_coordinates(entity, attribute):
 
 ## Document AI functions
 def process_image(
-    file_path, file_name, mime_type, project_id, record_id, processor_id, processor_attributes, data_manager
+    file_path,
+    file_name,
+    mime_type,
+    project_id,
+    record_id,
+    processor_id,
+    processor_attributes,
+    data_manager,
 ):
     with open(file_path, "rb") as image:
         image_content = image.read()
@@ -174,7 +181,6 @@ def process_image(
                 "normalized_value": None,
                 "subattributes": None,
             }
-
 
     ## gotta create the record in the db
     record = {
