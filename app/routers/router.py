@@ -458,8 +458,8 @@ async def add_contributors(project_id: str, request: Request, user_info: dict = 
         user status
     """
     req = await request.json()
-    emails = req.get("emails","")
-    return data_manager.addUsersToProject(emails, project_id)
+    users = req.get("users","")
+    return data_manager.addUsersToProject(users, project_id)
 
 
 ## admin functions

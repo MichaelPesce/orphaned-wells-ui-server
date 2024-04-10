@@ -243,6 +243,15 @@ class DataManager:
         self.db.projects.update_one(myquery, newvalues)
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
+    
+    def updateUser(self, email, new_data):
+        _log.info(f"updating {email} to be {new_data}")
+        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
+        myquery = {"email": email}
+        newvalues = {"$set": new_data}
+        self.db.users.update_one(myquery, newvalues)
+        # _log.info(f"successfully updated project? cursor is : {cursor}")
+        return "success"
 
     def updateRecord(self, record_id, new_data, update_type=None):
         # _log.info(f"updating {record_id} to be {new_data}")
@@ -395,15 +404,18 @@ class DataManager:
         delete_response = self.db.users.delete_one(query)
         return user
     
-    def addUsersToProject(self, emails, project_id):
+    def addUsersToProject(self, users, project_id):
         _id = ObjectId(project_id)
         try:
-            for email in emails:
+            for user in users:
+                email = user.get("email", "")
                 query = {"email": email}
                 cursor = self.db.users.find(query)
                 user_object = cursor.next()
                 user_projects = user_object.get("projects", [])
                 user_projects.append(_id)
+                update_query = {"projects": user_projects}
+                self.updateUser(email, update_query)
             return {"result": "success"}
         except Exception as e:
             _log.error(f"unable to add users: {e}")
