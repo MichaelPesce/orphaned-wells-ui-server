@@ -244,7 +244,7 @@ class DataManager:
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
     
-    def updateUser(self, email, new_data):
+    def updateUserProjects(self, email, new_data):
         _log.info(f"updating {email} to be {new_data}")
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
         myquery = {"email": email}
@@ -415,7 +415,7 @@ class DataManager:
                 user_projects = user_object.get("projects", [])
                 user_projects.append(_id)
                 update_query = {"projects": user_projects}
-                self.updateUser(email, update_query)
+                self.updateUserProjects(email, update_query)
             return {"result": "success"}
         except Exception as e:
             _log.error(f"unable to add users: {e}")
