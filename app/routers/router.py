@@ -437,7 +437,9 @@ async def download_records(
 
 
 @router.post("/get_users/{role}")
-async def get_users(role: str, request: Request, user_info: dict = Depends(authenticate)):
+async def get_users(
+    role: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
 
     Returns:
@@ -450,7 +452,9 @@ async def get_users(role: str, request: Request, user_info: dict = Depends(authe
 
 
 @router.post("/add_contributors/{project_id}")
-async def add_contributors(project_id: str, request: Request, user_info: dict = Depends(authenticate)):
+async def add_contributors(
+    project_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Add user to application database with role 'pending'
 
     Args:
@@ -460,7 +464,7 @@ async def add_contributors(project_id: str, request: Request, user_info: dict = 
         user status
     """
     req = await request.json()
-    users = req.get("users","")
+    users = req.get("users", "")
     return data_manager.addUsersToProject(users, project_id)
 
 

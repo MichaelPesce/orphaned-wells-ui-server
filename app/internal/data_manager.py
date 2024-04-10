@@ -243,7 +243,7 @@ class DataManager:
         self.db.projects.update_one(myquery, newvalues)
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
-    
+
     def updateUserProjects(self, email, new_data):
         _log.info(f"updating {email} to be {new_data}")
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
@@ -390,7 +390,7 @@ class DataManager:
         if project_id_exclude is not None:
             project_id = ObjectId(project_id_exclude)
             for document in cursor:
-                if project_id not in document.get("projects",[]):
+                if project_id not in document.get("projects", []):
                     users.append(
                         {
                             "email": document.get("email", ""),
@@ -417,7 +417,7 @@ class DataManager:
         query = {"email": user}
         delete_response = self.db.users.delete_one(query)
         return user
-    
+
     def addUsersToProject(self, users, project_id):
         _id = ObjectId(project_id)
         try:
