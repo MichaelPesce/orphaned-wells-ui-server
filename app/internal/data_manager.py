@@ -394,6 +394,20 @@ class DataManager:
         query = {"email": user}
         delete_response = self.db.users.delete_one(query)
         return user
+    
+    def addUsersToProject(self, emails, project_id):
+        _id = ObjectId(project_id)
+        try:
+            for email in emails:
+                query = {"email": email}
+                cursor = self.db.users.find(query)
+                user_object = cursor.next()
+                user_projects = user_object.get("projects", [])
+                user_projects.append(_id)
+            return {"result": "success"}
+        except Exception as e:
+            _log.error(f"unable to add users: {e}")
+            return {"result": f"{e}"}
 
 
 data_manager = DataManager()

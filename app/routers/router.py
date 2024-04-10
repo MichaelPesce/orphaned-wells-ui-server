@@ -436,23 +436,33 @@ async def download_records(
     return export_file
 
 
-## admin functions
-@router.get("/get_users")
-async def get_users(user_info: dict = Depends(authenticate)):
+@router.get("/get_users/{role}")
+async def get_users(role: str, user_info: dict = Depends(authenticate)):
     """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
 
     Returns:
         List of users, role types
     """
-    if data_manager.hasRole(user_info, Roles.admin):
-        users = data_manager.getUsers(Roles.base_user)
-        return users
-    else:
-        raise HTTPException(
-            status_code=403, detail=f"User is not authorized to access this page"
-        )
+    users = data_manager.getUsers(Roles[role])
+    return users
 
 
+@router.post("/add_contributor/{project_id}")
+async def add_user(project_id: str, request: Request, user_info: dict = Depends(authenticate)):
+    """Add user to application database with role 'pending'
+
+    Args:
+        email: User email address
+
+    Returns:
+        user status
+    """
+    req = await request.json()
+    emails = req.get("emails","")
+    return data_manager.addUsersToProject(emails, project_id)
+
+
+## admin functions
 @router.post("/approve_user/{email}")
 async def approve_user(email: str, user_info: dict = Depends(authenticate)):
     """Approve user for use of application by changing role from 'pending' to 'user'
