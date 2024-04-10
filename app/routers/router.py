@@ -436,14 +436,16 @@ async def download_records(
     return export_file
 
 
-@router.get("/get_users/{role}")
-async def get_users(role: str, user_info: dict = Depends(authenticate)):
+@router.post("/get_users/{role}")
+async def get_users(role: str, request: Request, user_info: dict = Depends(authenticate)):
     """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
 
     Returns:
         List of users, role types
     """
-    users = data_manager.getUsers(Roles[role])
+    req = await request.json()
+    project_id = req.get("project_id", None)
+    users = data_manager.getUsers(Roles[role], project_id_exclude=project_id)
     return users
 
 

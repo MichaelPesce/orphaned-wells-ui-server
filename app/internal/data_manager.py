@@ -380,23 +380,37 @@ class DataManager:
         except:
             return False
 
-    def getUsers(self, role, includeLowerRoles=True):
+    def getUsers(self, role, project_id_exclude=None, includeLowerRoles=True):
         if includeLowerRoles:  # get all users with provided role or lower
             query = {"role": {"$lte": role}}
         else:  # get only users with provided role
             query = {"role": role}
         cursor = self.db.users.find(query)
         users = []
-        for document in cursor:
-            users.append(
-                {
-                    "email": document.get("email", ""),
-                    "name": document.get("name", ""),
-                    "hd": document.get("hd", ""),
-                    "picture": document.get("picture", ""),
-                    "role": document.get("role", -1),
-                }
-            )
+        if project_id_exclude is not None:
+            project_id = ObjectId(project_id_exclude)
+            for document in cursor:
+                if project_id not in document.get("projects",[]):
+                    users.append(
+                        {
+                            "email": document.get("email", ""),
+                            "name": document.get("name", ""),
+                            "hd": document.get("hd", ""),
+                            "picture": document.get("picture", ""),
+                            "role": document.get("role", -1),
+                        }
+                    )
+        else:
+            for document in cursor:
+                users.append(
+                    {
+                        "email": document.get("email", ""),
+                        "name": document.get("name", ""),
+                        "hd": document.get("hd", ""),
+                        "picture": document.get("picture", ""),
+                        "role": document.get("role", -1),
+                    }
+                )
         return users
 
     def deleteUser(self, user):
