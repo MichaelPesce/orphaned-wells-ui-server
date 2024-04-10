@@ -447,8 +447,8 @@ async def get_users(role: str, user_info: dict = Depends(authenticate)):
     return users
 
 
-@router.post("/add_contributor/{project_id}")
-async def add_user(project_id: str, request: Request, user_info: dict = Depends(authenticate)):
+@router.post("/add_contributors/{project_id}")
+async def add_contributors(project_id: str, request: Request, user_info: dict = Depends(authenticate)):
     """Add user to application database with role 'pending'
 
     Args:
