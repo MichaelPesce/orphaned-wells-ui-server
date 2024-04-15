@@ -188,6 +188,20 @@ async def get_project_data(project_id: str, user_info: dict = Depends(authentica
     return {"project_data": project_data, "records": records}
 
 
+@router.get("/get_team_records")
+async def get_team_records(user_info: dict = Depends(authenticate)):
+    """Fetch project data.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        Project data, all records associated with that project
+    """
+    records = data_manager.getTeamRecords(user_info)
+    return {"records": records}
+
+
 @router.get("/get_record/{record_id}")
 async def get_record_data(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch document record data.

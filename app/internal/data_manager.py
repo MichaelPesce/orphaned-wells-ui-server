@@ -186,8 +186,6 @@ class DataManager:
         return str(new_project_id)
 
     def fetchProjectData(self, project_id, user):
-        ## TODO: user default team's project list
-
         ## get user's projects, check if user has access to this project
         user_projects = self.getUserProjectList(user)
         _id = ObjectId(project_id)
@@ -213,6 +211,33 @@ class DataManager:
             record_index += 1
             records.append(document)
         return project_data, records
+    
+    def getTeamRecords(self, user_info):
+        user = user_info.get("email", "")
+        ## get user's projects, check if user has access to this project
+        user_document = self.getDocument("users", {"email": user})
+        default_team = user_document.get("default_team", None)
+        team_document = self.getDocument("teams", {"name": default_team})
+        projects_list = team_document.get("projects", [])
+        records = []
+        for _id in projects_list:
+            project_id = str(_id)
+            ## get project data
+            cursor = self.db.projects.find({"_id": _id})
+            project_data = cursor.next()
+            project_data["id_"] = str(project_data["_id"])
+            del project_data["_id"]
+            # _log.info(f"checking for records with project_id {project_id}")
+            cursor = self.db.records.find({"project_id": project_id}).sort(
+                "dateCreated", ASCENDING
+            )
+            record_index = 1
+            for document in cursor:
+                document["_id"] = str(document["_id"])
+                document["recordIndex"] = record_index
+                record_index += 1
+                records.append(document)
+        return records
 
     def fetchRecordData(self, record_id, user_info):
         ## TODO: check if user is a part of the team that owns this project
