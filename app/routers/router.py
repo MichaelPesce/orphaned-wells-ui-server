@@ -453,7 +453,7 @@ async def get_users(
     ## TODO: add team id as a request parameter
     req = await request.json()
     project_id = req.get("project_id", None)
-    users = data_manager.getUsers(Roles[role], project_id_exclude=project_id)
+    users = data_manager.getUsers(Roles[role], user_info, project_id_exclude=project_id)
     return users
 
 
@@ -506,10 +506,12 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
     """
     if data_manager.hasRole(user_info, Roles.admin):
         ## TODO check if provided email is a valid email address
-
+        admin_document = data_manager.getDocument("users", {"email": user_info.get("email", "")})
+        team = admin_document.get("default_team", None)
         ## this function will check for and then add user if it is not found
-        role = data_manager.checkForUser({"email": email}, update=False)
+        role = data_manager.checkForUser({"email": email}, update=False, team=team)
         if role > 0:
+            ## TODO: in this case, just add user to team without creating new user
             ## 406 Not acceptable: user provided an email that is already associated with an account
             raise HTTPException(status_code=406, detail=f"User is already created.")
         else:

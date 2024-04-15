@@ -66,7 +66,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
 
-    def checkForUser(self, user_info, update=True, add=True):
+    def checkForUser(self, user_info, update=True, add=True, team="Testing"):
         cursor = self.db.users.find({"email": user_info["email"]})
         foundUser = False
         for document in cursor:
@@ -76,7 +76,7 @@ class DataManager:
                 self.updateUser(user_info)
         if not foundUser and add:
             role = Roles.pending
-            self.addUser(user_info, role)
+            self.addUser(user_info, role, team)
         return role
 
     def addUser(self, user_info, role=Roles.pending, default_team="Testing"):
@@ -92,6 +92,15 @@ class DataManager:
             "default_team": default_team
         }
         db_response = self.db.users.insert_one(user)
+
+        ## add user to team's users
+        team_query = {"name": default_team}
+        team_document = self.getDocument("teams", team_query)
+        team_users = team_document.get("users", [])
+        team_users.append(user_info.get("email", ""))
+        newvalues = {"$set": {"users": team_users}}
+        self.db.teams.update_one(team_query, newvalues)
+
         return db_response
 
     def updateUser(self, user_info):
@@ -417,8 +426,13 @@ class DataManager:
         except:
             return False
 
-    def getUsers(self, role, project_id_exclude=None, includeLowerRoles=True):
+    def getUsers(self, role, user_info, project_id_exclude=None, includeLowerRoles=True):
         ## TODO: accept team id as parameter and use that to determine which users to return
+        user = user_info.get("email", "")
+        user_document = self.getDocument("users", {"email": user})
+        team_id = user_document.get("default_team", None)
+        team_document = self.getDocument("teams", {"name": team_id})
+        team_users = team_document.get("users", [])
         if includeLowerRoles:  # get all users with provided role or lower
             query = {"role": {"$lte": role}}
         else:  # get only users with provided role
@@ -429,6 +443,21 @@ class DataManager:
             project_id = ObjectId(project_id_exclude)
             for document in cursor:
                 if project_id not in document.get("projects", []):
+                    next_user = document.get("email", "")
+                    if next_user in team_users:
+                        users.append(
+                            {
+                                "email": document.get("email", ""),
+                                "name": document.get("name", ""),
+                                "hd": document.get("hd", ""),
+                                "picture": document.get("picture", ""),
+                                "role": document.get("role", -1),
+                            }
+                        )
+        else:
+            for document in cursor:
+                next_user = document.get("email", "")
+                if next_user in team_users:
                     users.append(
                         {
                             "email": document.get("email", ""),
@@ -438,17 +467,6 @@ class DataManager:
                             "role": document.get("role", -1),
                         }
                     )
-        else:
-            for document in cursor:
-                users.append(
-                    {
-                        "email": document.get("email", ""),
-                        "name": document.get("name", ""),
-                        "hd": document.get("hd", ""),
-                        "picture": document.get("picture", ""),
-                        "role": document.get("role", -1),
-                    }
-                )
         return users
 
     def deleteUser(self, user):
