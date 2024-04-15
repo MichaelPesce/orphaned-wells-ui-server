@@ -211,7 +211,7 @@ class DataManager:
             record_index += 1
             records.append(document)
         return project_data, records
-    
+
     def getTeamRecords(self, user_info):
         user = user_info.get("email", "")
         ## get user's projects, check if user has access to this project
