@@ -89,7 +89,7 @@ class DataManager:
             "role": role,
             "projects": [],
             "time_created": time.time(),
-            "default_team": default_team
+            "default_team": default_team,
         }
         db_response = self.db.users.insert_one(user)
 
@@ -426,7 +426,9 @@ class DataManager:
         except:
             return False
 
-    def getUsers(self, role, user_info, project_id_exclude=None, includeLowerRoles=True):
+    def getUsers(
+        self, role, user_info, project_id_exclude=None, includeLowerRoles=True
+    ):
         ## TODO: accept team id as parameter and use that to determine which users to return
         user = user_info.get("email", "")
         user_document = self.getDocument("users", {"email": user})

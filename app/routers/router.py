@@ -506,7 +506,9 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
     """
     if data_manager.hasRole(user_info, Roles.admin):
         ## TODO check if provided email is a valid email address
-        admin_document = data_manager.getDocument("users", {"email": user_info.get("email", "")})
+        admin_document = data_manager.getDocument(
+            "users", {"email": user_info.get("email", "")}
+        )
         team = admin_document.get("default_team", None)
         ## this function will check for and then add user if it is not found
         role = data_manager.checkForUser({"email": email}, update=False, team=team)
