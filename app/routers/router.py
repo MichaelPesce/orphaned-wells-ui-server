@@ -198,7 +198,12 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
     Returns:
         Record data
     """
-    record = data_manager.fetchRecordData(record_id)
+    record = data_manager.fetchRecordData(record_id, user_info)
+    if record is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record, please contact the project creator to gain access.",
+        )
     return record
 
 
@@ -445,6 +450,7 @@ async def get_users(
     Returns:
         List of users, role types
     """
+    ## TODO: add team id as a request parameter
     req = await request.json()
     project_id = req.get("project_id", None)
     users = data_manager.getUsers(Roles[role], project_id_exclude=project_id)
@@ -463,6 +469,7 @@ async def add_contributors(
     Returns:
         user status
     """
+    ## TODO: change project to team
     req = await request.json()
     users = req.get("users", "")
     return data_manager.addUsersToProject(users, project_id)
