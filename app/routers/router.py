@@ -188,6 +188,20 @@ async def get_project_data(project_id: str, user_info: dict = Depends(authentica
     return {"project_data": project_data, "records": records}
 
 
+@router.get("/get_team_records")
+async def get_team_records(user_info: dict = Depends(authenticate)):
+    """Fetch project data.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        Project data, all records associated with that project
+    """
+    records = data_manager.getTeamRecords(user_info)
+    return {"records": records}
+
+
 @router.get("/get_record/{record_id}")
 async def get_record_data(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch document record data.
@@ -198,7 +212,12 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
     Returns:
         Record data
     """
-    record = data_manager.fetchRecordData(record_id)
+    record = data_manager.fetchRecordData(record_id, user_info)
+    if record is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record, please contact the project creator to gain access.",
+        )
     return record
 
 
@@ -436,23 +455,41 @@ async def download_records(
     return export_file
 
 
-## admin functions
-@router.get("/get_users")
-async def get_users(user_info: dict = Depends(authenticate)):
+@router.post("/get_users/{role}")
+async def get_users(
+    role: str, request: Request, user_info: dict = Depends(authenticate)
+):
     """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
 
     Returns:
         List of users, role types
     """
-    if data_manager.hasRole(user_info, Roles.admin):
-        users = data_manager.getUsers(Roles.base_user)
-        return users
-    else:
-        raise HTTPException(
-            status_code=403, detail=f"User is not authorized to access this page"
-        )
+    ## TODO: add team id as a request parameter
+    req = await request.json()
+    project_id = req.get("project_id", None)
+    users = data_manager.getUsers(Roles[role], user_info, project_id_exclude=project_id)
+    return users
 
 
+@router.post("/add_contributors/{project_id}")
+async def add_contributors(
+    project_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    """Add user to application database with role 'pending'
+
+    Args:
+        email: User email address
+
+    Returns:
+        user status
+    """
+    ## TODO: change project to team
+    req = await request.json()
+    users = req.get("users", "")
+    return data_manager.addUsersToProject(users, project_id)
+
+
+## admin functions
 @router.post("/approve_user/{email}")
 async def approve_user(email: str, user_info: dict = Depends(authenticate)):
     """Approve user for use of application by changing role from 'pending' to 'user'
@@ -483,10 +520,14 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
     """
     if data_manager.hasRole(user_info, Roles.admin):
         ## TODO check if provided email is a valid email address
-
+        admin_document = data_manager.getDocument(
+            "users", {"email": user_info.get("email", "")}
+        )
+        team = admin_document.get("default_team", None)
         ## this function will check for and then add user if it is not found
-        role = data_manager.checkForUser({"email": email}, update=False)
+        role = data_manager.checkForUser({"email": email}, update=False, team=team)
         if role > 0:
+            ## TODO: in this case, just add user to team without creating new user
             ## 406 Not acceptable: user provided an email that is already associated with an account
             raise HTTPException(status_code=406, detail=f"User is already created.")
         else:
