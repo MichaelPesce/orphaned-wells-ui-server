@@ -93,7 +93,6 @@ async def auth_login(request: Request):
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
     
-    ## TODO: check for user, if not found DO NOT add him
     role = data_manager.checkForUser(user_info, add=False)
     if role == "not found":
         _log.info(f"user is not authorized")
@@ -530,10 +529,14 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
         role = data_manager.checkForUser({"email": email}, update=False, team=team)
         if role > 0:
             ## TODO: in this case, just add user to team without creating new user
-            ## 406 Not acceptable: user provided an email that is already associated with an account
-            raise HTTPException(status_code=406, detail=f"User is already created.")
+            resp = data_manager.addUserToTeam(user_info, team, role=Roles.base_user)
+            if resp == "already_exists":
+                ## 406 Not acceptable: user provided an email that is already on this team
+                raise HTTPException(status_code=406, detail=f"This user is already on this team.")
+            else:
+                return {"base_user": email}
         else:
-            return {"pending": email}
+            return {"base_user": email}
 
     else:
         raise HTTPException(

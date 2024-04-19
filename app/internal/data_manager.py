@@ -75,13 +75,13 @@ class DataManager:
             if update:
                 self.updateUser(user_info)
         if not foundUser and add:
-            role = Roles.pending
+            role = Roles.base_user
             self.addUser(user_info, role, team)
         elif not foundUser and not add:
             role = "not found"
         return role
 
-    def addUser(self, user_info, role=Roles.pending, default_team="Testing"):
+    def addUser(self, user_info, default_team, role=Roles.pending):
         # _log.info(f"adding user {user_info}")
         user = {
             "email": user_info.get("email", ""),
@@ -91,8 +91,10 @@ class DataManager:
             "role": role,
             "projects": [],
             "time_created": time.time(),
-            "default_team": default_team,
         }
+        if default_team is not None:
+            user["default_team"] = default_team
+            user["teams"] = [default_team]
         db_response = self.db.users.insert_one(user)
 
         ## add user to team's users
@@ -104,6 +106,20 @@ class DataManager:
         self.db.teams.update_one(team_query, newvalues)
 
         return db_response
+    
+    def addUserToTeam(self, user_info, team, role=Roles.base_user):
+        # _log.info(f"adding user {user_info}")
+        email = user_info.get("email", "")
+        ## CHECK IF USER IS NOT ALREADY ON THIS TEAM 
+        checkvalues = {"users": email}
+        found_user = self.db.teams.count_documents(checkvalues)
+        if found_user > 0:
+            _log.info(f"found {email} on {team}")
+            return "already_exists"
+        myquery = {"email": email}
+        newvalues = { "$push": { "teams": team } }
+        cursor = self.db.users.update_one(myquery, newvalues)
+        return "success"
 
     def updateUser(self, user_info):
         # _log.info(f"updating user {user_info}")
@@ -497,6 +513,11 @@ class DataManager:
                         }
                     )
         return users
+
+    def removeUserFromTeam(self, user, team):
+        query = {"email": user}
+        # delete_response = self.db.users.delete_one(query)
+        return user
 
     def deleteUser(self, user):
         query = {"email": user}
