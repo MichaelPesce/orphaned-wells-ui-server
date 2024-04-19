@@ -76,13 +76,14 @@ class DataManager:
                 self.updateUser(user_info)
         if not foundUser and add:
             role = Roles.base_user
-            self.addUser(user_info, role, team)
+            self.addUser(user_info, team, role)
         elif not foundUser and not add:
             role = "not found"
         return role
 
     def addUser(self, user_info, default_team, role=Roles.pending):
-        # _log.info(f"adding user {user_info}")
+        _log.info(f"adding user {user_info}")
+        _log.info(f"team is {default_team}")
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
@@ -94,7 +95,7 @@ class DataManager:
         }
         if default_team is not None:
             user["default_team"] = default_team
-            user["teams"] = [default_team]
+            # user["teams"] = [default_team]
         db_response = self.db.users.insert_one(user)
 
         ## add user to team's users
@@ -107,18 +108,23 @@ class DataManager:
 
         return db_response
     
-    def addUserToTeam(self, user_info, team, role=Roles.base_user):
-        # _log.info(f"adding user {user_info}")
-        email = user_info.get("email", "")
+    def addUserToTeam(self, email, team, role=Roles.base_user):
         ## CHECK IF USER IS NOT ALREADY ON THIS TEAM 
-        checkvalues = {"users": email}
+        checkvalues = {"name": team, "users": email}
         found_user = self.db.teams.count_documents(checkvalues)
         if found_user > 0:
             _log.info(f"found {email} on {team}")
             return "already_exists"
-        myquery = {"email": email}
-        newvalues = { "$push": { "teams": team } }
-        cursor = self.db.users.update_one(myquery, newvalues)
+        
+        ## update user's teams
+        # myquery = {"email": email}
+        # newvalues = { "$push": { "teams": team } }
+        # cursor = self.db.users.update_one(myquery, newvalues)
+
+        ## update team's users
+        myquery = {"name": team}
+        newvalues = { "$push": { "users": email } }
+        cursor = self.db.teams.update_one(myquery, newvalues)
         return "success"
 
     def updateUser(self, user_info):
@@ -519,10 +525,20 @@ class DataManager:
         # delete_response = self.db.users.delete_one(query)
         return user
 
-    def deleteUser(self, user):
-        query = {"email": user}
+    def deleteUser(self, email):
+        query = {"email": email}
         delete_response = self.db.users.delete_one(query)
-        return user
+        ## TODO: remove user form all teams that include him/her
+        query = {"users": email}
+        teams_cursor = self.db.teams.find(query)
+        for document in teams_cursor:
+            team_id = document["_id"]
+            user_list = document.get("users", [])
+            user_list.remove(email)
+            query = {"_id": team_id}
+            newvalue = {"$set": {"users": user_list}}
+            self.db.teams.update_one(query, newvalue)
+        return email
 
     def addUsersToProject(self, users, project_id):
         ## TODO:

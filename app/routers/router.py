@@ -526,15 +526,18 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
         )
         team = admin_document.get("default_team", None)
         ## this function will check for and then add user if it is not found
-        role = data_manager.checkForUser({"email": email}, update=False, team=team)
-        if role > 0:
+        role = data_manager.checkForUser({"email": email}, update=False, team=team, add=False)
+        if role == "not found":
+            resp = data_manager.addUser({"email": email}, team, role=Roles.base_user)
+        elif role > 0:
             ## TODO: in this case, just add user to team without creating new user
-            resp = data_manager.addUserToTeam(user_info, team, role=Roles.base_user)
+            resp = data_manager.addUserToTeam(email, team, role=Roles.base_user)
             if resp == "already_exists":
                 ## 406 Not acceptable: user provided an email that is already on this team
                 raise HTTPException(status_code=406, detail=f"This user is already on this team.")
             else:
                 return {"base_user": email}
+
         else:
             return {"base_user": email}
 
