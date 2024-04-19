@@ -107,15 +107,15 @@ class DataManager:
         self.db.teams.update_one(team_query, newvalues)
 
         return db_response
-    
+
     def addUserToTeam(self, email, team, role=Roles.base_user):
-        ## CHECK IF USER IS NOT ALREADY ON THIS TEAM 
+        ## CHECK IF USER IS NOT ALREADY ON THIS TEAM
         checkvalues = {"name": team, "users": email}
         found_user = self.db.teams.count_documents(checkvalues)
         if found_user > 0:
             _log.info(f"found {email} on {team}")
             return "already_exists"
-        
+
         ## update user's teams
         # myquery = {"email": email}
         # newvalues = { "$push": { "teams": team } }
@@ -123,7 +123,7 @@ class DataManager:
 
         ## update team's users
         myquery = {"name": team}
-        newvalues = { "$push": { "users": email } }
+        newvalues = {"$push": {"users": email}}
         cursor = self.db.teams.update_one(myquery, newvalues)
         return "success"
 
