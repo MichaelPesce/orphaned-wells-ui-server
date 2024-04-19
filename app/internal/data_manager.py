@@ -77,6 +77,8 @@ class DataManager:
         if not foundUser and add:
             role = Roles.pending
             self.addUser(user_info, role, team)
+        elif not foundUser and not add:
+            role = "not found"
         return role
 
     def addUser(self, user_info, role=Roles.pending, default_team="Testing"):

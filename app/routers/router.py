@@ -92,16 +92,18 @@ async def auth_login(request: Request):
     except Exception as e:  # should probably specify exception type
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
-    role = data_manager.checkForUser(user_info)
+    
+    ## TODO: check for user, if not found DO NOT add him
+    role = data_manager.checkForUser(user_info, add=False)
+    if role == "not found":
+        _log.info(f"user is not authorized")
+        raise HTTPException(status_code=403, detail=user_info)
     if role < Roles.base_user:
         _log.info(f"user is not authorized")
         raise HTTPException(status_code=403, detail=user_info)
     else:
         _log.info(f"user has role {role}")
         return user_tokens
-    # else:
-    #     _log.info(f"role not recognized: {role}")
-    #     raise HTTPException(status_code=403, detail=user_info)
 
 
 @router.post("/auth_refresh")
