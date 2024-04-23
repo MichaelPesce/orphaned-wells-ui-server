@@ -286,7 +286,10 @@ class DataManager:
 
         ## get record index
         dateCreated = document.get("dateCreated", 0)
-        record_index_query = {"dateCreated": {"$lte": dateCreated}, "project_id": projectId}
+        record_index_query = {
+            "dateCreated": {"$lte": dateCreated},
+            "project_id": projectId,
+        }
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
         return document
