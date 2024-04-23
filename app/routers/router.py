@@ -234,7 +234,7 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
     """
     data = await request.json()
     record = data_manager.fetchNextRecord(
-        data.get("dateCreated", ""), data.get("project_id", "")
+        data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
     return record
 
@@ -253,7 +253,7 @@ async def get_previous_record(
     """
     data = await request.json()
     record = data_manager.fetchPreviousRecord(
-        data.get("dateCreated", ""), data.get("project_id", "")
+        data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
     return record
 

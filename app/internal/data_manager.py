@@ -292,33 +292,33 @@ class DataManager:
         document["recordIndex"] = record_index
         return document
 
-    def fetchNextRecord(self, dateCreated, projectId):
+    def fetchNextRecord(self, dateCreated, projectId, user_info):
         cursor = self.db.records.find(
             {"dateCreated": {"$gt": dateCreated}, "project_id": projectId}
         ).sort("dateCreated", ASCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
-            return self.fetchRecordData(record_id)
+            return self.fetchRecordData(record_id, user_info)
         cursor = self.db.records.find({"project_id": projectId}).sort(
             "dateCreated", ASCENDING
         )
         document = cursor.next()
         record_id = str(document.get("_id", ""))
-        return self.fetchRecordData(record_id)
+        return self.fetchRecordData(record_id, user_info)
 
-    def fetchPreviousRecord(self, dateCreated, projectId):
+    def fetchPreviousRecord(self, dateCreated, projectId, user_info):
         cursor = self.db.records.find(
             {"dateCreated": {"$lt": dateCreated}, "project_id": projectId}
         ).sort("dateCreated", DESCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
-            return self.fetchRecordData(record_id)
+            return self.fetchRecordData(record_id, user_info)
         cursor = self.db.records.find({"project_id": projectId}).sort(
             "dateCreated", DESCENDING
         )
         document = cursor.next()
         record_id = str(document.get("_id", ""))
-        return self.fetchRecordData(record_id)
+        return self.fetchRecordData(record_id, user_info)
 
     def createRecord(self, record):
         ## add timestamp to project
