@@ -269,9 +269,10 @@ class DataManager:
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
         document = cursor.next()
-        projectId = ObjectId(document.get("project_id", ""))
+        projectId = document.get("project_id", "")
+        project_id = ObjectId(projectId)
         user_projects = self.getUserProjectList(user)
-        if not projectId in user_projects:
+        if not project_id in user_projects:
             return None
         document["_id"] = str(document["_id"])
         document["img_url"] = generate_download_signed_url_v4(
@@ -279,16 +280,14 @@ class DataManager:
         )
 
         ## get project name
-        projectId = ObjectId(projectId)
-        project = self.getDocument("projects", {"_id": projectId})
+        project = self.getDocument("projects", {"_id": project_id})
         project_name = project.get("name", "")
         document["project_name"] = project_name
 
         ## get record index
         dateCreated = document.get("dateCreated", 0)
-        record_index = self.db.records.count_documents(
-            {"dateCreated": {"$lte": dateCreated}, "project_id": projectId}
-        )
+        record_index_query = {"dateCreated": {"$lte": dateCreated}, "project_id": projectId}
+        record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
         return document
 
