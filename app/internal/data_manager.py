@@ -347,7 +347,7 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
-    
+
     def updateRecordReviewStatus(self, record_id, review_status):
         new_data = {"review_status": review_status}
         self.updateRecord(record_id, new_data, "record")
