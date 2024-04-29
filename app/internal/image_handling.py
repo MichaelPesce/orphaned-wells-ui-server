@@ -158,6 +158,7 @@ def process_image(
             counter += 1
 
         attributes[attribute] = {
+            "ai_confidence": confidence,
             "confidence": confidence,
             "raw_text": raw_text,
             "text_value": text_value,
@@ -165,6 +166,7 @@ def process_image(
             "normalized_vertices": coordinates,
             "normalized_value": normalized_value,
             "subattributes": subattributes,
+            "edited": False,
         }
 
     ## add attributes that weren't found:
@@ -173,6 +175,7 @@ def process_image(
         attr = processor_attribute["name"]
         if attr not in found_attributes:
             attributes[attr] = {
+                "ai_confidence": None,
                 "confidence": None,
                 "raw_text": "",
                 "text_value": "",
@@ -180,6 +183,7 @@ def process_image(
                 "normalized_vertices": None,
                 "normalized_value": None,
                 "subattributes": None,
+                "edited": False,
             }
 
     ## gotta create the record in the db

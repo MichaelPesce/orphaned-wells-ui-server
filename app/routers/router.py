@@ -232,7 +232,12 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
     Returns:
         Record data
     """
-    data = await request.json()
+    req = await request.json()
+    data = req.get("data", {})
+    reviewed = req.get("reviewed", False)
+    reviewStatus = req.get("review_status", None)
+    if reviewed:
+        data_manager.updateRecordReviewStatus(data.get("_id", ""), reviewStatus)
     record = data_manager.fetchNextRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
