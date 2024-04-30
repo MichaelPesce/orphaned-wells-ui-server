@@ -298,6 +298,9 @@ async def upload_document(
         New document record identifier.
     """
     user_info = data_manager.getUserInfo(user_email)
+    project_is_valid = data_manager.checkProjectValidity(project_id)
+    if not project_is_valid:
+        raise HTTPException(404, detail=f"Project not found")
     original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     mime_type = file.content_type

@@ -65,6 +65,7 @@ class DataManager:
                 return document
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
+            return None
 
     def checkForUser(self, user_info, update=True, add=True, team="Testing"):
         cursor = self.db.users.find({"email": user_info["email"]})
@@ -482,8 +483,7 @@ class DataManager:
             return False
         
     def getUserInfo(self, email):
-        user_document = self.getDocument("users", {"email": email})
-        user_document["_id"] = str(user_document["_id"])
+        user_document = self.getDocument("users", {"email": email}, clean_id=True)
         return user_document
 
     def getUsers(
@@ -569,6 +569,15 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to add users: {e}")
             return {"result": f"{e}"}
+    
+    def checkProjectValidity(self, projectId):
+        try:
+            project_id = ObjectId(projectId)
+        except:
+            return False
+        project = self.getDocument("projects", {"_id": project_id})
+        if project is not None:
+            return True
 
 
 data_manager = DataManager()
