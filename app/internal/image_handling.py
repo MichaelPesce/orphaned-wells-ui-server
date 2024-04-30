@@ -9,6 +9,7 @@ from gcloud.aio.storage import Storage
 from google.api_core.client_options import ClientOptions
 from google.cloud import documentai, storage
 from dotenv import load_dotenv
+from fastapi import HTTPException
 
 _log = logging.getLogger(__name__)
 
@@ -22,6 +23,80 @@ os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
+
+async def process_document(
+        project_id,
+        user_info,
+        background_tasks,
+        file,
+        original_output_path,
+        file_ext,
+        filename,
+        data_manager,
+    ):
+    mime_type = file.content_type
+    ## read document file
+    try:
+        async with aiofiles.open(original_output_path, "wb") as out_file:
+            content = await file.read()  # async read
+            await out_file.write(content)
+        if file_ext == ".tif" or file_ext == ".tiff":
+            _log.info(f"converting to png")
+            output_path = convert_tiff(
+                filename, file_ext, data_manager.app_settings.img_dir
+            )
+            file_ext = ".png"
+            mime_type = "image/png"
+        else:
+            output_path = original_output_path
+    except Exception as e:
+        _log.error(f"unable to read image file: {e}")
+        raise HTTPException(400, detail=f"Unable to process image file: {e}")
+
+    ## add record to DB without attributes
+    new_record = {
+        "project_id": project_id,
+        "name": filename,
+        "filename": f"{filename}{file_ext}",
+        "contributor": user_info,
+        "status": "processing",
+        "review_status": "unreviewed",
+    }
+    new_record_id = data_manager.createRecord(new_record)
+
+    ## fetch processor id
+    processor_id, processor_attributes = data_manager.getProcessor(project_id)
+
+    ## upload to cloud storage (this will overwrite any existing files of the same name):
+    background_tasks.add_task(
+        upload_to_google_storage,
+        file_path=output_path,
+        file_name=f"{filename}{file_ext}",
+        folder=f"uploads/{project_id}",
+    )
+
+    ## send to google doc AI
+    background_tasks.add_task(
+        process_image,
+        file_path=output_path,
+        file_name=f"{filename}{file_ext}",
+        mime_type=mime_type,
+        project_id=project_id,
+        record_id=new_record_id,
+        processor_id=processor_id,
+        processor_attributes=processor_attributes,
+        data_manager=data_manager,
+    )
+
+    ## remove file after 120 seconds to allow for the operations to finish
+    ## if file was converted to PNG, remove original file as well
+    files_to_delete = [output_path]
+    if original_output_path != output_path:
+        files_to_delete.append(original_output_path)
+    background_tasks.add_task(
+        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=120
+    )
+    return {"record_id": new_record_id}
 
 
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
