@@ -480,6 +480,11 @@ class DataManager:
                 return False
         except:
             return False
+        
+    def getUserInfo(self, email):
+        user_document = self.getDocument("users", {"email": email})
+        user_document["_id"] = str(user_document["_id"])
+        return user_document
 
     def getUsers(
         self, role, user_info, project_id_exclude=None, includeLowerRoles=True

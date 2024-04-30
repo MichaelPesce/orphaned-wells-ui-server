@@ -280,12 +280,13 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
     return new_id
 
 
-@router.post("/upload_document/{project_id}")
+@router.post("/upload_document/{project_id}/{user_email}")
 async def upload_document(
     project_id: str,
+    user_email: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    user_info: dict = Depends(authenticate),
+    # user_info: dict = Depends(authenticate),
 ):
     """Upload document for processing.Documents are processed asynchronously.
 
@@ -296,6 +297,7 @@ async def upload_document(
     Returns:
         New document record identifier.
     """
+    user_info = data_manager.getUserInfo(user_email)
     original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     mime_type = file.content_type
