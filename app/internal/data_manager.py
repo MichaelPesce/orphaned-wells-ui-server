@@ -481,7 +481,7 @@ class DataManager:
                 return False
         except:
             return False
-        
+
     def getUserInfo(self, email):
         user_document = self.getDocument("users", {"email": email}, clean_id=True)
         return user_document
@@ -569,7 +569,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to add users: {e}")
             return {"result": f"{e}"}
-    
+
     def checkProjectValidity(self, projectId):
         try:
             project_id = ObjectId(projectId)

@@ -25,16 +25,17 @@ docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
 
+
 async def process_document(
-        project_id,
-        user_info,
-        background_tasks,
-        file,
-        original_output_path,
-        file_ext,
-        filename,
-        data_manager,
-    ):
+    project_id,
+    user_info,
+    background_tasks,
+    file,
+    original_output_path,
+    file_ext,
+    filename,
+    data_manager,
+):
     mime_type = file.content_type
     ## read document file
     try:
@@ -106,7 +107,7 @@ async def process_document(
 def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
     filepath = f"{output_directory}/{filename}{file_ext}"
     try:
-        dpi = 100 ## higher dpi will result in higher quality but longer wait time
+        dpi = 100  ## higher dpi will result in higher quality but longer wait time
         doc = fitz.open(filepath)
         zoom = 4
         mat = fitz.Matrix(zoom, zoom)
@@ -121,6 +122,7 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
     except Exception as e:
         print(f"failed to convert {filename}: {e}")
         return filepath
+
 
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
     # print(f'converting: {filename}.{file_ext} to {convert_to}')
