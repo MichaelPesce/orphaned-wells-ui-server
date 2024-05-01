@@ -46,7 +46,6 @@ async def process_document(
                 filename, file_ext, data_manager.app_settings.img_dir
             )
             file_ext = ".png"
-            mime_type = "image/png"
         else:
             output_path = original_output_path
     except Exception as e:
@@ -78,7 +77,7 @@ async def process_document(
     ## send to google doc AI
     background_tasks.add_task(
         process_image,
-        file_path=output_path,
+        file_path=original_output_path,
         file_name=f"{filename}{file_ext}",
         mime_type=mime_type,
         project_id=project_id,
@@ -143,6 +142,7 @@ def process_image(
     processor_attributes,
     data_manager,
 ):
+    _log.info(f"processing {file_path} with mime type {mime_type}")
     with open(file_path, "rb") as image:
         image_content = image.read()
 
