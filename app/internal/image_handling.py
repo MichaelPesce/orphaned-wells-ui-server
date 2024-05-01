@@ -10,6 +10,7 @@ from google.api_core.client_options import ClientOptions
 from google.cloud import documentai, storage
 from dotenv import load_dotenv
 from fastapi import HTTPException
+import fitz
 
 _log = logging.getLogger(__name__)
 
@@ -41,8 +42,12 @@ async def process_document(
             content = await file.read()  # async read
             await out_file.write(content)
         if file_ext == ".tif" or file_ext == ".tiff":
-            _log.info(f"converting to png")
             output_path = convert_tiff(
+                filename, file_ext, data_manager.app_settings.img_dir
+            )
+            file_ext = ".png"
+        elif file_ext.lower() == ".pdf":
+            output_path = convert_pdf(
                 filename, file_ext, data_manager.app_settings.img_dir
             )
             file_ext = ".png"
@@ -97,6 +102,25 @@ async def process_document(
     )
     return {"record_id": new_record_id}
 
+
+def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
+    filepath = f"{output_directory}/{filename}{file_ext}"
+    try:
+        dpi = 100 ## higher dpi will result in higher quality but longer wait time
+        doc = fitz.open(filepath)
+        zoom = 4
+        mat = fitz.Matrix(zoom, zoom)
+        outfile = f"{output_directory}/{filename}{convert_to}"
+
+        ## we must assume the PDF has one page
+        page = doc.load_page(0)
+        pix = page.get_pixmap(matrix=mat, dpi=dpi)
+        pix.save(outfile)
+        doc.close()
+        return outfile
+    except Exception as e:
+        print(f"failed to convert {filename}: {e}")
+        return filepath
 
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
     # print(f'converting: {filename}.{file_ext} to {convert_to}')
