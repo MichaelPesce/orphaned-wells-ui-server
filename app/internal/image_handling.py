@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 import fitz
 import zipfile
+import mimetypes
 
 _log = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ async def process_zip(
     project_id,
     user_info,
     background_tasks,
-    file,
+    zip_file,
     image_dir,
     # file_ext,
     zip_filename,
@@ -41,25 +42,37 @@ async def process_zip(
     _log.info(f"processing a zip: {zip_filename}")
     output_dir = f"{image_dir}/unzipped"
     zip_path = f"{output_dir}/{zip_filename}"
-    with zipfile.ZipFile(file.file, 'r') as zip_ref:
+    with zipfile.ZipFile(zip_file.file, 'r') as zip_ref:
         zip_ref.extractall(output_dir)
 
     for directory, subdirectories, files in os.walk(zip_path):
         for file in files:
             unzipped_img_filepath = os.path.join(directory, file)
             new_img_filepath = os.path.join(image_dir, file)
-            _log.info(f"moving {unzipped_img_filepath} to {new_img_filepath}")
 
             ## move image to main image directory
             os.replace(unzipped_img_filepath, new_img_filepath)
 
-            ## process document 
+            ## process document
+            filename, file_ext = os.path.splitext(file)
+            mime_type = mimetypes.guess_type(file)[0]
+            if mime_type is not None:
+                await process_document(
+                    project_id,
+                    user_info,
+                    background_tasks,
+                    new_img_filepath,
+                    file_ext,
+                    filename,
+                    data_manager,
+                    mime_type,
+                )
     
     ## delete unzipped folder
     _log.info(f"removing {zip_path}")
     shutil.rmtree(zip_path)
 
-    raise HTTPException(400, detail=f"Zip files not functional yet")
+    return {"success" : zip_filename}
 
 
 async def process_single_file(
@@ -101,7 +114,7 @@ async def process_document(
     original_output_path,
     file_ext,
     filename,
-    data_manager,\
+    data_manager,
     mime_type,
 ):
     if file_ext == ".tif" or file_ext == ".tiff":
