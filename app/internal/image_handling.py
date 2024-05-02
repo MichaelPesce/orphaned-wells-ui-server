@@ -11,6 +11,7 @@ from google.cloud import documentai, storage
 from dotenv import load_dotenv
 from fastapi import HTTPException
 import fitz
+import zipfile
 
 _log = logging.getLogger(__name__)
 
@@ -25,8 +26,44 @@ docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
 
+async def process_zip(
+    project_id,
+    user_info,
+    background_tasks,
+    file,
+    output_dir,
+    # file_ext,
+    # filename,
+    data_manager,
+):
+    ## read document file
+    _log.info("processing a zip")
+    # with zipfile.ZipFile(file, 'r') as zip_ref:
+    #     zip_ref.extractall(directory_to_extract_to)
+    
+    with zipfile.ZipFile(file.file, 'r') as zfile:
+        # _log.info(f"zfile: {zfile}")
+        filelist = []
+        for img_file in zfile.infolist():
+            # print(f"f: {img_file}")
+            ifile = zfile.open(img_file)
+            try:
+                ## this probably isnt the way to go; especially if there are PDFs...
+                img = Image.open(ifile)
+                filename, file_ext = os.path.splitext(img_file.filename.split("/")[-1])
+                original_output_path = f"{output_dir}/{filename}{file_ext}"
+                mime_type = f"image/{file_ext.replace(".","")}"
 
-async def process_document(
+                ## TODO:
+                ## 1) write each file to output directory
+                ## 2) if pdf or tiff, call conversion function
+                ## 3) return await process_document(...)
+            except Exception as e:
+                print(f"unable to Image.open({ifile})")
+    raise HTTPException(400, detail=f"Zip files not functional yet: {e}")
+
+
+async def process_single_file(
     project_id,
     user_info,
     background_tasks,
@@ -54,9 +91,35 @@ async def process_document(
             file_ext = ".png"
         else:
             output_path = original_output_path
+        return await process_document(
+            project_id,
+            user_info,
+            background_tasks,
+            # file,
+            original_output_path,
+            file_ext,
+            filename,
+            data_manager,
+            output_path,
+            mime_type,
+        )
     except Exception as e:
         _log.error(f"unable to read image file: {e}")
         raise HTTPException(400, detail=f"Unable to process image file: {e}")
+
+
+async def process_document(
+    project_id,
+    user_info,
+    background_tasks,
+    # file,
+    original_output_path,
+    file_ext,
+    filename,
+    data_manager,
+    output_path,
+    mime_type,
+):
 
     ## add record to DB without attributes
     new_record = {

@@ -1,4 +1,4 @@
-# import io
+import io
 import os
 import logging
 import aiofiles
@@ -19,16 +19,10 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
-
-# import copy
+import zipfile
 
 from app.internal.data_manager import data_manager, Project, Roles
-from app.internal.image_handling import (
-    convert_tiff,
-    upload_to_google_storage,
-    process_image,
-    process_document,
-)
+from app.internal.image_handling import process_single_file, process_zip
 import app.internal.auth as auth
 
 _log = logging.getLogger(__name__)
@@ -302,16 +296,22 @@ async def upload_document(
     project_is_valid = data_manager.checkProjectValidity(project_id)
     if not project_is_valid:
         raise HTTPException(404, detail=f"Project not found")
-    original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
     filename, file_ext = os.path.splitext(file.filename)
     if file_ext.lower() == ".zip":
-        _log.info("processing a zip")
-        ## TODO:
-        ## 1) write zip locally?
-        ## 2) unzip folder
-        ## 3) loop through contents, calling the below for each one
+        output_dir = f"{data_manager.app_settings.img_dir}"
+        return await process_zip(
+            project_id,
+            user_info,
+            background_tasks,
+            file,
+            output_dir,
+            # file_ext,
+            # filename,
+            data_manager,
+        )
 
-    return await process_document(
+    original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
+    return await process_single_file(
         project_id,
         user_info,
         background_tasks,
