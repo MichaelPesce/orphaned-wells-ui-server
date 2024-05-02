@@ -34,7 +34,6 @@ async def process_zip(
     background_tasks,
     zip_file,
     image_dir,
-    # file_ext,
     zip_filename,
     data_manager,
 ):
@@ -57,16 +56,27 @@ async def process_zip(
             filename, file_ext = os.path.splitext(file)
             mime_type = mimetypes.guess_type(file)[0]
             if mime_type is not None:
-                await process_document(
-                    project_id,
-                    user_info,
-                    background_tasks,
-                    new_img_filepath,
-                    file_ext,
-                    filename,
-                    data_manager,
-                    mime_type,
+                background_tasks.add_task(
+                    process_document,
+                    project_id=project_id,
+                    user_info=user_info,
+                    background_tasks=background_tasks,
+                    original_output_path=new_img_filepath,
+                    file_ext=file_ext,
+                    filename=filename,
+                    data_manager=data_manager,
+                    mime_type=mime_type,
                 )
+                # await process_document(
+                #     project_id,
+                #     user_info,
+                #     background_tasks,
+                #     new_img_filepath,
+                #     file_ext,
+                #     filename,
+                #     data_manager,
+                #     mime_type,
+                # )
     
     ## delete unzipped folder
     _log.info(f"removing {zip_path}")
@@ -171,7 +181,7 @@ async def process_document(
     if original_output_path != output_path:
         files_to_delete.append(original_output_path)
     background_tasks.add_task(
-        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=120
+        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=60
     )
     return {"record_id": new_record_id}
 

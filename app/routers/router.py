@@ -22,7 +22,14 @@ from fastapi.security import OAuth2PasswordBearer
 import zipfile
 
 from app.internal.data_manager import data_manager, Project, Roles
-from app.internal.image_handling import process_single_file, process_zip
+from app.internal.image_handling import (
+    process_single_file,
+    process_zip,
+    convert_pdf,
+    convert_tiff,
+    process_image,
+    upload_to_google_storage
+)
 import app.internal.auth as auth
 
 _log = logging.getLogger(__name__)
@@ -305,22 +312,89 @@ async def upload_document(
             background_tasks,
             file,
             output_dir,
-            # file_ext,
             filename,
             data_manager,
         )
 
-    original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
-    return await process_single_file(
-        project_id,
-        user_info,
-        background_tasks,
-        file,
-        original_output_path,
-        file_ext,
-        filename,
-        data_manager,
-    )
+    else:
+        original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
+        mime_type = file.content_type
+        ## read document file
+        try:
+            async with aiofiles.open(original_output_path, "wb") as out_file:
+                content = await file.read()  # async read
+                await out_file.write(content)
+
+            if file_ext == ".tif" or file_ext == ".tiff":
+                output_path = convert_tiff(
+                    filename, file_ext, data_manager.app_settings.img_dir
+                )
+                file_ext = ".png"
+            elif file_ext.lower() == ".pdf":
+                output_path = convert_pdf(
+                    filename, file_ext, data_manager.app_settings.img_dir
+                )
+                file_ext = ".png"
+            else:
+                output_path = original_output_path
+
+            ## add record to DB without attributes
+            new_record = {
+                "project_id": project_id,
+                "name": filename,
+                "filename": f"{filename}{file_ext}",
+                "contributor": user_info,
+                "status": "processing",
+                "review_status": "unreviewed",
+            }
+            new_record_id = data_manager.createRecord(new_record)
+
+            ## fetch processor id
+            processor_id, processor_attributes = data_manager.getProcessor(project_id)
+
+            ## upload to cloud storage (this will overwrite any existing files of the same name):
+            background_tasks.add_task(
+                upload_to_google_storage,
+                file_path=output_path,
+                file_name=f"{filename}{file_ext}",
+                folder=f"uploads/{project_id}",
+            )
+
+            ## send to google doc AI
+            background_tasks.add_task(
+                process_image,
+                file_path=original_output_path,
+                file_name=f"{filename}{file_ext}",
+                mime_type=mime_type,
+                project_id=project_id,
+                record_id=new_record_id,
+                processor_id=processor_id,
+                processor_attributes=processor_attributes,
+                data_manager=data_manager,
+            )
+
+            ## remove file after 120 seconds to allow for the operations to finish
+            ## if file was converted to PNG, remove original file as well
+            files_to_delete = [output_path]
+            if original_output_path != output_path:
+                files_to_delete.append(original_output_path)
+            background_tasks.add_task(
+                data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=60
+            )
+            return {"record_id": new_record_id}
+        except Exception as e:
+            _log.error(f"unable to read image file: {e}")
+            raise HTTPException(400, detail=f"Unable to process image file: {e}")
+    # return await process_single_file(
+    #     project_id,
+    #     user_info,
+    #     background_tasks,
+    #     file,
+    #     original_output_path,
+    #     file_ext,
+    #     filename,
+    #     data_manager,
+    # )
 
 
 @router.post("/update_project/{project_id}")
