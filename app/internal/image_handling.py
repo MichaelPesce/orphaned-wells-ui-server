@@ -4,7 +4,6 @@ import datetime
 import json
 import aiofiles
 import aiohttp
-import shutil
 from PIL import Image
 from gcloud.aio.storage import Storage
 from google.api_core.client_options import ClientOptions
@@ -63,6 +62,7 @@ def process_zip(
         user_email=user_info["email"],
         project_id=project_id,
         local_directory=zip_path,
+        delete_local_files=True,
     )
 
     return {"success": zip_filename}

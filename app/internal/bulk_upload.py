@@ -1,8 +1,10 @@
 import argparse
 import os
 import requests
+import time
+import shutil
 
-def upload_documents_from_directory(backend_url = None, user_email = None, project_id = None, local_directory = None, cloud_directory = None):
+def upload_documents_from_directory(backend_url = None, user_email = None, project_id = None, local_directory = None, cloud_directory = None, delete_local_files = False):
     if project_id is None:
         print("please provide a project id (flag -p) to upload documents to")
         return
@@ -17,10 +19,12 @@ def upload_documents_from_directory(backend_url = None, user_email = None, proje
         backend_url = f"https://server.uow-carbon.org"
     post_url = f"{backend_url}/upload_document/{project_id}/{user_email}"
     if local_directory is not None:
+        files_to_delete = []
         print(f"uploading documents from {local_directory}")
         for subdir, dirs, files in os.walk(local_directory):
             for file in files:
                 file_path = os.path.join(subdir, file)
+                files_to_delete.append(file_path)
                 
                 if ".pdf" in file.lower():
                     mime_type = "application/pdf"
@@ -42,5 +46,12 @@ def upload_documents_from_directory(backend_url = None, user_email = None, proje
                     'Content-Type': mime_type
                 }
                 requests.post(post_url, files=upload_files)
+        if delete_local_files:
+            time_to_wait = len(files_to_delete) + 120
+            print(f"removing {files_to_delete} in {time_to_wait} seconds")
+            time.sleep(time_to_wait)
+            shutil.rmtree(local_directory)
+            # for each in files_to_delete:
+            #     os.remove(each)
     if cloud_directory is not None:
         print(f"uploading documents from {cloud_directory}")
