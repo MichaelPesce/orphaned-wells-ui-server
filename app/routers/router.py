@@ -28,7 +28,7 @@ from app.internal.image_handling import (
     convert_pdf,
     convert_tiff,
     process_image,
-    upload_to_google_storage
+    upload_to_google_storage,
 )
 import app.internal.auth as auth
 

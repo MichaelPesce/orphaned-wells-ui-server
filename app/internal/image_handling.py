@@ -28,6 +28,7 @@ docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
 
+
 def process_zip(
     project_id,
     user_info,
@@ -41,7 +42,7 @@ def process_zip(
     _log.info(f"processing a zip: {zip_filename}")
     output_dir = f"{image_dir}/unzipped"
     zip_path = f"{output_dir}/{zip_filename}"
-    with zipfile.ZipFile(zip_file.file, 'r') as zip_ref:
+    with zipfile.ZipFile(zip_file.file, "r") as zip_ref:
         zip_ref.extractall(output_dir)
 
     for directory, subdirectories, files in os.walk(zip_path):
@@ -77,12 +78,12 @@ def process_zip(
                 #     data_manager,
                 #     mime_type,
                 # )
-    
+
     ## delete unzipped folder
     _log.info(f"removing {zip_path}")
     shutil.rmtree(zip_path)
 
-    return {"success" : zip_filename}
+    return {"success": zip_filename}
 
 
 async def process_single_file(
@@ -133,9 +134,7 @@ def process_document(
         )
         file_ext = ".png"
     elif file_ext.lower() == ".pdf":
-        output_path = convert_pdf(
-            filename, file_ext, data_manager.app_settings.img_dir
-        )
+        output_path = convert_pdf(filename, file_ext, data_manager.app_settings.img_dir)
         file_ext = ".png"
     else:
         output_path = original_output_path
