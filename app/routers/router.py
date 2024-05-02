@@ -306,7 +306,7 @@ async def upload_document(
             file,
             output_dir,
             # file_ext,
-            # filename,
+            filename,
             data_manager,
         )
 

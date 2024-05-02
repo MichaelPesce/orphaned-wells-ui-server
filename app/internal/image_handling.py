@@ -4,6 +4,7 @@ import datetime
 import json
 import aiofiles
 import aiohttp
+import shutil
 from PIL import Image
 from gcloud.aio.storage import Storage
 from google.api_core.client_options import ClientOptions
@@ -31,36 +32,34 @@ async def process_zip(
     user_info,
     background_tasks,
     file,
-    output_dir,
+    image_dir,
     # file_ext,
-    # filename,
+    zip_filename,
     data_manager,
 ):
     ## read document file
-    _log.info("processing a zip")
-    # with zipfile.ZipFile(file, 'r') as zip_ref:
-    #     zip_ref.extractall(directory_to_extract_to)
-    
-    with zipfile.ZipFile(file.file, 'r') as zfile:
-        # _log.info(f"zfile: {zfile}")
-        filelist = []
-        for img_file in zfile.infolist():
-            # print(f"f: {img_file}")
-            ifile = zfile.open(img_file)
-            try:
-                ## this probably isnt the way to go; especially if there are PDFs...
-                img = Image.open(ifile)
-                filename, file_ext = os.path.splitext(img_file.filename.split("/")[-1])
-                original_output_path = f"{output_dir}/{filename}{file_ext}"
-                mime_type = f"image/{file_ext.replace(".","")}"
+    _log.info(f"processing a zip: {zip_filename}")
+    output_dir = f"{image_dir}/unzipped"
+    zip_path = f"{output_dir}/{zip_filename}"
+    with zipfile.ZipFile(file.file, 'r') as zip_ref:
+        zip_ref.extractall(output_dir)
 
-                ## TODO:
-                ## 1) write each file to output directory
-                ## 2) if pdf or tiff, call conversion function
-                ## 3) return await process_document(...)
-            except Exception as e:
-                print(f"unable to Image.open({ifile})")
-    raise HTTPException(400, detail=f"Zip files not functional yet: {e}")
+    for directory, subdirectories, files in os.walk(zip_path):
+        for file in files:
+            unzipped_img_filepath = os.path.join(directory, file)
+            new_img_filepath = os.path.join(image_dir, file)
+            _log.info(f"moving {unzipped_img_filepath} to {new_img_filepath}")
+
+            ## move image to main image directory
+            os.replace(unzipped_img_filepath, new_img_filepath)
+
+            ## process document 
+    
+    ## delete unzipped folder
+    _log.info(f"removing {zip_path}")
+    shutil.rmtree(zip_path)
+
+    raise HTTPException(400, detail=f"Zip files not functional yet")
 
 
 async def process_single_file(
@@ -79,28 +78,15 @@ async def process_single_file(
         async with aiofiles.open(original_output_path, "wb") as out_file:
             content = await file.read()  # async read
             await out_file.write(content)
-        if file_ext == ".tif" or file_ext == ".tiff":
-            output_path = convert_tiff(
-                filename, file_ext, data_manager.app_settings.img_dir
-            )
-            file_ext = ".png"
-        elif file_ext.lower() == ".pdf":
-            output_path = convert_pdf(
-                filename, file_ext, data_manager.app_settings.img_dir
-            )
-            file_ext = ".png"
-        else:
-            output_path = original_output_path
+
         return await process_document(
             project_id,
             user_info,
             background_tasks,
-            # file,
             original_output_path,
             file_ext,
             filename,
             data_manager,
-            output_path,
             mime_type,
         )
     except Exception as e:
@@ -112,14 +98,24 @@ async def process_document(
     project_id,
     user_info,
     background_tasks,
-    # file,
     original_output_path,
     file_ext,
     filename,
-    data_manager,
-    output_path,
+    data_manager,\
     mime_type,
 ):
+    if file_ext == ".tif" or file_ext == ".tiff":
+        output_path = convert_tiff(
+            filename, file_ext, data_manager.app_settings.img_dir
+        )
+        file_ext = ".png"
+    elif file_ext.lower() == ".pdf":
+        output_path = convert_pdf(
+            filename, file_ext, data_manager.app_settings.img_dir
+        )
+        file_ext = ".png"
+    else:
+        output_path = original_output_path
 
     ## add record to DB without attributes
     new_record = {
