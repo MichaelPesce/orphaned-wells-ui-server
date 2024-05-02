@@ -28,7 +28,7 @@ docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
 
-async def process_zip(
+def process_zip(
     project_id,
     user_info,
     background_tasks,
@@ -67,7 +67,7 @@ async def process_zip(
                     data_manager=data_manager,
                     mime_type=mime_type,
                 )
-                # await process_document(
+                # process_document(
                 #     project_id,
                 #     user_info,
                 #     background_tasks,
@@ -117,7 +117,7 @@ async def process_single_file(
         raise HTTPException(400, detail=f"Unable to process image file: {e}")
 
 
-async def process_document(
+def process_document(
     project_id,
     user_info,
     background_tasks,

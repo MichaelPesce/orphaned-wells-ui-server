@@ -306,7 +306,7 @@ async def upload_document(
     filename, file_ext = os.path.splitext(file.filename)
     if file_ext.lower() == ".zip":
         output_dir = f"{data_manager.app_settings.img_dir}"
-        return await process_zip(
+        return process_zip(
             project_id,
             user_info,
             background_tasks,
