@@ -249,19 +249,23 @@ class DataManager:
             project_id = str(_id)
             ## get project data
             cursor = self.db.projects.find({"_id": _id})
-            project_data = cursor.next()
-            project_data["id_"] = str(project_data["_id"])
-            del project_data["_id"]
-            # _log.info(f"checking for records with project_id {project_id}")
-            cursor = self.db.records.find({"project_id": project_id}).sort(
-                "dateCreated", ASCENDING
-            )
-            record_index = 1
-            for document in cursor:
-                document["_id"] = str(document["_id"])
-                document["recordIndex"] = record_index
-                record_index += 1
-                records.append(document)
+            ## errors out sometimes ?
+            try:
+                project_data = cursor.next()
+                project_data["id_"] = str(project_data["_id"])
+                del project_data["_id"]
+                # _log.info(f"checking for records with project_id {project_id}")
+                cursor = self.db.records.find({"project_id": project_id}).sort(
+                    "dateCreated", ASCENDING
+                )
+                record_index = 1
+                for document in cursor:
+                    document["_id"] = str(document["_id"])
+                    document["recordIndex"] = record_index
+                    record_index += 1
+                    records.append(document)
+            except Exception as e:
+                _log.error(f"unable to add records from project {project_id}: {e}")
         return records
 
     def fetchRecordData(self, record_id, user_info):

@@ -15,6 +15,8 @@ import fitz
 import zipfile
 import mimetypes
 
+from app.internal.bulk_upload import upload_documents_from_directory
+
 _log = logging.getLogger(__name__)
 
 load_dotenv()
@@ -36,7 +38,6 @@ def process_zip(
     zip_file,
     image_dir,
     zip_filename,
-    data_manager,
 ):
     ## read document file
     _log.info(f"processing a zip: {zip_filename}")
@@ -48,41 +49,21 @@ def process_zip(
     for directory, subdirectories, files in os.walk(zip_path):
         for file in files:
             unzipped_img_filepath = os.path.join(directory, file)
-            new_img_filepath = os.path.join(image_dir, file)
-
-            ## move image to main image directory
-            os.replace(unzipped_img_filepath, new_img_filepath)
-
-            ## process document
-            filename, file_ext = os.path.splitext(file)
             mime_type = mimetypes.guess_type(file)[0]
-            if mime_type is not None:
-                _log.info(f"adding background task {filename}")
-                # background_tasks.add_task(
-                #     process_document,
-                #     project_id=project_id,
-                #     user_info=user_info,
-                #     background_tasks=background_tasks,
-                #     original_output_path=new_img_filepath,
-                #     file_ext=file_ext,
-                #     filename=filename,
-                #     data_manager=data_manager,
-                #     mime_type=mime_type,
-                # )
-                process_document(
-                    project_id,
-                    user_info,
-                    background_tasks,
-                    new_img_filepath,
-                    file_ext,
-                    filename,
-                    data_manager,
-                    mime_type,
-                )
 
-    ## delete unzipped folder
-    _log.info(f"removing {zip_path}")
-    shutil.rmtree(zip_path)
+            # if it is not a document file, remove it
+            if mime_type is None:
+                os.remove(unzipped_img_filepath)
+
+    _log.info(f"bulk uploading: {zip_path}")
+    background_tasks.add_task(
+        upload_documents_from_directory,
+        ## TODO: use an env variable to make this work in both dev and prod
+        backend_url = "http://localhost:8001",
+        user_email=user_info["email"],
+        project_id=project_id,
+        local_directory=zip_path,
+    )
 
     return {"success": zip_filename}
 

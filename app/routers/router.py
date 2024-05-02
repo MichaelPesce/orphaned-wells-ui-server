@@ -314,7 +314,6 @@ async def upload_document(
             file,
             output_dir,
             filename,
-            data_manager,
         )
 
     else:
