@@ -4,7 +4,15 @@ import requests
 import time
 import shutil
 
-def upload_documents_from_directory(backend_url = None, user_email = None, project_id = None, local_directory = None, cloud_directory = None, delete_local_files = False):
+
+def upload_documents_from_directory(
+    backend_url=None,
+    user_email=None,
+    project_id=None,
+    local_directory=None,
+    cloud_directory=None,
+    delete_local_files=False,
+):
     if project_id is None:
         print("please provide a project id (flag -p) to upload documents to")
         return
@@ -12,7 +20,9 @@ def upload_documents_from_directory(backend_url = None, user_email = None, proje
         print("please provide a contributor's email (flag -e)")
         return
     if local_directory is None and cloud_directory is None:
-        print("please provide either a local directory (flag -l) or a cloud directory (flag -c)")
+        print(
+            "please provide either a local directory (flag -l) or a cloud directory (flag -c)"
+        )
         return
     if backend_url is None:
         # backend_url = f"http://localhost:8001"
@@ -25,7 +35,7 @@ def upload_documents_from_directory(backend_url = None, user_email = None, proje
             for file in files:
                 file_path = os.path.join(subdir, file)
                 files_to_delete.append(file_path)
-                
+
                 if ".pdf" in file.lower():
                     mime_type = "application/pdf"
                 elif ".tif" in file.lower():
@@ -38,12 +48,14 @@ def upload_documents_from_directory(backend_url = None, user_email = None, proje
                     mime_type = "image/jpeg"
 
                 print(f"uploading: {file_path} with mimetype {mime_type}")
-                
+
                 opened_file = open(file_path, "rb")
                 upload_files = {
                     "file": (file, opened_file, mime_type),
-                    'Content-Disposition': 'form-data; name="file"; filename="' + file + '"',
-                    'Content-Type': mime_type
+                    "Content-Disposition": 'form-data; name="file"; filename="'
+                    + file
+                    + '"',
+                    "Content-Type": mime_type,
                 }
                 requests.post(post_url, files=upload_files)
         if delete_local_files:

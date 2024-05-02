@@ -58,7 +58,7 @@ def process_zip(
     background_tasks.add_task(
         upload_documents_from_directory,
         ## TODO: use an env variable to make this work in both dev and prod
-        backend_url = "http://localhost:8001",
+        backend_url="http://localhost:8001",
         user_email=user_info["email"],
         project_id=project_id,
         local_directory=zip_path,
