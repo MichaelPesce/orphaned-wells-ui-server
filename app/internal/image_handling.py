@@ -57,27 +57,28 @@ def process_zip(
             filename, file_ext = os.path.splitext(file)
             mime_type = mimetypes.guess_type(file)[0]
             if mime_type is not None:
-                background_tasks.add_task(
-                    process_document,
-                    project_id=project_id,
-                    user_info=user_info,
-                    background_tasks=background_tasks,
-                    original_output_path=new_img_filepath,
-                    file_ext=file_ext,
-                    filename=filename,
-                    data_manager=data_manager,
-                    mime_type=mime_type,
-                )
-                # process_document(
-                #     project_id,
-                #     user_info,
-                #     background_tasks,
-                #     new_img_filepath,
-                #     file_ext,
-                #     filename,
-                #     data_manager,
-                #     mime_type,
+                _log.info(f"adding background task {filename}")
+                # background_tasks.add_task(
+                #     process_document,
+                #     project_id=project_id,
+                #     user_info=user_info,
+                #     background_tasks=background_tasks,
+                #     original_output_path=new_img_filepath,
+                #     file_ext=file_ext,
+                #     filename=filename,
+                #     data_manager=data_manager,
+                #     mime_type=mime_type,
                 # )
+                process_document(
+                    project_id,
+                    user_info,
+                    background_tasks,
+                    new_img_filepath,
+                    file_ext,
+                    filename,
+                    data_manager,
+                    mime_type,
+                )
 
     ## delete unzipped folder
     _log.info(f"removing {zip_path}")
