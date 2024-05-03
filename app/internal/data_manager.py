@@ -383,6 +383,9 @@ class DataManager:
         _id = ObjectId(project_id)
         myquery = {"_id": _id}
         self.db.projects.delete_one(myquery)
+
+        ## Delete records associated with this project?
+        self.db.projects.deleteMany({"project_id": project_id})
         return "success"
 
     def deleteRecord(self, record_id):
