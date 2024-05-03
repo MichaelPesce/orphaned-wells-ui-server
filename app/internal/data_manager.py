@@ -13,7 +13,7 @@ from pymongo import ASCENDING, DESCENDING
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
-from app.internal.image_handling import generate_download_signed_url_v4
+from app.internal.image_handling import generate_download_signed_url_v4, delete_google_storage_directory
 
 
 _log = logging.getLogger(__name__)
@@ -378,14 +378,22 @@ class DataManager:
         self.db.records.update_one(search_query, update_query)
         return "success"
 
-    def deleteProject(self, project_id):
+    def deleteProject(self, project_id, background_tasks):
         ## TODO: check if user is a part of the team who owns this project
+        _log.info(f"deleting project {project_id}")
         _id = ObjectId(project_id)
         myquery = {"_id": _id}
         self.db.projects.delete_one(myquery)
 
-        ## Delete records associated with this project?
-        self.db.projects.deleteMany({"project_id": project_id})
+        ## Delete records associated with this project
+        _log.info(f"deleting records from {project_id}")
+        self.db.projects.delete_many({"project_id": project_id})
+
+        ## delete project directory where photos are stored in GCP 
+        background_tasks.add_task(
+            delete_google_storage_directory,
+            project_id=project_id,
+        )
         return "success"
 
     def deleteRecord(self, record_id):
