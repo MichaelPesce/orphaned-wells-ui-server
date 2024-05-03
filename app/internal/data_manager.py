@@ -53,6 +53,14 @@ class DataManager:
     def __init__(self, **kwargs) -> None:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
+        self.environment = os.getenv("ENVIRONMENT")
+        _log.info(f"working in environment: {self.environment}")
+        if self.environment == "prod":
+            self.backend_url = "https://server.uow-carbon.org"
+            os.environ["backend_url"] = "https://server.uow-carbon.org"
+        else:
+            self.backend_url = "http://localhost:8001"
+            os.environ["backend_url"] = "http://localhost:8001"
 
     def getDocument(self, collection, query, clean_id=False, return_list=False):
         try:
@@ -65,6 +73,7 @@ class DataManager:
                 return document
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
+            return None
 
     def checkForUser(self, user_info, update=True, add=True, team="Testing"):
         cursor = self.db.users.find({"email": user_info["email"]})
@@ -248,19 +257,23 @@ class DataManager:
             project_id = str(_id)
             ## get project data
             cursor = self.db.projects.find({"_id": _id})
-            project_data = cursor.next()
-            project_data["id_"] = str(project_data["_id"])
-            del project_data["_id"]
-            # _log.info(f"checking for records with project_id {project_id}")
-            cursor = self.db.records.find({"project_id": project_id}).sort(
-                "dateCreated", ASCENDING
-            )
-            record_index = 1
-            for document in cursor:
-                document["_id"] = str(document["_id"])
-                document["recordIndex"] = record_index
-                record_index += 1
-                records.append(document)
+            ## errors out sometimes ?
+            try:
+                project_data = cursor.next()
+                project_data["id_"] = str(project_data["_id"])
+                del project_data["_id"]
+                # _log.info(f"checking for records with project_id {project_id}")
+                cursor = self.db.records.find({"project_id": project_id}).sort(
+                    "dateCreated", ASCENDING
+                )
+                record_index = 1
+                for document in cursor:
+                    document["_id"] = str(document["_id"])
+                    document["recordIndex"] = record_index
+                    record_index += 1
+                    records.append(document)
+            except Exception as e:
+                _log.error(f"unable to add records from project {project_id}: {e}")
         return records
 
     def fetchRecordData(self, record_id, user_info):
@@ -481,6 +494,10 @@ class DataManager:
         except:
             return False
 
+    def getUserInfo(self, email):
+        user_document = self.getDocument("users", {"email": email}, clean_id=True)
+        return user_document
+
     def getUsers(
         self, role, user_info, project_id_exclude=None, includeLowerRoles=True
     ):
@@ -564,6 +581,15 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to add users: {e}")
             return {"result": f"{e}"}
+
+    def checkProjectValidity(self, projectId):
+        try:
+            project_id = ObjectId(projectId)
+        except:
+            return False
+        project = self.getDocument("projects", {"_id": project_id})
+        if project is not None:
+            return True
 
 
 data_manager = DataManager()

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import multiprocessing
 import logging
+from dotenv import load_dotenv
 
 _log = logging.getLogger(__name__)
 
@@ -24,6 +25,8 @@ app.add_middleware(
 )
 
 app.include_router(router.router)
+
+load_dotenv()
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()

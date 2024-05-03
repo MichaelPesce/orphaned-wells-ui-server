@@ -8,11 +8,16 @@ from PIL import Image
 from gcloud.aio.storage import Storage
 from google.api_core.client_options import ClientOptions
 from google.cloud import documentai, storage
-from dotenv import load_dotenv
+
+from fastapi import HTTPException
+import fitz
+import zipfile
+import mimetypes
+
+from app.internal.bulk_upload import upload_documents_from_directory
 
 _log = logging.getLogger(__name__)
 
-load_dotenv()
 LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID")
@@ -22,6 +27,163 @@ os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
 )
+
+
+def process_zip(
+    project_id,
+    user_info,
+    background_tasks,
+    zip_file,
+    image_dir,
+    zip_filename,
+):
+    ## read document file
+    _log.info(f"processing a zip: {zip_filename}")
+    output_dir = f"{image_dir}/unzipped"
+    zip_path = f"{output_dir}/{zip_filename}"
+    with zipfile.ZipFile(zip_file.file, "r") as zip_ref:
+        zip_ref.extractall(output_dir)
+
+    for directory, subdirectories, files in os.walk(zip_path):
+        for file in files:
+            unzipped_img_filepath = os.path.join(directory, file)
+            mime_type = mimetypes.guess_type(file)[0]
+
+            # if it is not a document file, remove it
+            if mime_type is None:
+                os.remove(unzipped_img_filepath)
+    backend_url = os.getenv("backend_url")
+    # _log.info(f"bulk uploading: {zip_path} to {backend_url}")
+    background_tasks.add_task(
+        upload_documents_from_directory,
+        ## TODO: use an env variable to make this work in both dev and prod
+        backend_url=backend_url,
+        user_email=user_info["email"],
+        project_id=project_id,
+        local_directory=zip_path,
+        delete_local_files=True,
+    )
+
+    return {"success": zip_filename}
+
+
+async def process_single_file(
+    project_id,
+    user_info,
+    background_tasks,
+    file,
+    original_output_path,
+    file_ext,
+    filename,
+    data_manager,
+):
+    mime_type = file.content_type
+    ## read document file
+    try:
+        async with aiofiles.open(original_output_path, "wb") as out_file:
+            content = await file.read()  # async read
+            await out_file.write(content)
+
+        return await process_document(
+            project_id,
+            user_info,
+            background_tasks,
+            original_output_path,
+            file_ext,
+            filename,
+            data_manager,
+            mime_type,
+        )
+    except Exception as e:
+        _log.error(f"unable to read image file: {e}")
+        raise HTTPException(400, detail=f"Unable to process image file: {e}")
+
+
+def process_document(
+    project_id,
+    user_info,
+    background_tasks,
+    original_output_path,
+    file_ext,
+    filename,
+    data_manager,
+    mime_type,
+):
+    if file_ext == ".tif" or file_ext == ".tiff":
+        output_path = convert_tiff(
+            filename, file_ext, data_manager.app_settings.img_dir
+        )
+        file_ext = ".png"
+    elif file_ext.lower() == ".pdf":
+        output_path = convert_pdf(filename, file_ext, data_manager.app_settings.img_dir)
+        file_ext = ".png"
+    else:
+        output_path = original_output_path
+
+    ## add record to DB without attributes
+    new_record = {
+        "project_id": project_id,
+        "name": filename,
+        "filename": f"{filename}{file_ext}",
+        "contributor": user_info,
+        "status": "processing",
+        "review_status": "unreviewed",
+    }
+    new_record_id = data_manager.createRecord(new_record)
+
+    ## fetch processor id
+    processor_id, processor_attributes = data_manager.getProcessor(project_id)
+
+    ## upload to cloud storage (this will overwrite any existing files of the same name):
+    background_tasks.add_task(
+        upload_to_google_storage,
+        file_path=output_path,
+        file_name=f"{filename}{file_ext}",
+        folder=f"uploads/{project_id}",
+    )
+
+    ## send to google doc AI
+    background_tasks.add_task(
+        process_image,
+        file_path=original_output_path,
+        file_name=f"{filename}{file_ext}",
+        mime_type=mime_type,
+        project_id=project_id,
+        record_id=new_record_id,
+        processor_id=processor_id,
+        processor_attributes=processor_attributes,
+        data_manager=data_manager,
+    )
+
+    ## remove file after 120 seconds to allow for the operations to finish
+    ## if file was converted to PNG, remove original file as well
+    files_to_delete = [output_path]
+    if original_output_path != output_path:
+        files_to_delete.append(original_output_path)
+    background_tasks.add_task(
+        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=60
+    )
+    return {"record_id": new_record_id}
+
+
+def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
+    filepath = f"{output_directory}/{filename}{file_ext}"
+    try:
+        dpi = 100  ## higher dpi will result in higher quality but longer wait time
+        doc = fitz.open(filepath)
+        zoom = 4
+        mat = fitz.Matrix(zoom, zoom)
+        outfile = f"{output_directory}/{filename}{convert_to}"
+
+        ## we must assume the PDF has one page
+        page = doc.load_page(0)
+        pix = page.get_pixmap(matrix=mat, dpi=dpi)
+        pix.save(outfile)
+        doc.close()
+        return outfile
+    except Exception as e:
+        print(f"failed to convert {filename}: {e}")
+        return filepath
 
 
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
@@ -68,6 +230,7 @@ def process_image(
     processor_attributes,
     data_manager,
 ):
+    _log.info(f"processing {file_path} with mime type {mime_type}")
     with open(file_path, "rb") as image:
         image_content = image.read()
 

@@ -63,6 +63,7 @@ setup(
         "pydantic>2",
         "pydantic_core",
         "pydantic_settings",
+        "PyMuPDF",
         "python-dotenv",
         "python-multipart",
         "sniffio",
