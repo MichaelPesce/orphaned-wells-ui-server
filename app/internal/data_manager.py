@@ -53,6 +53,14 @@ class DataManager:
     def __init__(self, **kwargs) -> None:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
+        self.environment = os.getenv("ENVIRONMENT")
+        _log.info(f"working in environment: {self.environment}")
+        if self.environment == "prod":
+            self.backend_url = "https://server.uow-carbon.org"
+            os.environ["backend_url"] = "https://server.uow-carbon.org"
+        else:
+            self.backend_url = "http://localhost:8001"
+            os.environ["backend_url"] = "http://localhost:8001"
 
     def getDocument(self, collection, query, clean_id=False, return_list=False):
         try:

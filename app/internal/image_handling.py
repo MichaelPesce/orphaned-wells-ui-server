@@ -8,7 +8,7 @@ from PIL import Image
 from gcloud.aio.storage import Storage
 from google.api_core.client_options import ClientOptions
 from google.cloud import documentai, storage
-from dotenv import load_dotenv
+
 from fastapi import HTTPException
 import fitz
 import zipfile
@@ -18,7 +18,6 @@ from app.internal.bulk_upload import upload_documents_from_directory
 
 _log = logging.getLogger(__name__)
 
-load_dotenv()
 LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID")
@@ -53,12 +52,12 @@ def process_zip(
             # if it is not a document file, remove it
             if mime_type is None:
                 os.remove(unzipped_img_filepath)
-
-    _log.info(f"bulk uploading: {zip_path}")
+    backend_url=os.getenv("backend_url")
+    # _log.info(f"bulk uploading: {zip_path} to {backend_url}")
     background_tasks.add_task(
         upload_documents_from_directory,
         ## TODO: use an env variable to make this work in both dev and prod
-        backend_url="http://localhost:8001",
+        backend_url=backend_url,
         user_email=user_info["email"],
         project_id=project_id,
         local_directory=zip_path,
