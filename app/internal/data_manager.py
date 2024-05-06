@@ -327,67 +327,70 @@ class DataManager:
 
     def fetchRecordData(self, record_id, user_info, direction="next"):
         user = user_info.get("email", "")
+        try:
+            _id = ObjectId(record_id)
+            cursor = self.db.records.find({"_id": _id})
+            document = cursor.next()
+            document["_id"] = str(document["_id"])
+            projectId = document.get("project_id", "")
+            project_id = ObjectId(projectId)
 
-        _id = ObjectId(record_id)
-        cursor = self.db.records.find({"_id": _id})
-        document = cursor.next()
-        document["_id"] = str(document["_id"])
-        projectId = document.get("project_id", "")
-        project_id = ObjectId(projectId)
-
-        ## check that record is not locked
-        self.fetchLock(user)
-        locked_time = self.record_locks.get(record_id, None)
-        if locked_time is not None:
-            ## record is locked. check the time to see if it has expired
-            _log.info(f"{record_id} locked at {locked_time}, checking if expired")
-            current_time = time.time()
-            if locked_time + self.lock_duration > current_time:
-                ## lock is still valid, check if THIS USER has that lock
-                user_has_lock = self.user_locks.get(user, False)
-                if user_has_lock == record_id:
-                    ## this user has the lock
-                    _log.info(f"this user has lock for this record, continue on")
+            ## check that record is not locked
+            self.fetchLock(user)
+            locked_time = self.record_locks.get(record_id, None)
+            if locked_time is not None:
+                ## record is locked. check the time to see if it has expired
+                _log.info(f"{record_id} locked at {locked_time}, checking if expired")
+                current_time = time.time()
+                if locked_time + self.lock_duration > current_time:
+                    ## lock is still valid, check if THIS USER has that lock
+                    user_has_lock = self.user_locks.get(user, False)
+                    if user_has_lock == record_id:
+                        ## this user has the lock
+                        _log.info(f"this user has lock for this record, continue on")
+                    else:
+                        ## lock is still valid, different user
+                        _log.info(f"lock still valid, moving to {direction} record")
+                        date_created = document.get("dateCreated", "")
+                        self.releaseLock(user)
+                        return document, True
                 else:
-                    ## lock is still valid, different user
-                    _log.info(f"lock still valid, moving to {direction} record")
-                    date_created = document.get("dateCreated", "")
-                    self.releaseLock(user)
-                    return document, True
+                    ## lock is no longer valid. remove user and record lock for this record
+                    _log.info(f"lock has expired, replacing this lock")
+                    self.releaseRecord(record_id)
+                    self.lockRecord(record_id, user_info)
             else:
-                ## lock is no longer valid. remove user and record lock for this record
-                _log.info(f"lock has expired, replacing this lock")
-                self.releaseRecord(record_id)
-                self.lockRecord(record_id, user_info)
-        else:
-            ## record is not locked. lock it and move on with operation
-            _log.info(f"{record_id} is free")
-            self.lockRecord(record_id, user)
-        self.releaseLock(user)
+                ## record is not locked. lock it and move on with operation
+                _log.info(f"{record_id} is free")
+                self.lockRecord(record_id, user)
+            self.releaseLock(user)
 
-        user_projects = self.getUserProjectList(user)
-        if not project_id in user_projects:
-            return None, None
-        # document["_id"] = str(document["_id"])
-        document["img_url"] = generate_download_signed_url_v4(
-            document["project_id"], document["filename"]
-        )
+            user_projects = self.getUserProjectList(user)
+            if not project_id in user_projects:
+                return None, None
+            # document["_id"] = str(document["_id"])
+            document["img_url"] = generate_download_signed_url_v4(
+                document["project_id"], document["filename"]
+            )
 
-        ## get project name
-        project = self.getDocument("projects", {"_id": project_id})
-        project_name = project.get("name", "")
-        document["project_name"] = project_name
+            ## get project name
+            project = self.getDocument("projects", {"_id": project_id})
+            project_name = project.get("name", "")
+            document["project_name"] = project_name
 
-        ## get record index
-        dateCreated = document.get("dateCreated", 0)
-        record_index_query = {
-            "dateCreated": {"$lte": dateCreated},
-            "project_id": projectId,
-        }
-        record_index = self.db.records.count_documents(record_index_query)
-        document["recordIndex"] = record_index
+            ## get record index
+            dateCreated = document.get("dateCreated", 0)
+            record_index_query = {
+                "dateCreated": {"$lte": dateCreated},
+                "project_id": projectId,
+            }
+            record_index = self.db.records.count_documents(record_index_query)
+            document["recordIndex"] = record_index
 
-        return document, False
+            return document, False
+        except Exception as e:
+            _log.error(f"error while fetching record data: {e}")
+            self.releaseLock(user)
 
     def fetchNextRecord(self, dateCreated, projectId, user_info):
         _log.info(f"fetching next record\n{dateCreated}\n{projectId}\n{user_info}")
