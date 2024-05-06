@@ -71,7 +71,7 @@ class DataManager:
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.user_locks = {}
         self.record_locks = {}
-        self.lock_duration = 120
+        self.lock_duration = 12
     
     def fetchLock(self, user):
         while self.LOCKED and self.LOCKED != user:
@@ -340,7 +340,6 @@ class DataManager:
             locked_time = self.record_locks.get(record_id, None)
             if locked_time is not None:
                 ## record is locked. check the time to see if it has expired
-                _log.info(f"{record_id} locked at {locked_time}, checking if expired")
                 current_time = time.time()
                 if locked_time + self.lock_duration > current_time:
                     ## lock is still valid, check if THIS USER has that lock
@@ -351,14 +350,13 @@ class DataManager:
                     else:
                         ## lock is still valid, different user
                         _log.info(f"lock still valid, moving to {direction} record")
-                        date_created = document.get("dateCreated", "")
                         self.releaseLock(user)
                         return document, True
                 else:
                     ## lock is no longer valid. remove user and record lock for this record
                     _log.info(f"lock has expired, replacing this lock")
                     self.releaseRecord(record_id)
-                    self.lockRecord(record_id, user_info)
+                    self.lockRecord(record_id, user)
             else:
                 ## record is not locked. lock it and move on with operation
                 _log.info(f"{record_id} is free")
