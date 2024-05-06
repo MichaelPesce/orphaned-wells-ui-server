@@ -62,7 +62,11 @@ def upload_documents_from_directory(
             time_to_wait = len(files_to_delete) + 120
             print(f"removing {files_to_delete} in {time_to_wait} seconds")
             time.sleep(time_to_wait)
-            shutil.rmtree(local_directory)
+            try:
+                print(f"removing {files_to_delete}")
+                shutil.rmtree(local_directory)
+            except Exception as e:
+                print(f"unable to delete {files_to_delete}: {e}")
             # for each in files_to_delete:
             #     os.remove(each)
     if cloud_directory is not None:
