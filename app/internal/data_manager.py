@@ -13,7 +13,10 @@ from pymongo import ASCENDING, DESCENDING
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
-from app.internal.image_handling import generate_download_signed_url_v4, delete_google_storage_directory
+from app.internal.image_handling import (
+    generate_download_signed_url_v4,
+    delete_google_storage_directory,
+)
 
 
 _log = logging.getLogger(__name__)
@@ -399,11 +402,11 @@ class DataManager:
         ## add records to deleted records collection and remove from records collection
         background_tasks.add_task(
             self.deleteRecords,
-            query = {"project_id": project_id},
-            deletedBy = user_info,
+            query={"project_id": project_id},
+            deletedBy=user_info,
         )
 
-        ## delete project directory where photos are stored in GCP 
+        ## delete project directory where photos are stored in GCP
         ## hold off on this for now - we may end up wanting to keep these
         # background_tasks.add_task(
         #     delete_google_storage_directory,
@@ -418,7 +421,7 @@ class DataManager:
         myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
         return "success"
-    
+
     def deleteRecords(self, query, deletedBy):
         _log.info(f"deleting records with query: {query}")
         ## add records to deleted records collection

@@ -380,7 +380,11 @@ async def update_record(
 
 
 @router.post("/delete_project/{project_id}")
-async def delete_project(project_id: str, background_tasks: BackgroundTasks, user_info: dict = Depends(authenticate)):
+async def delete_project(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    user_info: dict = Depends(authenticate),
+):
     """Delete project.
 
     Args:

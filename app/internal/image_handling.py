@@ -365,9 +365,7 @@ def process_image(
 
 
 ## Google Cloud Storage Functions
-async def async_upload_to_bucket(
-    blob_name, file_obj, folder, bucket_name=BUCKET_NAME
-):
+async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET_NAME):
     """Upload image file to bucket."""
     async with aiohttp.ClientSession() as session:
         storage = Storage(service_file="./internal/creds.json", session=session)
@@ -382,9 +380,7 @@ async def upload_to_google_storage(file_path, file_name, folder="uploads"):
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(
-    project_id, filename, bucket_name=BUCKET_NAME
-):
+def generate_download_signed_url_v4(project_id, filename, bucket_name=BUCKET_NAME):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
