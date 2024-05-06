@@ -64,6 +64,52 @@ class DataManager:
         else:
             self.backend_url = "http://localhost:8001"
             os.environ["backend_url"] = "http://localhost:8001"
+        
+        self.LOCKED = False
+        ## user_locks: dictionary that stores user_email, record_id pairs for locked records
+        ## record_locks: dictionary that stores record_id, locked_time pairs for locked records
+        ## lock_duration: amount of seconds that records remain locked if no changes are made
+        self.user_locks = {}
+        self.record_locks = {}
+        self.lock_duration = 120
+    
+    def fetchLock(self, user):
+        while self.LOCKED and self.LOCKED != user:
+            _log.info(f"{user} waiting for lock")
+            time.sleep(0.1)
+        self.LOCKED = user
+        _log.info(f"{user} grabbed lock")
+        
+    def releaseLock(self, user):
+        _log.info(f"{user} releasing lock")
+        self.LOCKED = False
+
+    def lockRecord(self, record_id, user):
+        _log.info(f"{user} locking {record_id}")
+
+        ## remove any record locks that this user may already have in place
+        previously_locked_record_id = self.user_locks.get(user, None)
+        if previously_locked_record_id:
+            self.releaseRecord(previously_locked_record_id, user)
+
+        self.user_locks[user] = record_id
+        self.record_locks[record_id] = time.time()
+    
+    def releaseRecord(self, record_id=None, user=None):
+        if record_id and user:
+            _log.info(f"{user} releasing {record_id}")
+            del self.user_locks[user]
+            del self.record_locks[record_id]
+        elif record_id:
+            _log.info(f"releasing {record_id}")
+            temp_user_locks = {key:val for key, val in self.user_locks.items() if val != record_id}
+            self.user_locks = temp_user_locks
+            del self.record_locks[record_id]
+        elif user:
+            _log.info(f"{user} releasing lock")
+            record_id = self.user_locks[user]
+            del self.user_locks[user]
+            del self.record_locks[record_id]
 
     def getDocument(self, collection, query, clean_id=False, return_list=False):
         try:
@@ -279,18 +325,50 @@ class DataManager:
                 _log.error(f"unable to add records from project {project_id}: {e}")
         return records
 
-    def fetchRecordData(self, record_id, user_info):
-        ## TODO: check if user is a part of the team that owns this project
+    def fetchRecordData(self, record_id, user_info, direction="next"):
         user = user_info.get("email", "")
+
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
         document = cursor.next()
+        document["_id"] = str(document["_id"])
         projectId = document.get("project_id", "")
         project_id = ObjectId(projectId)
+
+        ## check that record is not locked
+        self.fetchLock(user)
+        locked_time = self.record_locks.get(record_id, None)
+        if locked_time is not None:
+            ## record is locked. check the time to see if it has expired
+            _log.info(f"{record_id} locked at {locked_time}, checking if expired")
+            current_time = time.time()
+            if locked_time + self.lock_duration > current_time:
+                ## lock is still valid, check if THIS USER has that lock
+                user_has_lock = self.user_locks.get(user, False)
+                if user_has_lock == record_id:
+                    ## this user has the lock
+                    _log.info(f"this user has lock for this record, continue on")
+                else:
+                    ## lock is still valid, different user
+                    _log.info(f"lock still valid, moving to {direction} record")
+                    date_created = document.get("dateCreated", "")
+                    self.releaseLock(user)
+                    return document, True
+            else:
+                ## lock is no longer valid. remove user and record lock for this record
+                _log.info(f"lock has expired, replacing this lock")
+                self.releaseRecord(record_id)
+                self.lockRecord(record_id, user_info)
+        else:
+            ## record is not locked. lock it and move on with operation
+            _log.info(f"{record_id} is free")
+            self.lockRecord(record_id, user)
+        self.releaseLock(user)
+
         user_projects = self.getUserProjectList(user)
         if not project_id in user_projects:
-            return None
-        document["_id"] = str(document["_id"])
+            return None, None
+        # document["_id"] = str(document["_id"])
         document["img_url"] = generate_download_signed_url_v4(
             document["project_id"], document["filename"]
         )
@@ -308,15 +386,17 @@ class DataManager:
         }
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
-        return document
+
+        return document, False
 
     def fetchNextRecord(self, dateCreated, projectId, user_info):
+        _log.info(f"fetching next record\n{dateCreated}\n{projectId}\n{user_info}")
         cursor = self.db.records.find(
             {"dateCreated": {"$gt": dateCreated}, "project_id": projectId}
         ).sort("dateCreated", ASCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
-            return self.fetchRecordData(record_id, user_info)
+            return self.fetchRecordData(record_id, user_info, direction="next")
         cursor = self.db.records.find({"project_id": projectId}).sort(
             "dateCreated", ASCENDING
         )
@@ -330,7 +410,7 @@ class DataManager:
         ).sort("dateCreated", DESCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
-            return self.fetchRecordData(record_id, user_info)
+            return self.fetchRecordData(record_id, user_info, direction="previous")
         cursor = self.db.records.find({"project_id": projectId}).sort(
             "dateCreated", DESCENDING
         )
@@ -369,6 +449,13 @@ class DataManager:
         self.updateRecord(record_id, new_data, "record")
 
     def updateRecord(self, record_id, new_data, update_type=None):
+        ## TODO: make sure that this user has a valid lock for this record before updating
+        ## check if they have the lock
+        ## if they do, move on.
+        ## if they have an expired lock, renew it
+        ## if they don't have a lock and no one else does, allow them to update the record and give them the lock (how would we end up here?)
+        ## if they don't have a lock and someone else has an invalid one, allow them to update the record and give them the lock
+        ## if tehy don't have a lock and someone else has a valid one, navigate this user to the project page
         # _log.info(f"updating {record_id} to be {new_data}")
         if update_type is None:
             return "failure"

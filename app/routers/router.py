@@ -16,8 +16,9 @@ from fastapi import (
     UploadFile,
     BackgroundTasks,
     Depends,
+    status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 import zipfile
 
@@ -216,12 +217,14 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
     Returns:
         Record data
     """
-    record = data_manager.fetchRecordData(record_id, user_info)
+    record, is_locked = data_manager.fetchRecordData(record_id, user_info)
     if record is None:
         raise HTTPException(
             403,
             detail=f"You do not have access to this record, please contact the project creator to gain access.",
         )
+    elif is_locked:
+        return JSONResponse(status_code=303, content={"direction": "next", "recordData": record})
     return record
 
 
@@ -241,9 +244,11 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
     reviewStatus = req.get("review_status", None)
     if reviewed:
         data_manager.updateRecordReviewStatus(data.get("_id", ""), reviewStatus)
-    record = data_manager.fetchNextRecord(
+    record, is_locked = data_manager.fetchNextRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
+    if is_locked:
+        return JSONResponse(status_code=303, content={"direction": "next", "recordData": record})
     return record
 
 
@@ -260,9 +265,11 @@ async def get_previous_record(
         Record data
     """
     data = await request.json()
-    record = data_manager.fetchPreviousRecord(
+    record, is_locked = data_manager.fetchPreviousRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
+    if is_locked:
+        return JSONResponse(status_code=303, content={"direction": "previous", "recordData": record})
     return record
 
 
