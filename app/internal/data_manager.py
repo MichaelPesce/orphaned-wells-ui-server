@@ -71,7 +71,7 @@ class DataManager:
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.user_locks = {}
         self.record_locks = {}
-        self.lock_duration = 12
+        self.lock_duration = 120
     
     def fetchLock(self, user):
         while self.LOCKED and self.LOCKED != user:
