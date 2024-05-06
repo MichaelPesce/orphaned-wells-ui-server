@@ -389,7 +389,7 @@ async def delete_project(project_id: str, background_tasks: BackgroundTasks, use
     Returns:
         Success response
     """
-    data_manager.deleteProject(project_id, background_tasks)
+    data_manager.deleteProject(project_id, background_tasks, user_info)
 
     return {"response": "success"}
 

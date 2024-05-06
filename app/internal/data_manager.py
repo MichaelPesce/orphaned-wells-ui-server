@@ -378,7 +378,7 @@ class DataManager:
         self.db.records.update_one(search_query, update_query)
         return "success"
 
-    def deleteProject(self, project_id, background_tasks):
+    def deleteProject(self, project_id, background_tasks, user_info):
         ## TODO: check if user is a part of the team who owns this project
         _log.info(f"deleting project {project_id}")
         _id = ObjectId(project_id)
@@ -388,6 +388,7 @@ class DataManager:
         project_cursor = self.db.projects.find(myquery)
         try:
             project_document = project_cursor.next()
+            project_document["deleted_by"] = user_info
             self.db.deleted_projects.insert_one(project_document)
         except Exception as e:
             _log.error(f"unable to add project {project_id} to deleted projects: {e}")
@@ -399,6 +400,7 @@ class DataManager:
         background_tasks.add_task(
             self.deleteRecords,
             query = {"project_id": project_id},
+            deletedBy = user_info,
         )
 
         ## delete project directory where photos are stored in GCP 
@@ -417,12 +419,13 @@ class DataManager:
         self.db.records.delete_one(myquery)
         return "success"
     
-    def deleteRecords(self, query):
+    def deleteRecords(self, query, deletedBy):
         _log.info(f"deleting records with query: {query}")
         ## add records to deleted records collection
         record_cursor = self.db.records.find(query)
         try:
             for record_document in record_cursor:
+                record_document["deleted_by"] = deletedBy
                 self.db.deleted_records.insert_one(record_document)
         except Exception as e:
             _log.error(f"unable to move all deleted records: {e}")
