@@ -243,7 +243,7 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
     reviewed = req.get("reviewed", False)
     reviewStatus = req.get("review_status", None)
     if reviewed:
-        data_manager.updateRecordReviewStatus(data.get("_id", ""), reviewStatus)
+        data_manager.updateRecordReviewStatus(data.get("_id", ""), reviewStatus, user_info)
     record, is_locked = data_manager.fetchNextRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
@@ -381,7 +381,11 @@ async def update_record(
     req = await request.json()
     data = req.get("data", None)
     update_type = req.get("type", None)
-    data_manager.updateRecord(record_id, data, update_type)
+    updated = data_manager.updateRecord(record_id, data, update_type, user_info)
+    if not updated:
+        raise HTTPException(
+            status_code=403, detail=f"Record is locked by another user"
+        )
 
     return {"response": "success"}
 

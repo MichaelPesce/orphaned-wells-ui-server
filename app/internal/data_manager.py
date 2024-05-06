@@ -372,7 +372,6 @@ class DataManager:
         project_id = ObjectId(projectId)
 
         ## check that record is not locked
-        ##TODO: make this block of code a function, checkLockStatus()
         attained_lock = self.tryLockingRecord(record_id, user)
         if not attained_lock:
             return document, True
@@ -457,11 +456,12 @@ class DataManager:
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
 
-    def updateRecordReviewStatus(self, record_id, review_status):
+    def updateRecordReviewStatus(self, record_id, review_status, user_info):
         new_data = {"review_status": review_status}
-        self.updateRecord(record_id, new_data, "record")
+        self.updateRecord(record_id, new_data, "record", user_info)
 
-    def updateRecord(self, record_id, new_data, update_type=None):
+    def updateRecord(self, record_id, new_data, update_type=None, user_info=None, forceUpdate = False):
+        user = user_info.get("email", None)
         ## TODO: make sure that this user has a valid lock for this record before updating
         ## check if they have the lock
         ## if they do, move on.
@@ -470,16 +470,23 @@ class DataManager:
         ## if they don't have a lock and someone else has an invalid one, allow them to update the record and give them the lock
         ## if tehy don't have a lock and someone else has a valid one, navigate this user to the project page
         # _log.info(f"updating {record_id} to be {new_data}")
-        if update_type is None:
-            return "failure"
-        _id = ObjectId(record_id)
-        search_query = {"_id": _id}
-        if update_type == "record":
-            update_query = {"$set": new_data}
+        if user is None and not forceUpdate:
+            return False
+        elif user is not None:
+            attained_lock = self.tryLockingRecord(record_id, user)
+        if attained_lock or forceUpdate:
+            if update_type is None:
+                return False
+            _id = ObjectId(record_id)
+            search_query = {"_id": _id}
+            if update_type == "record":
+                update_query = {"$set": new_data}
+            else:
+                update_query = {"$set": {update_type: new_data.get(update_type, None)}}
+            self.db.records.update_one(search_query, update_query)
+            return True
         else:
-            update_query = {"$set": {update_type: new_data.get(update_type, None)}}
-        self.db.records.update_one(search_query, update_query)
-        return "success"
+            return False
 
     def deleteProject(self, project_id, background_tasks, user_info):
         ## TODO: check if user is a part of the team who owns this project
