@@ -13,7 +13,10 @@ from pymongo import ASCENDING, DESCENDING
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
-from app.internal.image_handling import generate_download_signed_url_v4
+from app.internal.image_handling import (
+    generate_download_signed_url_v4,
+    delete_google_storage_directory,
+)
 
 
 _log = logging.getLogger(__name__)
@@ -378,11 +381,37 @@ class DataManager:
         self.db.records.update_one(search_query, update_query)
         return "success"
 
-    def deleteProject(self, project_id):
+    def deleteProject(self, project_id, background_tasks, user_info):
         ## TODO: check if user is a part of the team who owns this project
+        _log.info(f"deleting project {project_id}")
         _id = ObjectId(project_id)
         myquery = {"_id": _id}
+
+        ## add to deleted projects collection first
+        project_cursor = self.db.projects.find(myquery)
+        try:
+            project_document = project_cursor.next()
+            project_document["deleted_by"] = user_info
+            self.db.deleted_projects.insert_one(project_document)
+        except Exception as e:
+            _log.error(f"unable to add project {project_id} to deleted projects: {e}")
+
+        ## delete from projects collection
         self.db.projects.delete_one(myquery)
+
+        ## add records to deleted records collection and remove from records collection
+        background_tasks.add_task(
+            self.deleteRecords,
+            query={"project_id": project_id},
+            deletedBy=user_info,
+        )
+
+        ## delete project directory where photos are stored in GCP
+        ## hold off on this for now - we may end up wanting to keep these
+        # background_tasks.add_task(
+        #     delete_google_storage_directory,
+        #     project_id=project_id,
+        # )
         return "success"
 
     def deleteRecord(self, record_id):
@@ -391,6 +420,21 @@ class DataManager:
         _id = ObjectId(record_id)
         myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
+        return "success"
+
+    def deleteRecords(self, query, deletedBy):
+        _log.info(f"deleting records with query: {query}")
+        ## add records to deleted records collection
+        record_cursor = self.db.records.find(query)
+        try:
+            for record_document in record_cursor:
+                record_document["deleted_by"] = deletedBy
+                self.db.deleted_records.insert_one(record_document)
+        except Exception as e:
+            _log.error(f"unable to move all deleted records: {e}")
+
+        ## Delete records associated with this project
+        self.db.records.delete_many(query)
         return "success"
 
     def getProcessor(self, project_id):

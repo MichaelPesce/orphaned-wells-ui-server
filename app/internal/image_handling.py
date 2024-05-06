@@ -22,6 +22,7 @@ LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID")
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
+BUCKET_NAME = "uploaded_documents_v0"
 os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 
 docai_client = documentai.DocumentProcessorServiceClient(
@@ -364,9 +365,7 @@ def process_image(
 
 
 ## Google Cloud Storage Functions
-async def async_upload_to_bucket(
-    blob_name, file_obj, folder, bucket_name="uploaded_documents_v0"
-):
+async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET_NAME):
     """Upload image file to bucket."""
     async with aiohttp.ClientSession() as session:
         storage = Storage(service_file="./internal/creds.json", session=session)
@@ -381,9 +380,7 @@ async def upload_to_google_storage(file_path, file_name, folder="uploads"):
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(
-    project_id, filename, bucket_name="uploaded_documents_v0"
-):
+def generate_download_signed_url_v4(project_id, filename, bucket_name=BUCKET_NAME):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
@@ -411,3 +408,15 @@ def generate_download_signed_url_v4(
     )
 
     return url
+
+
+def delete_google_storage_directory(project_id, bucket_name=BUCKET_NAME):
+    _log.info(f"deleting project {project_id} from google storage")
+    storage_client = storage.Client.from_service_account_json(
+        f"./internal/{STORAGE_SERVICE_KEY}"
+    )
+    bucket = storage_client.get_bucket(bucket_name)
+    blobs = bucket.list_blobs(prefix=f"uploads/{project_id}")
+    for blob in blobs:
+        _log.info(f"deleting {blob}")
+        blob.delete()
