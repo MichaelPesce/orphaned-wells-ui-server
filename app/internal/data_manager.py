@@ -64,7 +64,7 @@ class DataManager:
         else:
             self.backend_url = "http://localhost:8001"
             os.environ["backend_url"] = "http://localhost:8001"
-        
+
         self.LOCKED = False
         ## user_locks: dictionary that stores user_email, record_id pairs for locked records
         ## record_locks: dictionary that stores record_id, locked_time pairs for locked records
@@ -72,14 +72,14 @@ class DataManager:
         self.user_locks = {}
         self.record_locks = {}
         self.lock_duration = 120
-    
+
     def fetchLock(self, user):
         while self.LOCKED and self.LOCKED != user:
             _log.info(f"{user} waiting for lock")
             time.sleep(0.1)
         self.LOCKED = user
         _log.info(f"{user} grabbed lock")
-        
+
     def releaseLock(self, user):
         _log.info(f"{user} releasing lock")
         self.LOCKED = False
@@ -94,7 +94,7 @@ class DataManager:
 
         self.user_locks[user] = record_id
         self.record_locks[record_id] = time.time()
-    
+
     def releaseRecord(self, record_id=None, user=None):
         if record_id and user:
             _log.info(f"{user} releasing {record_id}")
@@ -102,7 +102,9 @@ class DataManager:
             del self.record_locks[record_id]
         elif record_id:
             _log.info(f"releasing {record_id}")
-            temp_user_locks = {key:val for key, val in self.user_locks.items() if val != record_id}
+            temp_user_locks = {
+                key: val for key, val in self.user_locks.items() if val != record_id
+            }
             self.user_locks = temp_user_locks
             del self.record_locks[record_id]
         elif user:
@@ -460,7 +462,9 @@ class DataManager:
         new_data = {"review_status": review_status}
         self.updateRecord(record_id, new_data, "record", user_info)
 
-    def updateRecord(self, record_id, new_data, update_type=None, user_info=None, forceUpdate = False):
+    def updateRecord(
+        self, record_id, new_data, update_type=None, user_info=None, forceUpdate=False
+    ):
         user = user_info.get("email", None)
         ## TODO: make sure that this user has a valid lock for this record before updating
         ## check if they have the lock

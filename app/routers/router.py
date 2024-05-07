@@ -224,7 +224,9 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
             detail=f"You do not have access to this record, please contact the project creator to gain access.",
         )
     elif is_locked:
-        return JSONResponse(status_code=303, content={"direction": "next", "recordData": record})
+        return JSONResponse(
+            status_code=303, content={"direction": "next", "recordData": record}
+        )
     return record
 
 
@@ -243,12 +245,16 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
     reviewed = req.get("reviewed", False)
     reviewStatus = req.get("review_status", None)
     if reviewed:
-        data_manager.updateRecordReviewStatus(data.get("_id", ""), reviewStatus, user_info)
+        data_manager.updateRecordReviewStatus(
+            data.get("_id", ""), reviewStatus, user_info
+        )
     record, is_locked = data_manager.fetchNextRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
     if is_locked:
-        return JSONResponse(status_code=303, content={"direction": "next", "recordData": record})
+        return JSONResponse(
+            status_code=303, content={"direction": "next", "recordData": record}
+        )
     return record
 
 
@@ -269,7 +275,9 @@ async def get_previous_record(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
     if is_locked:
-        return JSONResponse(status_code=303, content={"direction": "previous", "recordData": record})
+        return JSONResponse(
+            status_code=303, content={"direction": "previous", "recordData": record}
+        )
     return record
 
 
@@ -383,9 +391,7 @@ async def update_record(
     update_type = req.get("type", None)
     updated = data_manager.updateRecord(record_id, data, update_type, user_info)
     if not updated:
-        raise HTTPException(
-            status_code=403, detail=f"Record is locked by another user"
-        )
+        raise HTTPException(status_code=403, detail=f"Record is locked by another user")
 
     return {"response": "success"}
 
