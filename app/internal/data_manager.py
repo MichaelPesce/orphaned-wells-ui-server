@@ -321,7 +321,6 @@ class DataManager:
 
         ## get project's records
         records = []
-        # _log.info(f"checking for records with project_id {project_id}")
         cursor = self.db.records.find({"project_id": project_id}).sort(
             "dateCreated", ASCENDING
         )
@@ -465,7 +464,6 @@ class DataManager:
     def updateRecord(
         self, record_id, new_data, update_type=None, user_info=None, forceUpdate=False
     ):
-        user = user_info.get("email", None)
         ## TODO: make sure that this user has a valid lock for this record before updating
         ## check if they have the lock
         ## if they do, move on.
@@ -474,9 +472,11 @@ class DataManager:
         ## if they don't have a lock and someone else has an invalid one, allow them to update the record and give them the lock
         ## if tehy don't have a lock and someone else has a valid one, navigate this user to the project page
         # _log.info(f"updating {record_id} to be {new_data}")
-        if user is None and not forceUpdate:
+        attained_lock = False
+        if user_info is None and not forceUpdate:
             return False
-        elif user is not None:
+        elif user_info is not None:
+            user = user_info.get("email", None)
             attained_lock = self.tryLockingRecord(record_id, user)
         if attained_lock or forceUpdate:
             if update_type is None:

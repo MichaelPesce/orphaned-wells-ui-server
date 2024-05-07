@@ -358,7 +358,7 @@ def process_image(
         "status": "digitized",
     }
     # new_record_id = data_manager.createRecord(record)
-    data_manager.updateRecord(record_id, record, update_type="record")
+    data_manager.updateRecord(record_id, record, update_type="record", forceUpdate=True)
     _log.info(f"updated record in db: {record_id}")
 
     return record_id
