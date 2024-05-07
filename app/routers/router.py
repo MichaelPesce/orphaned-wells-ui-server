@@ -450,7 +450,9 @@ async def download_records(
     exportType = req.get("exportType", "csv")
     selectedColumns = req.get("columns", None)
 
-    export_file = data_manager.downloadRecords(project_id, exportType, selectedColumns, user_info)
+    export_file = data_manager.downloadRecords(
+        project_id, exportType, selectedColumns, user_info
+    )
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
         data_manager.deleteFiles, filepaths=[export_file], sleep_time=30

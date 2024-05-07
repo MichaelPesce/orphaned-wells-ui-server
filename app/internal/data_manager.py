@@ -524,7 +524,9 @@ class DataManager:
             deletedBy=user_info,
         )
 
-        self.recordHistory("deleteProject", user_info.get("email",None), project_id=project_id)
+        self.recordHistory(
+            "deleteProject", user_info.get("email", None), project_id=project_id
+        )
 
         ## delete project directory where photos are stored in GCP
         ## hold off on this for now - we may end up wanting to keep these
@@ -718,7 +720,7 @@ class DataManager:
         return user
 
     def deleteUser(self, email, user_info):
-        admin_email = user_info.get("email",None)
+        admin_email = user_info.get("email", None)
         query = {"email": email}
         delete_response = self.db.users.delete_one(query)
         ## TODO: remove user form all teams that include him/her
@@ -761,8 +763,10 @@ class DataManager:
         project = self.getDocument("projects", {"_id": project_id})
         if project is not None:
             return True
-    
-    def recordHistory(self, action, user=None, project_id=None, record_id=None, notes=None):
+
+    def recordHistory(
+        self, action, user=None, project_id=None, record_id=None, notes=None
+    ):
         try:
             history_item = {
                 "action": action,
@@ -770,7 +774,7 @@ class DataManager:
                 "project_id": project_id,
                 "record_id": record_id,
                 "notes": notes,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
             self.db.history.insert_one(history_item)
         except Exception as e:
