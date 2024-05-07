@@ -304,6 +304,8 @@ class DataManager:
         newvalues = {"$set": {"projects": team_projects}}
         self.db.teams.update_one(team_query, newvalues)
 
+        self.recordHistory("createProject", user_email, str(new_project_id))
+
         return str(new_project_id)
 
     def fetchProjectData(self, project_id, user):
@@ -431,21 +433,24 @@ class DataManager:
         record_id = str(document.get("_id", ""))
         return self.fetchRecordData(record_id, user_info)
 
-    def createRecord(self, record):
+    def createRecord(self, record, user_info={}):
+        user = user_info.get("email", None)
         ## add timestamp to project
         record["dateCreated"] = time.time()
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
+        self.recordHistory("createRecord", user, record_id=str(new_id))
         return str(new_id)
 
-    def updateProject(self, project_id, new_data):
+    def updateProject(self, project_id, new_data, user_info={}):
+        user = user_info.get("email", None)
         _id = ObjectId(project_id)
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
         myquery = {"_id": _id}
         newvalues = {"$set": new_data}
         self.db.projects.update_one(myquery, newvalues)
-        # _log.info(f"successfully updated project? cursor is : {cursor}")
+        self.recordHistory("updateProject", user, project_id)
         return "success"
 
     def updateUserProjects(self, email, new_data):
@@ -473,6 +478,7 @@ class DataManager:
         ## if tehy don't have a lock and someone else has a valid one, navigate this user to the project page
         # _log.info(f"updating {record_id} to be {new_data}")
         attained_lock = False
+        user = None
         if user_info is None and not forceUpdate:
             return False
         elif user_info is not None:
@@ -488,6 +494,7 @@ class DataManager:
             else:
                 update_query = {"$set": {update_type: new_data.get(update_type, None)}}
             self.db.records.update_one(search_query, update_query)
+            self.recordHistory("updateRecord", user, record_id=record_id)
             return True
         else:
             return False
@@ -517,6 +524,8 @@ class DataManager:
             deletedBy=user_info,
         )
 
+        self.recordHistory("deleteProject", user_info.get("email",None), project_id=project_id)
+
         ## delete project directory where photos are stored in GCP
         ## hold off on this for now - we may end up wanting to keep these
         # background_tasks.add_task(
@@ -525,15 +534,18 @@ class DataManager:
         # )
         return "success"
 
-    def deleteRecord(self, record_id):
+    def deleteRecord(self, record_id, user_info):
+        user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns the project that owns this record
         _log.info(f"deleting {record_id}")
         _id = ObjectId(record_id)
         myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
+        self.recordHistory("deleteRecord", user=user, record_id=record_id)
         return "success"
 
     def deleteRecords(self, query, deletedBy):
+        user = deletedBy.get("email", None)
         _log.info(f"deleting records with query: {query}")
         ## add records to deleted records collection
         record_cursor = self.db.records.find(query)
@@ -546,6 +558,7 @@ class DataManager:
 
         ## Delete records associated with this project
         self.db.records.delete_many(query)
+        # self.recordHistory("deleteRecords", user=user, notes=query)
         return "success"
 
     def getProcessor(self, project_id):
@@ -560,7 +573,8 @@ class DataManager:
             _log.error(f"unable to find processor id: {e}")
             return None
 
-    def downloadRecords(self, project_id, exportType, selectedColumns):
+    def downloadRecords(self, project_id, exportType, selectedColumns, user_info):
+        user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
 
         _id = ObjectId(project_id)
@@ -625,8 +639,8 @@ class DataManager:
         settings = project_document.get("settings", {})
         settings["exportColumns"] = selectedColumns
         update = {"settings": settings}
-        self.updateProject(project_id, update)
-
+        self.updateProject(project_id, update, user)
+        self.recordHistory("downloadRecords", user=user, project_id=project_id)
         return output_file
 
     def deleteFiles(self, filepaths, sleep_time=5):
@@ -703,7 +717,8 @@ class DataManager:
         # delete_response = self.db.users.delete_one(query)
         return user
 
-    def deleteUser(self, email):
+    def deleteUser(self, email, user_info):
+        admin_email = user_info.get("email",None)
         query = {"email": email}
         delete_response = self.db.users.delete_one(query)
         ## TODO: remove user form all teams that include him/her
@@ -716,6 +731,7 @@ class DataManager:
             query = {"_id": team_id}
             newvalue = {"$set": {"users": user_list}}
             self.db.teams.update_one(query, newvalue)
+        self.recordHistory("deleteUser", user=admin_email)
         return email
 
     def addUsersToProject(self, users, project_id):
@@ -745,6 +761,20 @@ class DataManager:
         project = self.getDocument("projects", {"_id": project_id})
         if project is not None:
             return True
+    
+    def recordHistory(self, action, user=None, project_id=None, record_id=None, notes=None):
+        try:
+            history_item = {
+                "action": action,
+                "user": user,
+                "project_id": project_id,
+                "record_id": record_id,
+                "notes": notes,
+                "timestamp": time.time()
+            }
+            self.db.history.insert_one(history_item)
+        except Exception as e:
+            _log.error(f"unable to record history item: {e}")
 
 
 data_manager = DataManager()

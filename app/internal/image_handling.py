@@ -130,7 +130,7 @@ def process_document(
         "status": "processing",
         "review_status": "unreviewed",
     }
-    new_record_id = data_manager.createRecord(new_record)
+    new_record_id = data_manager.createRecord(new_record, user_info)
 
     ## fetch processor id
     processor_id, processor_attributes = data_manager.getProcessor(project_id)

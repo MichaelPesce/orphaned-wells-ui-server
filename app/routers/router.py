@@ -368,7 +368,7 @@ async def update_project(
         Success response
     """
     data = await request.json()
-    data_manager.updateProject(project_id, data)
+    data_manager.updateProject(project_id, data, user_info)
 
     return {"response": "success"}
 
@@ -425,7 +425,7 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     Returns:
         Success response
     """
-    data_manager.deleteRecord(record_id)
+    data_manager.deleteRecord(record_id, user_info)
 
     return {"response": "success"}
 
@@ -450,7 +450,7 @@ async def download_records(
     exportType = req.get("exportType", "csv")
     selectedColumns = req.get("columns", None)
 
-    export_file = data_manager.downloadRecords(project_id, exportType, selectedColumns)
+    export_file = data_manager.downloadRecords(project_id, exportType, selectedColumns, user_info)
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
         data_manager.deleteFiles, filepaths=[export_file], sleep_time=30
@@ -564,7 +564,7 @@ async def delete_user(email: str, user_info: dict = Depends(authenticate)):
         result
     """
     if data_manager.hasRole(user_info, Roles.admin):
-        data_manager.deleteUser(email)
+        data_manager.deleteUser(email, user_info)
         return {"Deleted", email}
 
     else:
