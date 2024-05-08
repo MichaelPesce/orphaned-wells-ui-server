@@ -5,6 +5,7 @@ import os
 import csv
 import json
 from enum import Enum
+import threading
 
 from typing import Union, List
 from pydantic import BaseModel
@@ -84,65 +85,67 @@ class DataManager:
         _log.info(f"{user} releasing lock")
         self.LOCKED = False
 
-    def lockRecord(self, record_id, user):
+    def lockRecord(self, record_id, user, release_previous_record=True):
         _log.info(f"{user} locking {record_id}")
-
-        ## remove any record locks that this user may already have in place
-        previously_locked_record_id = self.user_locks.get(user, None)
-        if previously_locked_record_id:
-            self.releaseRecord(previously_locked_record_id, user)
-
-        self.user_locks[user] = record_id
-        self.record_locks[record_id] = time.time()
+        if release_previous_record:
+            ## remove any record locks that this user may already have in place
+            self.releaseRecord(user=user)
+        query = {"record_id": record_id}
+        data = {
+            "user": user,
+            "record_id": record_id,
+            "timestamp": time.time(),
+        }
+        self.db.locked_records.update_one(
+            query,
+            {"$set": data},
+            upsert=True
+        )
 
     def releaseRecord(self, record_id=None, user=None):
-        if record_id and user:
-            _log.info(f"{user} releasing {record_id}")
-            del self.user_locks[user]
-            del self.record_locks[record_id]
-        elif record_id:
-            _log.info(f"releasing {record_id}")
-            temp_user_locks = {
-                key: val for key, val in self.user_locks.items() if val != record_id
-            }
-            self.user_locks = temp_user_locks
-            del self.record_locks[record_id]
+        _log.info(f"releasing record {record_id} or user {user}")
+        if record_id:
+            self.db.locked_records.delete_many({
+                "record_id": record_id
+            })
         elif user:
-            _log.info(f"{user} releasing lock")
-            record_id = self.user_locks[user]
-            del self.user_locks[user]
-            del self.record_locks[record_id]
+            self.db.locked_records.delete_many({
+                "user": user
+            })
 
     def tryLockingRecord(self, record_id, user):
         try:
             self.fetchLock(user)
             attained_lock = False
-            locked_time = self.record_locks.get(record_id, None)
-            if locked_time is not None:
-                ## record is locked. check the time to see if it has expired
+            locked_record_cursor = self.db.locked_records.find({
+                "record_id": record_id
+            })
+            record_is_locked = False
+            for locked_record_document in locked_record_cursor:
+                record_is_locked = True
+                break
+            locked_record_cursor.close()
+            _log.info(f"record_is_locked: {record_is_locked}")
+            if record_is_locked:
+                ## someone has a lock for this. 
+                ## (1) check who
+                ## (2) check if expired
+                locked_time = locked_record_document.get("timestamp", 0)
+                lockholder = locked_record_document.get("user", None)
                 current_time = time.time()
-                if locked_time + self.lock_duration > current_time:
-                    ## lock is still valid, check if THIS USER has that lock
-                    user_has_lock = self.user_locks.get(user, False)
-                    if user_has_lock == record_id:
-                        ## this user has the lock
-                        _log.info(f"this user has lock for this record, continue on")
-                        attained_lock = True
-                    else:
-                        ## lock is still valid, different user
-                        _log.info(f"lock still valid")
-                        # self.releaseLock(user)
-                        # return document, True
-                else:
-                    ## lock is no longer valid. remove user and record lock for this record
-                    _log.info(f"lock has expired, replacing this lock")
-                    self.releaseRecord(record_id)
-                    self.lockRecord(record_id, user)
+                if lockholder == user:
+                    self.lockRecord(record_id=record_id, user=user, release_previous_record=False)
                     attained_lock = True
+                elif locked_time + self.lock_duration < current_time:
+                    ## lock is expired
+                    self.lockRecord(record_id=record_id, user=user, release_previous_record=True)
+                    attained_lock = True
+                else:
+                    ## lock is still valid by other user
+                    attained_lock = False
             else:
-                ## record is not locked. lock it and move on with operation
-                _log.info(f"{record_id} is free")
-                self.lockRecord(record_id, user)
+                ## record is unlocked, go on ahead
+                self.lockRecord(record_id=record_id, user=user, release_previous_record=True)
                 attained_lock = True
             self.releaseLock(user)
             return attained_lock
