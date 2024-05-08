@@ -67,11 +67,7 @@ class DataManager:
             os.environ["backend_url"] = "http://localhost:8001"
 
         self.LOCKED = False
-        ## user_locks: dictionary that stores user_email, record_id pairs for locked records
-        ## record_locks: dictionary that stores record_id, locked_time pairs for locked records
         ## lock_duration: amount of seconds that records remain locked if no changes are made
-        self.user_locks = {}
-        self.record_locks = {}
         self.lock_duration = 120
 
     def fetchLock(self, user):
@@ -96,30 +92,20 @@ class DataManager:
             "record_id": record_id,
             "timestamp": time.time(),
         }
-        self.db.locked_records.update_one(
-            query,
-            {"$set": data},
-            upsert=True
-        )
+        self.db.locked_records.update_one(query, {"$set": data}, upsert=True)
 
     def releaseRecord(self, record_id=None, user=None):
         _log.info(f"releasing record {record_id} or user {user}")
         if record_id:
-            self.db.locked_records.delete_many({
-                "record_id": record_id
-            })
+            self.db.locked_records.delete_many({"record_id": record_id})
         elif user:
-            self.db.locked_records.delete_many({
-                "user": user
-            })
+            self.db.locked_records.delete_many({"user": user})
 
     def tryLockingRecord(self, record_id, user):
         try:
-            self.fetchLock(user)
+            # self.fetchLock(user)
             attained_lock = False
-            locked_record_cursor = self.db.locked_records.find({
-                "record_id": record_id
-            })
+            locked_record_cursor = self.db.locked_records.find({"record_id": record_id})
             record_is_locked = False
             for locked_record_document in locked_record_cursor:
                 record_is_locked = True
@@ -127,27 +113,33 @@ class DataManager:
             locked_record_cursor.close()
             _log.info(f"record_is_locked: {record_is_locked}")
             if record_is_locked:
-                ## someone has a lock for this. 
+                ## someone has a lock for this.
                 ## (1) check who
                 ## (2) check if expired
                 locked_time = locked_record_document.get("timestamp", 0)
                 lockholder = locked_record_document.get("user", None)
                 current_time = time.time()
                 if lockholder == user:
-                    self.lockRecord(record_id=record_id, user=user, release_previous_record=False)
+                    self.lockRecord(
+                        record_id=record_id, user=user, release_previous_record=False
+                    )
                     attained_lock = True
                 elif locked_time + self.lock_duration < current_time:
                     ## lock is expired
-                    self.lockRecord(record_id=record_id, user=user, release_previous_record=True)
+                    self.lockRecord(
+                        record_id=record_id, user=user, release_previous_record=True
+                    )
                     attained_lock = True
                 else:
                     ## lock is still valid by other user
                     attained_lock = False
             else:
                 ## record is unlocked, go on ahead
-                self.lockRecord(record_id=record_id, user=user, release_previous_record=True)
+                self.lockRecord(
+                    record_id=record_id, user=user, release_previous_record=True
+                )
                 attained_lock = True
-            self.releaseLock(user)
+            # self.releaseLock(user)
             return attained_lock
         except Exception as e:
             _log.error(f"error trying to lock record: {e}")
