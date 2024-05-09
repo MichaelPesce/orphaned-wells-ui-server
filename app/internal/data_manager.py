@@ -71,6 +71,7 @@ class DataManager:
         self.lock_duration = 120
 
     def fetchLock(self, user):
+        ## Can't use variable stored in memory for this
         while self.LOCKED and self.LOCKED != user:
             _log.info(f"{user} waiting for lock")
             time.sleep(0.1)
@@ -78,6 +79,7 @@ class DataManager:
         _log.info(f"{user} grabbed lock")
 
     def releaseLock(self, user):
+        ## Can't use variable stored in memory for this
         _log.info(f"{user} releasing lock")
         self.LOCKED = False
 
