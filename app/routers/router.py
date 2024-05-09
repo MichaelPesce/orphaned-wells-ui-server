@@ -16,8 +16,9 @@ from fastapi import (
     UploadFile,
     BackgroundTasks,
     Depends,
+    status,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 import zipfile
 
@@ -216,11 +217,15 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
     Returns:
         Record data
     """
-    record = data_manager.fetchRecordData(record_id, user_info)
+    record, is_locked = data_manager.fetchRecordData(record_id, user_info)
     if record is None:
         raise HTTPException(
             403,
             detail=f"You do not have access to this record, please contact the project creator to gain access.",
+        )
+    elif is_locked:
+        return JSONResponse(
+            status_code=303, content={"direction": "next", "recordData": record}
         )
     return record
 
@@ -240,10 +245,16 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
     reviewed = req.get("reviewed", False)
     reviewStatus = req.get("review_status", None)
     if reviewed:
-        data_manager.updateRecordReviewStatus(data.get("_id", ""), reviewStatus)
-    record = data_manager.fetchNextRecord(
+        data_manager.updateRecordReviewStatus(
+            data.get("_id", ""), reviewStatus, user_info
+        )
+    record, is_locked = data_manager.fetchNextRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
+    if is_locked:
+        return JSONResponse(
+            status_code=303, content={"direction": "next", "recordData": record}
+        )
     return record
 
 
@@ -260,9 +271,13 @@ async def get_previous_record(
         Record data
     """
     data = await request.json()
-    record = data_manager.fetchPreviousRecord(
+    record, is_locked = data_manager.fetchPreviousRecord(
         data.get("dateCreated", ""), data.get("project_id", ""), user_info
     )
+    if is_locked:
+        return JSONResponse(
+            status_code=303, content={"direction": "previous", "recordData": record}
+        )
     return record
 
 
@@ -353,7 +368,7 @@ async def update_project(
         Success response
     """
     data = await request.json()
-    data_manager.updateProject(project_id, data)
+    data_manager.updateProject(project_id, data, user_info)
 
     return {"response": "success"}
 
@@ -374,7 +389,9 @@ async def update_record(
     req = await request.json()
     data = req.get("data", None)
     update_type = req.get("type", None)
-    data_manager.updateRecord(record_id, data, update_type)
+    updated = data_manager.updateRecord(record_id, data, update_type, user_info)
+    if not updated:
+        raise HTTPException(status_code=403, detail=f"Record is locked by another user")
 
     return {"response": "success"}
 
@@ -408,7 +425,7 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     Returns:
         Success response
     """
-    data_manager.deleteRecord(record_id)
+    data_manager.deleteRecord(record_id, user_info)
 
     return {"response": "success"}
 
@@ -433,7 +450,9 @@ async def download_records(
     exportType = req.get("exportType", "csv")
     selectedColumns = req.get("columns", None)
 
-    export_file = data_manager.downloadRecords(project_id, exportType, selectedColumns)
+    export_file = data_manager.downloadRecords(
+        project_id, exportType, selectedColumns, user_info
+    )
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
         data_manager.deleteFiles, filepaths=[export_file], sleep_time=30
@@ -547,7 +566,7 @@ async def delete_user(email: str, user_info: dict = Depends(authenticate)):
         result
     """
     if data_manager.hasRole(user_info, Roles.admin):
-        data_manager.deleteUser(email)
+        data_manager.deleteUser(email, user_info)
         return {"Deleted", email}
 
     else:

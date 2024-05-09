@@ -5,6 +5,7 @@ import os
 import csv
 import json
 from enum import Enum
+import threading
 
 from typing import Union, List
 from pydantic import BaseModel
@@ -64,6 +65,87 @@ class DataManager:
         else:
             self.backend_url = "http://localhost:8001"
             os.environ["backend_url"] = "http://localhost:8001"
+
+        self.LOCKED = False
+        ## lock_duration: amount of seconds that records remain locked if no changes are made
+        self.lock_duration = 120
+
+    def fetchLock(self, user):
+        ## Can't use variable stored in memory for this
+        while self.LOCKED and self.LOCKED != user:
+            _log.info(f"{user} waiting for lock")
+            time.sleep(0.1)
+        self.LOCKED = user
+        _log.info(f"{user} grabbed lock")
+
+    def releaseLock(self, user):
+        ## Can't use variable stored in memory for this
+        _log.info(f"{user} releasing lock")
+        self.LOCKED = False
+
+    def lockRecord(self, record_id, user, release_previous_record=True):
+        _log.info(f"{user} locking {record_id}")
+        if release_previous_record:
+            ## remove any record locks that this user may already have in place
+            self.releaseRecord(user=user)
+        query = {"record_id": record_id}
+        data = {
+            "user": user,
+            "record_id": record_id,
+            "timestamp": time.time(),
+        }
+        self.db.locked_records.update_one(query, {"$set": data}, upsert=True)
+
+    def releaseRecord(self, record_id=None, user=None):
+        _log.info(f"releasing record {record_id} or user {user}")
+        if record_id:
+            self.db.locked_records.delete_many({"record_id": record_id})
+        elif user:
+            self.db.locked_records.delete_many({"user": user})
+
+    def tryLockingRecord(self, record_id, user):
+        try:
+            # self.fetchLock(user)
+            attained_lock = False
+            locked_record_cursor = self.db.locked_records.find({"record_id": record_id})
+            record_is_locked = False
+            for locked_record_document in locked_record_cursor:
+                record_is_locked = True
+                break
+            locked_record_cursor.close()
+            _log.info(f"record_is_locked: {record_is_locked}")
+            if record_is_locked:
+                ## someone has a lock for this.
+                ## (1) check who
+                ## (2) check if expired
+                locked_time = locked_record_document.get("timestamp", 0)
+                lockholder = locked_record_document.get("user", None)
+                current_time = time.time()
+                if lockholder == user:
+                    self.lockRecord(
+                        record_id=record_id, user=user, release_previous_record=False
+                    )
+                    attained_lock = True
+                elif locked_time + self.lock_duration < current_time:
+                    ## lock is expired
+                    self.lockRecord(
+                        record_id=record_id, user=user, release_previous_record=True
+                    )
+                    attained_lock = True
+                else:
+                    ## lock is still valid by other user
+                    attained_lock = False
+            else:
+                ## record is unlocked, go on ahead
+                self.lockRecord(
+                    record_id=record_id, user=user, release_previous_record=True
+                )
+                attained_lock = True
+            # self.releaseLock(user)
+            return attained_lock
+        except Exception as e:
+            _log.error(f"error trying to lock record: {e}")
+            return False
 
     def getDocument(self, collection, query, clean_id=False, return_list=False):
         try:
@@ -219,6 +301,8 @@ class DataManager:
         newvalues = {"$set": {"projects": team_projects}}
         self.db.teams.update_one(team_query, newvalues)
 
+        self.recordHistory("createProject", user_email, str(new_project_id))
+
         return str(new_project_id)
 
     def fetchProjectData(self, project_id, user):
@@ -236,7 +320,6 @@ class DataManager:
 
         ## get project's records
         records = []
-        # _log.info(f"checking for records with project_id {project_id}")
         cursor = self.db.records.find({"project_id": project_id}).sort(
             "dateCreated", ASCENDING
         )
@@ -279,18 +362,24 @@ class DataManager:
                 _log.error(f"unable to add records from project {project_id}: {e}")
         return records
 
-    def fetchRecordData(self, record_id, user_info):
-        ## TODO: check if user is a part of the team that owns this project
+    def fetchRecordData(self, record_id, user_info, direction="next"):
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
         document = cursor.next()
+        document["_id"] = str(document["_id"])
         projectId = document.get("project_id", "")
         project_id = ObjectId(projectId)
+
+        ## check that record is not locked
+        attained_lock = self.tryLockingRecord(record_id, user)
+        if not attained_lock:
+            return document, True
+
         user_projects = self.getUserProjectList(user)
         if not project_id in user_projects:
-            return None
-        document["_id"] = str(document["_id"])
+            return None, None
+        # document["_id"] = str(document["_id"])
         document["img_url"] = generate_download_signed_url_v4(
             document["project_id"], document["filename"]
         )
@@ -308,15 +397,17 @@ class DataManager:
         }
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
-        return document
+
+        return document, False
 
     def fetchNextRecord(self, dateCreated, projectId, user_info):
+        # _log.info(f"fetching next record\n{dateCreated}\n{projectId}\n{user_info}")
         cursor = self.db.records.find(
             {"dateCreated": {"$gt": dateCreated}, "project_id": projectId}
         ).sort("dateCreated", ASCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
-            return self.fetchRecordData(record_id, user_info)
+            return self.fetchRecordData(record_id, user_info, direction="next")
         cursor = self.db.records.find({"project_id": projectId}).sort(
             "dateCreated", ASCENDING
         )
@@ -325,12 +416,13 @@ class DataManager:
         return self.fetchRecordData(record_id, user_info)
 
     def fetchPreviousRecord(self, dateCreated, projectId, user_info):
+        _log.info(f"fetching previous record")
         cursor = self.db.records.find(
             {"dateCreated": {"$lt": dateCreated}, "project_id": projectId}
         ).sort("dateCreated", DESCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
-            return self.fetchRecordData(record_id, user_info)
+            return self.fetchRecordData(record_id, user_info, direction="previous")
         cursor = self.db.records.find({"project_id": projectId}).sort(
             "dateCreated", DESCENDING
         )
@@ -338,21 +430,24 @@ class DataManager:
         record_id = str(document.get("_id", ""))
         return self.fetchRecordData(record_id, user_info)
 
-    def createRecord(self, record):
+    def createRecord(self, record, user_info={}):
+        user = user_info.get("email", None)
         ## add timestamp to project
         record["dateCreated"] = time.time()
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
+        self.recordHistory("createRecord", user, record_id=str(new_id))
         return str(new_id)
 
-    def updateProject(self, project_id, new_data):
+    def updateProject(self, project_id, new_data, user_info={}):
+        user = user_info.get("email", None)
         _id = ObjectId(project_id)
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
         myquery = {"_id": _id}
         newvalues = {"$set": new_data}
         self.db.projects.update_one(myquery, newvalues)
-        # _log.info(f"successfully updated project? cursor is : {cursor}")
+        self.recordHistory("updateProject", user, project_id)
         return "success"
 
     def updateUserProjects(self, email, new_data):
@@ -364,22 +459,42 @@ class DataManager:
         # _log.info(f"successfully updated project? cursor is : {cursor}")
         return "success"
 
-    def updateRecordReviewStatus(self, record_id, review_status):
+    def updateRecordReviewStatus(self, record_id, review_status, user_info):
         new_data = {"review_status": review_status}
-        self.updateRecord(record_id, new_data, "record")
+        self.updateRecord(record_id, new_data, "record", user_info)
 
-    def updateRecord(self, record_id, new_data, update_type=None):
+    def updateRecord(
+        self, record_id, new_data, update_type=None, user_info=None, forceUpdate=False
+    ):
+        ## TODO: make sure that this user has a valid lock for this record before updating
+        ## check if they have the lock
+        ## if they do, move on.
+        ## if they have an expired lock, renew it
+        ## if they don't have a lock and no one else does, allow them to update the record and give them the lock (how would we end up here?)
+        ## if they don't have a lock and someone else has an invalid one, allow them to update the record and give them the lock
+        ## if tehy don't have a lock and someone else has a valid one, navigate this user to the project page
         # _log.info(f"updating {record_id} to be {new_data}")
-        if update_type is None:
-            return "failure"
-        _id = ObjectId(record_id)
-        search_query = {"_id": _id}
-        if update_type == "record":
-            update_query = {"$set": new_data}
+        attained_lock = False
+        user = None
+        if user_info is None and not forceUpdate:
+            return False
+        elif user_info is not None:
+            user = user_info.get("email", None)
+            attained_lock = self.tryLockingRecord(record_id, user)
+        if attained_lock or forceUpdate:
+            if update_type is None:
+                return False
+            _id = ObjectId(record_id)
+            search_query = {"_id": _id}
+            if update_type == "record":
+                update_query = {"$set": new_data}
+            else:
+                update_query = {"$set": {update_type: new_data.get(update_type, None)}}
+            self.db.records.update_one(search_query, update_query)
+            self.recordHistory("updateRecord", user, record_id=record_id)
+            return True
         else:
-            update_query = {"$set": {update_type: new_data.get(update_type, None)}}
-        self.db.records.update_one(search_query, update_query)
-        return "success"
+            return False
 
     def deleteProject(self, project_id, background_tasks, user_info):
         ## TODO: check if user is a part of the team who owns this project
@@ -406,6 +521,10 @@ class DataManager:
             deletedBy=user_info,
         )
 
+        self.recordHistory(
+            "deleteProject", user_info.get("email", None), project_id=project_id
+        )
+
         ## delete project directory where photos are stored in GCP
         ## hold off on this for now - we may end up wanting to keep these
         # background_tasks.add_task(
@@ -414,15 +533,18 @@ class DataManager:
         # )
         return "success"
 
-    def deleteRecord(self, record_id):
+    def deleteRecord(self, record_id, user_info):
+        user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns the project that owns this record
         _log.info(f"deleting {record_id}")
         _id = ObjectId(record_id)
         myquery = {"_id": _id}
         self.db.records.delete_one(myquery)
+        self.recordHistory("deleteRecord", user=user, record_id=record_id)
         return "success"
 
     def deleteRecords(self, query, deletedBy):
+        user = deletedBy.get("email", None)
         _log.info(f"deleting records with query: {query}")
         ## add records to deleted records collection
         record_cursor = self.db.records.find(query)
@@ -435,6 +557,7 @@ class DataManager:
 
         ## Delete records associated with this project
         self.db.records.delete_many(query)
+        # self.recordHistory("deleteRecords", user=user, notes=query)
         return "success"
 
     def getProcessor(self, project_id):
@@ -449,7 +572,8 @@ class DataManager:
             _log.error(f"unable to find processor id: {e}")
             return None
 
-    def downloadRecords(self, project_id, exportType, selectedColumns):
+    def downloadRecords(self, project_id, exportType, selectedColumns, user_info):
+        user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
 
         _id = ObjectId(project_id)
@@ -514,8 +638,8 @@ class DataManager:
         settings = project_document.get("settings", {})
         settings["exportColumns"] = selectedColumns
         update = {"settings": settings}
-        self.updateProject(project_id, update)
-
+        self.updateProject(project_id, update, user)
+        self.recordHistory("downloadRecords", user=user, project_id=project_id)
         return output_file
 
     def deleteFiles(self, filepaths, sleep_time=5):
@@ -592,7 +716,8 @@ class DataManager:
         # delete_response = self.db.users.delete_one(query)
         return user
 
-    def deleteUser(self, email):
+    def deleteUser(self, email, user_info):
+        admin_email = user_info.get("email", None)
         query = {"email": email}
         delete_response = self.db.users.delete_one(query)
         ## TODO: remove user form all teams that include him/her
@@ -605,6 +730,7 @@ class DataManager:
             query = {"_id": team_id}
             newvalue = {"$set": {"users": user_list}}
             self.db.teams.update_one(query, newvalue)
+        self.recordHistory("deleteUser", user=admin_email)
         return email
 
     def addUsersToProject(self, users, project_id):
@@ -634,6 +760,22 @@ class DataManager:
         project = self.getDocument("projects", {"_id": project_id})
         if project is not None:
             return True
+
+    def recordHistory(
+        self, action, user=None, project_id=None, record_id=None, notes=None
+    ):
+        try:
+            history_item = {
+                "action": action,
+                "user": user,
+                "project_id": project_id,
+                "record_id": record_id,
+                "notes": notes,
+                "timestamp": time.time(),
+            }
+            self.db.history.insert_one(history_item)
+        except Exception as e:
+            _log.error(f"unable to record history item: {e}")
 
 
 data_manager = DataManager()

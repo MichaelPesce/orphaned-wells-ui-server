@@ -130,7 +130,7 @@ def process_document(
         "status": "processing",
         "review_status": "unreviewed",
     }
-    new_record_id = data_manager.createRecord(new_record)
+    new_record_id = data_manager.createRecord(new_record, user_info)
 
     ## fetch processor id
     processor_id, processor_attributes = data_manager.getProcessor(project_id)
@@ -358,7 +358,7 @@ def process_image(
         "status": "digitized",
     }
     # new_record_id = data_manager.createRecord(record)
-    data_manager.updateRecord(record_id, record, update_type="record")
+    data_manager.updateRecord(record_id, record, update_type="record", forceUpdate=True)
     _log.info(f"updated record in db: {record_id}")
 
     return record_id
