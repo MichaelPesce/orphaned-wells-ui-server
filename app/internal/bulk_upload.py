@@ -1,15 +1,23 @@
+import sys
 import argparse
 import os
 import requests
 import time
 import shutil
+from google.cloud import storage
+from io import BytesIO
+from dotenv import load_dotenv
 
+load_dotenv()
+
+STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 
 def upload_documents_from_directory(
     backend_url=None,
     user_email=None,
     project_id=None,
     local_directory=None,
+    cloud_bucket=None,
     cloud_directory=None,
     delete_local_files=False,
 ):
@@ -35,7 +43,6 @@ def upload_documents_from_directory(
             for file in files:
                 file_path = os.path.join(subdir, file)
                 files_to_delete.append(file_path)
-
                 if ".pdf" in file.lower():
                     mime_type = "application/pdf"
                 elif ".tif" in file.lower():
@@ -46,18 +53,22 @@ def upload_documents_from_directory(
                     mime_type = "image/jpeg"
                 elif ".jpeg" in file.lower():
                     mime_type = "image/jpeg"
+                else:
+                    print(f"unable to process file type {file}")
+                    mime_type = None
 
-                print(f"uploading: {file_path} with mimetype {mime_type}")
+                if mime_type is not None:
+                    print(f"uploading: {file_path} with mimetype {mime_type}")
 
-                opened_file = open(file_path, "rb")
-                upload_files = {
-                    "file": (file, opened_file, mime_type),
-                    "Content-Disposition": 'form-data; name="file"; filename="'
-                    + file
-                    + '"',
-                    "Content-Type": mime_type,
-                }
-                requests.post(post_url, files=upload_files)
+                    opened_file = open(file_path, "rb")
+                    upload_files = {
+                        "file": (file, opened_file, mime_type),
+                        "Content-Disposition": 'form-data; name="file"; filename="'
+                        + file
+                        + '"',
+                        "Content-Type": mime_type,
+                    }
+                    requests.post(post_url, files=upload_files)
         if delete_local_files:
             time_to_wait = len(files_to_delete) + 120
             print(f"removing {files_to_delete} in {time_to_wait} seconds")
@@ -67,7 +78,36 @@ def upload_documents_from_directory(
                 shutil.rmtree(local_directory)
             except Exception as e:
                 print(f"unable to delete {files_to_delete}: {e}")
-            # for each in files_to_delete:
-            #     os.remove(each)
-    if cloud_directory is not None:
-        print(f"uploading documents from {cloud_directory}")
+    if cloud_directory is not None and cloud_bucket is not None:
+        print(f"uploading documents from {cloud_bucket}/{cloud_directory}")
+        client = storage.Client.from_service_account_json(
+            f"./{STORAGE_SERVICE_KEY}"
+        )
+        bucket = client.bucket(cloud_bucket)
+        for blob in bucket.list_blobs(prefix=cloud_directory):
+            file_name = blob.name
+            if ".pdf" in file_name.lower():
+                mime_type = "application/pdf"
+            elif ".tif" in file_name.lower():
+                mime_type = "image/tiff"
+            elif ".png" in file_name.lower():
+                mime_type = "image/png"
+            elif ".jpg" in file_name.lower():
+                mime_type = "image/jpeg"
+            elif ".jpeg" in file_name.lower():
+                mime_type = "image/jpeg"
+            else:
+                print(f"unable to process file type {file_name}")
+                mime_type = None
+
+            if mime_type is not None:
+                print(f"uploading {mime_type}: {file_name}")
+                doc = BytesIO(blob.download_as_bytes())
+                upload_files = {
+                    "file": (file_name, doc, mime_type),
+                    "Content-Disposition": 'form-data; name="file"; filename="'
+                    + file_name
+                    + '"',
+                    "Content-Type": mime_type,
+                }
+                requests.post(post_url, files=upload_files)
