@@ -18,19 +18,21 @@ def upload_documents_from_directory(
     project_id=None,
     local_directory=None,
     cloud_bucket=None,
-    cloud_directory=None,
+    cloud_directory="",
     delete_local_files=False,
+    storage_service_key=None,
 ):
+    if storage_service_key is None:
+        print("please provide a valid path to a google storage service key json file")
+        return
     if project_id is None:
-        print("please provide a project id (flag -p) to upload documents to")
+        print("please provide a project id to upload documents to")
         return
     if user_email is None:
-        print("please provide a contributor's email (flag -e)")
+        print("please provide a contributor's email")
         return
-    if local_directory is None and cloud_directory is None:
-        print(
-            "please provide either a local directory (flag -l) or a cloud directory (flag -c)"
-        )
+    if local_directory is None and (cloud_directory is None or cloud_bucket is None):
+        print("please provide either a local directory or a cloud directory")
         return
     if backend_url is None:
         # backend_url = f"http://localhost:8001"
@@ -80,12 +82,16 @@ def upload_documents_from_directory(
                 print(f"unable to delete {files_to_delete}: {e}")
     if cloud_directory is not None and cloud_bucket is not None:
         print(f"uploading documents from {cloud_bucket}/{cloud_directory}")
-        client = storage.Client.from_service_account_json(
+        try: 
+            client = storage.Client.from_service_account_json(
             f"./{STORAGE_SERVICE_KEY}"
         )
+        except Exception as e:
+            print("please provide a valid path to a google storage service key json file")
+            return
         bucket = client.bucket(cloud_bucket)
         for blob in bucket.list_blobs(prefix=cloud_directory):
-            file_name = blob.name
+            file_name = blob.name.replace(f"{cloud_directory}/", "")
             if ".pdf" in file_name.lower():
                 mime_type = "application/pdf"
             elif ".tif" in file_name.lower():
