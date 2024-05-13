@@ -12,6 +12,7 @@ load_dotenv()
 
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 
+
 def upload_documents_from_directory(
     backend_url=None,
     user_email=None,
@@ -82,12 +83,14 @@ def upload_documents_from_directory(
                 print(f"unable to delete {files_to_delete}: {e}")
     if cloud_directory is not None and cloud_bucket is not None:
         print(f"uploading documents from {cloud_bucket}/{cloud_directory}")
-        try: 
+        try:
             client = storage.Client.from_service_account_json(
-            f"./{STORAGE_SERVICE_KEY}"
-        )
+                f"./{STORAGE_SERVICE_KEY}"
+            )
         except Exception as e:
-            print("please provide a valid path to a google storage service key json file")
+            print(
+                "please provide a valid path to a google storage service key json file"
+            )
             return
         bucket = client.bucket(cloud_bucket)
         for blob in bucket.list_blobs(prefix=cloud_directory):
