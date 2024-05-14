@@ -23,9 +23,6 @@ def upload_documents_from_directory(
     delete_local_files=False,
     storage_service_key=None,
 ):
-    if storage_service_key is None:
-        print("please provide a valid path to a google storage service key json file")
-        return
     if project_id is None:
         print("please provide a project id to upload documents to")
         return
@@ -82,6 +79,9 @@ def upload_documents_from_directory(
             except Exception as e:
                 print(f"unable to delete {files_to_delete}: {e}")
     if cloud_directory is not None and cloud_bucket is not None:
+        if storage_service_key is None:
+            print("please provide a valid path to a google storage service key json file")
+            return
         print(f"uploading documents from {cloud_bucket}/{cloud_directory}")
         try:
             client = storage.Client.from_service_account_json(
