@@ -80,7 +80,9 @@ def upload_documents_from_directory(
                 print(f"unable to delete {files_to_delete}: {e}")
     if cloud_directory is not None and cloud_bucket is not None:
         if storage_service_key is None:
-            print("please provide a valid path to a google storage service key json file")
+            print(
+                "please provide a valid path to a google storage service key json file"
+            )
             return
         print(f"uploading documents from {cloud_bucket}/{cloud_directory}")
         try:
