@@ -22,7 +22,7 @@ LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID")
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
-BUCKET_NAME = "uploaded_documents_v0"
+BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 
 docai_client = documentai.DocumentProcessorServiceClient(
