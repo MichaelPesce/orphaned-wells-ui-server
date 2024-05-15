@@ -59,12 +59,6 @@ class DataManager:
         self.db = connectToDatabase()
         self.environment = os.getenv("ENVIRONMENT")
         _log.info(f"working in environment: {self.environment}")
-        if self.environment == "prod":
-            self.backend_url = "https://server.uow-carbon.org"
-            os.environ["backend_url"] = "https://server.uow-carbon.org"
-        else:
-            self.backend_url = "http://localhost:8001"
-            os.environ["backend_url"] = "http://localhost:8001"
 
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made

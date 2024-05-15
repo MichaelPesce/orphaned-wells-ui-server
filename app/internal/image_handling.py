@@ -53,7 +53,7 @@ def process_zip(
             # if it is not a document file, remove it
             if mime_type is None:
                 os.remove(unzipped_img_filepath)
-    backend_url = os.getenv("backend_url")
+    backend_url = os.getenv("BACKEND_URL")
     # _log.info(f"bulk uploading: {zip_path} to {backend_url}")
     background_tasks.add_task(
         upload_documents_from_directory,
