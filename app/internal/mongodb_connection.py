@@ -10,6 +10,7 @@ from pymongo.server_api import ServerApi
 load_dotenv()
 DB_USERNAME = os.getenv("DB_USERNAME")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_CONNECTION = os.getenv("DB_CONNECTION")
 
 ca = certifi.where()
 
@@ -17,9 +18,10 @@ ca = certifi.where()
 def connectToDatabase():
     username = urllib.parse.quote_plus(DB_USERNAME)
     password = urllib.parse.quote_plus(DB_PASSWORD)
+    db_connection = urllib.parse.quote_plus(DB_CONNECTION)
     db_name = "uow"
 
-    uri = f"mongodb+srv://{username}:{password}@cluster0.lh1kted.mongodb.net/?retryWrites=true&w=majority"
+    uri = f"mongodb+srv://{username}:{password}@{db_connection}.mongodb.net/?retryWrites=true&w=majority"
     client = MongoClient(uri, server_api=ServerApi("1"), tlsCAFile=ca)
     # Send a ping to confirm a successful connection
     try:
