@@ -14,4 +14,4 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 COPY ./app /code/app
 
 # run app in prod
-CMD ["python", "app/main.py", "--prod"]
+CMD ["python", "app/main.py", "--docker"]
