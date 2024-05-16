@@ -140,7 +140,7 @@ def process_document(
         upload_to_google_storage,
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
-        folder=f"uploads/{project_id}",
+        folder=f"uploads/{project_id}/{new_record_id}",
     )
 
     ## send to google doc AI
@@ -380,7 +380,7 @@ async def upload_to_google_storage(file_path, file_name, folder="uploads"):
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(project_id, filename, bucket_name=BUCKET_NAME):
+def generate_download_signed_url_v4(project_id, record_id, filename, bucket_name=BUCKET_NAME):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
@@ -395,7 +395,7 @@ def generate_download_signed_url_v4(project_id, filename, bucket_name=BUCKET_NAM
     )
 
     # blob_name: path to file in google cloud bucket
-    blob_name = f"uploads/{project_id}/{filename}"
+    blob_name = f"uploads/{project_id}/{record_id}/{filename}"
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 

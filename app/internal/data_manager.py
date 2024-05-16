@@ -375,7 +375,7 @@ class DataManager:
             return None, None
         # document["_id"] = str(document["_id"])
         document["img_url"] = generate_download_signed_url_v4(
-            document["project_id"], document["filename"]
+            document["project_id"], document["_id"], document["filename"]
         )
 
         ## get project name
