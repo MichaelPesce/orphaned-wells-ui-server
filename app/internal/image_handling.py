@@ -22,7 +22,7 @@ LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID")
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
-BUCKET_NAME = "uploaded_documents_v0"
+BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 
 docai_client = documentai.DocumentProcessorServiceClient(
@@ -53,7 +53,7 @@ def process_zip(
             # if it is not a document file, remove it
             if mime_type is None:
                 os.remove(unzipped_img_filepath)
-    backend_url = os.getenv("backend_url")
+    backend_url = os.getenv("BACKEND_URL")
     # _log.info(f"bulk uploading: {zip_path} to {backend_url}")
     background_tasks.add_task(
         upload_documents_from_directory,
@@ -140,7 +140,7 @@ def process_document(
         upload_to_google_storage,
         file_path=output_path,
         file_name=f"{filename}{file_ext}",
-        folder=f"uploads/{project_id}",
+        folder=f"uploads/{project_id}/{new_record_id}",
     )
 
     ## send to google doc AI
@@ -380,7 +380,9 @@ async def upload_to_google_storage(file_path, file_name, folder="uploads"):
     _log.info(f"uploaded document to cloud storage: {url}")
 
 
-def generate_download_signed_url_v4(project_id, filename, bucket_name=BUCKET_NAME):
+def generate_download_signed_url_v4(
+    project_id, record_id, filename, bucket_name=BUCKET_NAME
+):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
@@ -395,7 +397,7 @@ def generate_download_signed_url_v4(project_id, filename, bucket_name=BUCKET_NAM
     )
 
     # blob_name: path to file in google cloud bucket
-    blob_name = f"uploads/{project_id}/{filename}"
+    blob_name = f"uploads/{project_id}/{record_id}/{filename}"
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
 

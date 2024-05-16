@@ -59,12 +59,6 @@ class DataManager:
         self.db = connectToDatabase()
         self.environment = os.getenv("ENVIRONMENT")
         _log.info(f"working in environment: {self.environment}")
-        if self.environment == "prod":
-            self.backend_url = "https://server.uow-carbon.org"
-            os.environ["backend_url"] = "https://server.uow-carbon.org"
-        else:
-            self.backend_url = "http://localhost:8001"
-            os.environ["backend_url"] = "http://localhost:8001"
 
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
@@ -381,7 +375,7 @@ class DataManager:
             return None, None
         # document["_id"] = str(document["_id"])
         document["img_url"] = generate_download_signed_url_v4(
-            document["project_id"], document["filename"]
+            document["project_id"], document["_id"], document["filename"]
         )
 
         ## get project name
@@ -466,13 +460,6 @@ class DataManager:
     def updateRecord(
         self, record_id, new_data, update_type=None, user_info=None, forceUpdate=False
     ):
-        ## TODO: make sure that this user has a valid lock for this record before updating
-        ## check if they have the lock
-        ## if they do, move on.
-        ## if they have an expired lock, renew it
-        ## if they don't have a lock and no one else does, allow them to update the record and give them the lock (how would we end up here?)
-        ## if they don't have a lock and someone else has an invalid one, allow them to update the record and give them the lock
-        ## if tehy don't have a lock and someone else has a valid one, navigate this user to the project page
         # _log.info(f"updating {record_id} to be {new_data}")
         attained_lock = False
         user = None
