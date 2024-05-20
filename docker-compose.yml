@@ -1,23 +1,36 @@
-version: "3"
+version: "1"
 
 services:
-  app:
-    build: .
+
+  web:
+    image: michaelpescelbl/fastapiwithnginx:latest
+    container_name: web
     ports:
       - "8001:8001"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+        max-size: "100k"
+
+  # app:
+  #   build: .
+  #   ports:
+  #     - "8001:8001"
   
   nginx:
     restart: unless-stopped
     image: nginx
     container_name: nginx
     ports:
-      - "80:80"
-      # - "443:443"
-    # environment:
-    #   - CERTBOT_EMAIL=youremail@gmail.com
+      # - "80:80"
+      - "443:443"
+    environment:
+      - CERTBOT_EMAIL=mpesce@lbl.gov
     volumes:
       - ./nginx:/etc/nginx/user_conf.d:ro
-      # - letsencrypt:/etc/letsencrypt
+      - letsencrypt:/etc/letsencrypt
     depends_on:
       - app
     logging:
