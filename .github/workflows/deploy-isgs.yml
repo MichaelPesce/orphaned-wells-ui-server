@@ -60,7 +60,7 @@ jobs:
 
       - name: Add creds file
         id: create-creds-json
-        uses: jsdaniell/create-json@1.1.2
+        uses: jsdaniell/create-json@1.2.3
         with:
             name: "app/internal/creds.json"
             json: ${{ secrets.STAGING_CREDS_JSON }}
@@ -72,7 +72,7 @@ jobs:
 
       - name: Add service key json file
         id: create-service-key-json
-        uses: jsdaniell/create-json@1.1.2
+        uses: jsdaniell/create-json@1.2.3
         with:
             name: "app/internal/tidy-outlet-service-key.json"
             json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
