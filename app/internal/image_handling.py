@@ -26,7 +26,8 @@ BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 
 docai_client = documentai.DocumentProcessorServiceClient(
-    client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
+    client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com"),
+    credentials="./creds.json"
 )
 
 
