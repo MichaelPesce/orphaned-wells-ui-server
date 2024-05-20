@@ -53,15 +53,29 @@ jobs:
             echo client_id=\"${{ secrets.auth_client_id }}\" >> .env \
             echo client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
 
-      - name: Add creds file
-        working-directory: ./app/internal
-        run: |
-            echo ${{ secrets.STAGING_CREDS_JSON }} >> creds.json
+    #   - name: Add creds file
+    #     working-directory: ./app/internal
+    #     run: |
+    #         echo ${{ secrets.STAGING_CREDS_JSON }} >> creds.json
 
       - name: Add creds file
-        working-directory: ./app/internal
-        run: |
-            echo ${{ secrets.STAGING_SERVICE_KEY_JSON }} >> tidy-outlet-service-key.json
+        id: create-creds-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+            name: "app/internal/creds.json"
+            json: ${{ secrets.STAGING_CREDS_JSON }}
+
+    #   - name: Add creds file
+    #     working-directory: ./app/internal
+    #     run: |
+    #         echo ${{ secrets.STAGING_SERVICE_KEY_JSON }} >> tidy-outlet-service-key.json
+
+      - name: Add service key json file
+        id: create-service-key-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+            name: "app/internal/tidy-outlet-service-key.json"
+            json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
     
       - name: Extract metadata (labels, tags, etc.) for Docker
         id: meta
