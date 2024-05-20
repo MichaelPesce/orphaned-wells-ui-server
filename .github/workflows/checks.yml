@@ -23,7 +23,7 @@ jobs:
     # OS and/or Python version don't make a difference, so we choose ubuntu and 3.12 as defaults
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: '3.12'
