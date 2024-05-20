@@ -104,7 +104,7 @@ jobs:
         - name: copy file via ssh key
           uses: appleboy/scp-action@v0.1.4
           with:
-            host: ${{ secrets.ISGS_BACKEND_URL }}
+            host: ${{ secrets.ISGS_BACKEND_IP }}
             username: mpesce@lbl.gov
             key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
             source: "docker-compose.yml, nginx/nginx.conf"
@@ -113,7 +113,7 @@ jobs:
         - name: run docker-compose
           uses: appleboy/ssh-action@v1.0.0
           with:
-            host: ${{ secrets.ISGS_BACKEND_URL }}
+            host: ${{ secrets.ISGS_BACKEND_IP }}
             username: mpesce@lbl.gov
             key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
             script: |
