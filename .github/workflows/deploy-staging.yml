@@ -1,0 +1,53 @@
+
+name: Deploy Staging Backend Server
+
+on:
+  push:
+    branches: [main]
+
+defaults:
+  run:
+    # -l: login shell, needed when using Conda
+    shell: bash -l {0}
+
+env:
+  PIP_PROGRESS_BAR: "off"
+
+jobs:
+
+  Deploy-Staging:
+    name: Deploy Staging Server to Compute Engine VM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Add .env file
+        working-directory: ./app/internal
+        run: |
+            echo ENVIRONMENT=\"prod\" >> .env \
+            echo BACKEND_URL=\"${{ secrets.STAGING_BACKEND_URL }}\" >> .env \
+            echo LOCATION=\"us\" >> .env \
+            echo DB_USERNAME=\"${{ secrets.STAGING_DB_USERNAME }}\" >> .env \
+            echo DB_PASSWORD=\"${{ secrets.STAGING_DB_PASSWORD }}\" >> .env \
+            echo DB_CONNECTION=\"${{ secrets.STAGING_DB_CONNECTION }}\" >> .env \
+            echo DB_NAME=\"${{ secrets.STAGING_DB_NAME }}\" >> .env \
+            echo DB_FULL_CONNECTION_STRING=\"${{ secrets.STAGING_DB_FULL_CONNECTION_STRING }}\" >> .env \
+            echo PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\" >> .env \
+            echo STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\" >> .env \
+            echo STORAGE_BUCKET_NAME=\"${{ secrets.STAGING_STORAGE_BUCKET_NAME }}\" >> .env \
+            echo token_uri=\"${{ secrets.auth_token_uri }}\" >> .env \
+            echo client_id=\"${{ secrets.auth_client_id }}\" >> .env \
+            echo client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
+
+      - name: Add creds file
+        working-directory: ./app/internal
+        run: |
+            echo ${{ secrets.STAGING_CREDS_JSON }} >> creds.json
+
+      - name: Add creds file
+        working-directory: ./app/internal
+        run: |
+            echo ${{ secrets.STAGING_SERVICE_KEY_JSON }} >> tidy-outlet-service-key.json

@@ -1,0 +1,109 @@
+
+name: Deploy ISGS Docker Image
+
+on:
+  push:
+    branches: [dockerize]
+
+defaults:
+  run:
+    # -l: login shell, needed when using Conda
+    shell: bash -l {0}
+
+env:
+  PIP_PROGRESS_BAR: "off"
+
+jobs:
+
+  docker_build_and_push:
+    name: Push docker image to Docker Hub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      - name: Setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          ecr: auto
+          logout: true
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
+      - name: Add .env file
+        working-directory: ./app/internal
+        run: |
+            echo ENVIRONMENT=\"prod\" >> .env \
+            echo BACKEND_URL=\"${{ secrets.ISGS_BACKEND_URL }}\" >> .env \
+            echo LOCATION=\"us\" >> .env \
+            echo DB_USERNAME=\"${{ secrets.ISGS_DB_USERNAME }}\" >> .env \
+            echo DB_PASSWORD=\"${{ secrets.ISGS_DB_PASSWORD }}\" >> .env \
+            echo DB_CONNECTION=\"${{ secrets.ISGS_DB_CONNECTION }}\" >> .env \
+            echo DB_NAME=\"${{ secrets.ISGS_DB_NAME }}\" >> .env \
+            echo DB_FULL_CONNECTION_STRING=\"${{ secrets.ISGS_DB_FULL_CONNECTION_STRING }}\" >> .env \
+            echo PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\" >> .env \
+            echo STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\" >> .env \
+            echo STORAGE_BUCKET_NAME=\"${{ secrets.ISGS_STORAGE_BUCKET_NAME }}\" >> .env \
+            echo token_uri=\"${{ secrets.auth_token_uri }}\" >> .env \
+            echo client_id=\"${{ secrets.auth_client_id }}\" >> .env \
+            echo client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
+
+      - name: Add creds file
+        working-directory: ./app/internal
+        run: |
+            echo ${{ secrets.STAGING_CREDS_JSON }} >> creds.json
+
+      - name: Add creds file
+        working-directory: ./app/internal
+        run: |
+            echo ${{ secrets.STAGING_SERVICE_KEY_JSON }} >> tidy-outlet-service-key.json
+    
+      - name: Extract metadata (labels, tags, etc.) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+            images: michaelpescelbl/fastapiwithnginx
+    
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+            context: .
+            file: ./Dockerfile
+            push: true
+            tags: michaelpescelbl/fastapiwithnginx:latest
+            labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    name: Deploy to ISGS Compute Engine
+    runs-on: ubuntu-latest
+    # if: ${{ github.ref == 'refs/heads/main' }}
+    needs: [ docker_build_and_push ]
+    steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: copy file via ssh key
+          uses: appleboy/scp-action@v0.1.4
+          with:
+            host: ${{ secrets.ISGS_BACKEND_URL }}
+            username: mpesce@lbl.gov
+            key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
+            source: "docker-compose.yml, nginx/nginx.conf"
+            target: .
+
+        - name: run docker-compose
+          uses: appleboy/ssh-action@v1.0.0
+          with:
+            host: ${{ secrets.ISGS_BACKEND_URL }}
+            username: mpesce@lbl.gov
+            key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
+            script: |
+                docker compose down
+                docker rmi -f $(docker images -q)
+                docker compose pull
+                docker compose up -d
