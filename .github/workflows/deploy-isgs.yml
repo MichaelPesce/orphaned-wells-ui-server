@@ -70,9 +70,9 @@ jobs:
             client_id=\"${{ secrets.auth_client_id }}\"'\n'\
             client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
 
-      - name: cat .env file
-        run: |
-            cat .env
+      # - name: cat .env file
+      #   run: |
+      #       cat .env
 
       - name: Add creds file
         id: create-creds-json
@@ -136,7 +136,7 @@ jobs:
               STORAGE_BUCKET_NAME=\"${{ secrets.ISGS_STORAGE_BUCKET_NAME }}\"'\n'\
               token_uri=\"${{ secrets.auth_token_uri }}\"'\n'\
               client_id=\"${{ secrets.auth_client_id }}\"'\n'\
-              client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
+              client_secret=\"${{ secrets.auth_client_secret }}\" > .env
 
         - name: run docker-compose
           uses: appleboy/ssh-action@v1.0.0
