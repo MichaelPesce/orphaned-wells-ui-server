@@ -30,7 +30,7 @@ services:
       - CERTBOT_EMAIL=mpesce@lbl.gov
     volumes:
       - ./nginx:/etc/nginx/user_conf.d:ro
-      - letsencrypt:/etc/letsencrypt
+      - /etc/letsencrypt/:/etc/letsencrypt
     depends_on:
       - web
     logging:
