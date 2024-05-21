@@ -79,7 +79,7 @@ jobs:
             host: ${{ secrets.ISGS_BACKEND_IP }}
             username: mpesce
             key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
-            source: "docker-compose.yml, nginx/nginx.conf"
+            source: "docker-compose.yml, nginx/default.conf"
             # source: "docker-compose.yml"
             target: .
 
