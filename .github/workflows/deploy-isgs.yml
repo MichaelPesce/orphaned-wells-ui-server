@@ -79,8 +79,8 @@ jobs:
             host: ${{ secrets.ISGS_BACKEND_IP }}
             username: mpesce
             key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
-            tar_exec: sudo tar
-            source: "docker-compose.yml, nginx/nginx.conf"
+            # source: "docker-compose.yml, nginx/nginx.conf"
+            source: "docker-compose.yml"
             target: .
 
         # - name: Add .env file to root directory
