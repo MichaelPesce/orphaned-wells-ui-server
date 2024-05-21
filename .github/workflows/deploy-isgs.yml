@@ -38,29 +38,24 @@ jobs:
       - name: Add .env file
         working-directory: ./app/internal
         run: |
-            echo ENVIRONMENT=\"prod\" >> .env \
-            echo BACKEND_URL=\"${{ secrets.ISGS_BACKEND_URL }}\" >> .env \
-            echo LOCATION=\"us\" >> .env \
-            echo DB_USERNAME=\"${{ secrets.ISGS_DB_USERNAME }}\" >> .env \
-            echo DB_PASSWORD=\"${{ secrets.ISGS_DB_PASSWORD }}\" >> .env \
-            echo DB_CONNECTION=\"${{ secrets.ISGS_DB_CONNECTION }}\" >> .env \
-            echo DB_NAME=\"${{ secrets.ISGS_DB_NAME }}\" >> .env \
-            echo DB_FULL_CONNECTION_STRING=\"${{ secrets.ISGS_DB_FULL_CONNECTION_STRING }}\" >> .env \
-            echo PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\" >> .env \
-            echo STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\" >> .env \
-            echo STORAGE_BUCKET_NAME=\"${{ secrets.ISGS_STORAGE_BUCKET_NAME }}\" >> .env \
-            echo token_uri=\"${{ secrets.auth_token_uri }}\" >> .env \
-            echo client_id=\"${{ secrets.auth_client_id }}\" >> .env \
-            echo client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
+            echo ENVIRONMENT=\"prod\"'\n'\
+            BACKEND_URL=\"${{ secrets.ISGS_BACKEND_URL }}\"'\n'\
+            LOCATION=\"us\"'\n'\
+            DB_USERNAME=\"${{ secrets.ISGS_DB_USERNAME }}\"'\n'\
+            DB_PASSWORD=\"${{ secrets.ISGS_DB_PASSWORD }}\"'\n'\
+            DB_CONNECTION=\"${{ secrets.ISGS_DB_CONNECTION }}\"'\n'\
+            DB_NAME=\"${{ secrets.ISGS_DB_NAME }}\"'\n'\
+            DB_FULL_CONNECTION_STRING=\"${{ secrets.ISGS_DB_FULL_CONNECTION_STRING }}\"'\n'\
+            PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\"'\n'\
+            STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\"'\n'\
+            STORAGE_BUCKET_NAME=\"${{ secrets.ISGS_STORAGE_BUCKET_NAME }}\"'\n'\
+            token_uri=\"${{ secrets.auth_token_uri }}\"'\n'\
+            client_id=\"${{ secrets.auth_client_id }}\"'\n'\
+            client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
 
       - name: cat .env file
         run: |
             cat ./app/internal/.env
-
-    #   - name: Add creds file
-    #     working-directory: ./app/internal
-    #     run: |
-    #         echo ${{ secrets.STAGING_CREDS_JSON }} >> creds.json
 
       - name: Add creds file
         id: create-creds-json
@@ -68,11 +63,6 @@ jobs:
         with:
             name: "app/internal/creds.json"
             json: ${{ secrets.STAGING_CREDS_JSON }}
-
-    #   - name: Add creds file
-    #     working-directory: ./app/internal
-    #     run: |
-    #         echo ${{ secrets.STAGING_SERVICE_KEY_JSON }} >> tidy-outlet-service-key.json
 
       - name: Add service key json file
         id: create-service-key-json
