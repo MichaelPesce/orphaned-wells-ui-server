@@ -45,7 +45,7 @@ services:
     volumes:
       # - ./nginx:/etc/nginx/user_conf.d:ro
       - ./nginx:/etc/nginx/conf.d:ro
-    #   - /etc/letsencrypt/:/etc/letsencrypt
+      - /etc/letsencrypt/:/etc/letsencrypt
     depends_on:
       - web
     logging:
