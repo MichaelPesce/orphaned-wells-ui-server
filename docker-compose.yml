@@ -27,23 +27,16 @@ services:
       options:
         max-file: "1"
         max-size: "100k"
-
-  # app:
-  #   build: .
-  #   ports:
-  #     - "8001:8001"
   
   nginx:
     restart: unless-stopped
     image: nginx
     container_name: nginx
     ports:
-      # - "80:80"
       - "443:443"
     environment:
       - CERTBOT_EMAIL=mpesce@lbl.gov
     volumes:
-      # - ./nginx:/etc/nginx/user_conf.d:ro
       - ./nginx:/etc/nginx/conf.d:ro
       - /etc/letsencrypt/:/etc/letsencrypt
     depends_on:
