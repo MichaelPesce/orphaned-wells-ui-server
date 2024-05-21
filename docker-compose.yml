@@ -3,7 +3,6 @@ version: "1"
 services:
   web:
     image: michaelpescelbl/fastapiwithnginx:latest
-    env_file: ./app/internal/.env
     environment:
       - ENVIRONMENT=${ENVIRONMENT}
       - BACKEND_URL=${BACKEND_URL}
