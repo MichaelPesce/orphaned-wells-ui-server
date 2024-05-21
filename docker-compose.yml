@@ -1,9 +1,26 @@
 version: "1"
 
-services:
+env_file:
+  - path: ./app/internal/.env
 
+services:
   web:
     image: michaelpescelbl/fastapiwithnginx:latest
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT}
+      - BACKEND_URL=${BACKEND_URL}
+      - LOCATION=${LOCATION}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_CONNECTION=${DB_CONNECTION}
+      - DB_NAME=${DB_NAME}
+      - DB_FULL_CONNECTION=${DB_FULL_CONNECTION}
+      - PROJECT_ID=${PROJECT_ID}
+      - STORAGE_SERVICE_KEY=${STORAGE_SERVICE_KEY}
+      - STORAGE_BUCKET_NAME=${STORAGE_BUCKET_NAME}
+      - token_uri=${token_uri}
+      - client_id=${client_id}
+      - client_secret=${client_secret}
     container_name: web
     ports:
       - "8001:8001"
