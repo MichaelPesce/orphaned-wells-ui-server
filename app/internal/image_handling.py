@@ -17,7 +17,7 @@ import mimetypes
 from app.internal.bulk_upload import upload_documents_from_directory
 
 _log = logging.getLogger(__name__)
-
+_log(f"os.environ: {os.environ}")
 LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 PROCESSOR_ID = os.getenv("PROCESSOR_ID")

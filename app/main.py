@@ -9,8 +9,6 @@ from dotenv import load_dotenv
 
 _log = logging.getLogger(__name__)
 
-_log(f"os.environ: {os.environ}")
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
 
