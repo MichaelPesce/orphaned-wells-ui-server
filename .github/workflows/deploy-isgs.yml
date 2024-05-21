@@ -53,6 +53,10 @@ jobs:
             echo client_id=\"${{ secrets.auth_client_id }}\" >> .env \
             echo client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
 
+      - name: cat .env file
+        run: |
+            cat ./app/internal/.env
+
     #   - name: Add creds file
     #     working-directory: ./app/internal
     #     run: |
