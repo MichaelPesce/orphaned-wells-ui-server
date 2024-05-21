@@ -53,9 +53,26 @@ jobs:
             client_id=\"${{ secrets.auth_client_id }}\"'\n'\
             client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
 
+      - name: Add .env file to root directory
+        run: |
+            echo ENVIRONMENT=\"prod\"'\n'\
+            BACKEND_URL=\"${{ secrets.ISGS_BACKEND_URL }}\"'\n'\
+            LOCATION=\"us\"'\n'\
+            DB_USERNAME=\"${{ secrets.ISGS_DB_USERNAME }}\"'\n'\
+            DB_PASSWORD=\"${{ secrets.ISGS_DB_PASSWORD }}\"'\n'\
+            DB_CONNECTION=\"${{ secrets.ISGS_DB_CONNECTION }}\"'\n'\
+            DB_NAME=\"${{ secrets.ISGS_DB_NAME }}\"'\n'\
+            DB_FULL_CONNECTION_STRING=\"${{ secrets.ISGS_DB_FULL_CONNECTION_STRING }}\"'\n'\
+            PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\"'\n'\
+            STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\"'\n'\
+            STORAGE_BUCKET_NAME=\"${{ secrets.ISGS_STORAGE_BUCKET_NAME }}\"'\n'\
+            token_uri=\"${{ secrets.auth_token_uri }}\"'\n'\
+            client_id=\"${{ secrets.auth_client_id }}\"'\n'\
+            client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
+
       - name: cat .env file
         run: |
-            cat ./app/internal/.env
+            cat .env
 
       - name: Add creds file
         id: create-creds-json
