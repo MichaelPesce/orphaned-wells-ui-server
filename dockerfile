@@ -13,4 +13,5 @@ COPY ./app /code/app
 EXPOSE 8001
 
 # run app in prod
-CMD ["python", "app/main.py", "--docker"]
+CMD ["cd", "app", "&&", "python", "main.py", "--docker"]
+# CMD ["python", "app/main.py", "--docker"]
