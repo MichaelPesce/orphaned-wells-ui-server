@@ -3,7 +3,7 @@ name: Deploy ISGS Docker Image
 
 on:
   push:
-    branches: [dockerize]
+    branches: [isgs]
 
 defaults:
   run:
@@ -22,10 +22,10 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@v4
 
-      - name: Setup python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
+      # - name: Setup python
+      #   uses: actions/setup-python@v4
+      #   with:
+      #     python-version: '3.12'
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -77,35 +77,17 @@ jobs:
           uses: appleboy/scp-action@v0.1.4
           with:
             host: ${{ secrets.ISGS_BACKEND_IP }}
-            username: mpesce
-            key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
             source: "docker-compose.yml, nginx/default.conf"
-            # source: "docker-compose.yml"
             target: .
-
-        # - name: Add .env file to root directory
-        #   run: |
-        #       echo ENVIRONMENT=\"prod\"'\n'\
-        #       BACKEND_URL=\"${{ secrets.ISGS_BACKEND_URL }}\"'\n'\
-        #       LOCATION=\"us\"'\n'\
-        #       DB_USERNAME=\"${{ secrets.ISGS_DB_USERNAME }}\"'\n'\
-        #       DB_PASSWORD=\"${{ secrets.ISGS_DB_PASSWORD }}\"'\n'\
-        #       DB_CONNECTION=\"${{ secrets.ISGS_DB_CONNECTION }}\"'\n'\
-        #       DB_NAME=\"${{ secrets.ISGS_DB_NAME }}\"'\n'\
-        #       DB_FULL_CONNECTION_STRING=\"${{ secrets.ISGS_DB_FULL_CONNECTION_STRING }}\"'\n'\
-        #       PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\"'\n'\
-        #       STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\"'\n'\
-        #       STORAGE_BUCKET_NAME=\"${{ secrets.ISGS_STORAGE_BUCKET_NAME }}\"'\n'\
-        #       token_uri=\"${{ secrets.auth_token_uri }}\"'\n'\
-        #       client_id=\"${{ secrets.auth_client_id }}\"'\n'\
-        #       client_secret=\"${{ secrets.auth_client_secret }}\" > .env
 
         - name: run docker-compose
           uses: appleboy/ssh-action@v1.0.0
           with:
             host: ${{ secrets.ISGS_BACKEND_IP }}
-            username: mpesce
-            key: ${{ secrets.ISGS_SSH_PRIVATE_KEY }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
             script: |
                 sudo docker compose down
                 sudo docker rmi -f $(sudo docker images -q)
