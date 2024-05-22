@@ -79,7 +79,7 @@ jobs:
             host: ${{ secrets.STAGING_BACKEND_IP }}
             username: ${{ secrets.SSH_USERNAME }}
             key: ${{ secrets.SSH_PRIVATE_KEY }}
-            source: "docker-compose.yml, nginx/default.conf"
+            source: "docker-compose.yml, nginx/staging/default.conf"
             target: .
 
         - name: run docker-compose
