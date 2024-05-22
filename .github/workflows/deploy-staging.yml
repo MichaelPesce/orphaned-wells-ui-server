@@ -16,16 +16,12 @@ env:
 jobs:
 
   docker_build_and_push:
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Push docker image to Docker Hub
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v4
-
-      # - name: Setup python
-      #   uses: actions/setup-python@v4
-      #   with:
-      #     python-version: '3.12'
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -65,9 +61,9 @@ jobs:
             labels: ${{ steps.meta.outputs.labels }}
 
   deploy:
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to Staging Compute Engine
     runs-on: ubuntu-latest
-    # if: ${{ github.ref == 'refs/heads/main' }}
     needs: [ docker_build_and_push ]
     steps:
         - name: Checkout code
