@@ -1,5 +1,5 @@
 
-name: Deploy ISGS Docker Image
+name: Deploy ISGS Server
 
 on:
   push:
@@ -15,7 +15,7 @@ env:
 
 jobs:
 
-  deploy:
+  deploy_isgs:
     if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to ISGS Compute Engine
     runs-on: ubuntu-latest
