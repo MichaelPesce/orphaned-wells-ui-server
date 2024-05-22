@@ -1,9 +1,9 @@
 
-name: Deploy Staging Backend Server
+name: Deploy Staging Docker Image
 
 on:
   push:
-    branches: [main]
+    branches: [dockerize]
 
 defaults:
   run:
@@ -15,39 +15,81 @@ env:
 
 jobs:
 
-  Deploy-Staging:
-    name: Deploy Staging Server to Compute Engine VM
+  docker_build_and_push:
+    name: Push docker image to Docker Hub
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+
+      # - name: Setup python
+      #   uses: actions/setup-python@v4
+      #   with:
+      #     python-version: '3.12'
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
-          python-version: '3.12'
-
-      - name: Add .env file
-        working-directory: ./app/internal
-        run: |
-            echo ENVIRONMENT=\"prod\" >> .env \
-            echo BACKEND_URL=\"${{ secrets.STAGING_BACKEND_URL }}\" >> .env \
-            echo LOCATION=\"us\" >> .env \
-            echo DB_USERNAME=\"${{ secrets.STAGING_DB_USERNAME }}\" >> .env \
-            echo DB_PASSWORD=\"${{ secrets.STAGING_DB_PASSWORD }}\" >> .env \
-            echo DB_CONNECTION=\"${{ secrets.STAGING_DB_CONNECTION }}\" >> .env \
-            echo DB_NAME=\"${{ secrets.STAGING_DB_NAME }}\" >> .env \
-            echo DB_FULL_CONNECTION_STRING=\"${{ secrets.STAGING_DB_FULL_CONNECTION_STRING }}\" >> .env \
-            echo PROJECT_ID=\"${{ secrets.STAGING_PROJECT_ID }}\" >> .env \
-            echo STORAGE_SERVICE_KEY=\"${{ secrets.STAGING_STORAGE_SERVICE_KEY }}\" >> .env \
-            echo STORAGE_BUCKET_NAME=\"${{ secrets.STAGING_STORAGE_BUCKET_NAME }}\" >> .env \
-            echo token_uri=\"${{ secrets.auth_token_uri }}\" >> .env \
-            echo client_id=\"${{ secrets.auth_client_id }}\" >> .env \
-            echo client_secret=\"${{ secrets.auth_client_secret }}\" >> .env
+          ecr: auto
+          logout: true
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       - name: Add creds file
-        working-directory: ./app/internal
-        run: |
-            echo ${{ secrets.STAGING_CREDS_JSON }} >> creds.json
+        id: create-creds-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+            name: "app/internal/creds.json"
+            json: ${{ secrets.STAGING_CREDS_JSON }}
 
-      - name: Add creds file
-        working-directory: ./app/internal
-        run: |
-            echo ${{ secrets.STAGING_SERVICE_KEY_JSON }} >> tidy-outlet-service-key.json
+      - name: Add service key json file
+        id: create-service-key-json
+        uses: jsdaniell/create-json@1.1.2
+        with:
+            name: "app/internal/tidy-outlet-service-key.json"
+            json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
+    
+      - name: Extract metadata (labels, tags, etc.) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+            images: michaelpescelbl/fastapiwithnginx
+    
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+            context: .
+            file: ./Dockerfile
+            push: true
+            tags: michaelpescelbl/fastapiwithnginx:latest
+            labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    name: Deploy to Staging Compute Engine
+    runs-on: ubuntu-latest
+    # if: ${{ github.ref == 'refs/heads/main' }}
+    needs: [ docker_build_and_push ]
+    steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+
+        - name: copy file via ssh key
+          uses: appleboy/scp-action@v0.1.4
+          with:
+            host: ${{ secrets.STAGING_BACKEND_IP }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            source: "docker-compose.yml, nginx/default.conf"
+            target: .
+
+        - name: run docker-compose
+          uses: appleboy/ssh-action@v1.0.0
+          with:
+            host: ${{ secrets.STAGING_BACKEND_IP }}
+            username: ${{ secrets.SSH_USERNAME }}
+            key: ${{ secrets.SSH_PRIVATE_KEY }}
+            script: |
+                sudo docker compose down
+                sudo docker rmi -f $(sudo docker images -q)
+                sudo docker compose pull
+                sudo docker compose up -d
