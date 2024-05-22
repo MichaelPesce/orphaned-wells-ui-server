@@ -3,7 +3,7 @@ name: Deploy Staging Docker Image
 
 on:
   push:
-    branches: [dockerize]
+    branches: [main]
 
 defaults:
   run:
