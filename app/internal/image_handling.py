@@ -370,9 +370,11 @@ def process_image(
 ## Google Cloud Storage Functions
 async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET_NAME):
     """Upload image file to bucket."""
-    
+
     async with aiohttp.ClientSession() as session:
-        storage = Storage(service_file=f"{DIRNAME}/internal/creds.json", session=session)
+        storage = Storage(
+            service_file=f"{DIRNAME}/internal/creds.json", session=session
+        )
         status = await storage.upload(bucket_name, f"{folder}/{blob_name}", file_obj)
         return status["selfLink"]
 
