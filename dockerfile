@@ -1,5 +1,5 @@
 # pthon version
-FROM python:3.12
+FROM python:3.12-slim
 
 # the directory where the code will be stored inside docker container
 WORKDIR /code
