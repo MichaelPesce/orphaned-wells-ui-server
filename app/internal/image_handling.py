@@ -246,7 +246,9 @@ def process_image(
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
     try:
-        request = documentai.ProcessRequest(name=RESOURCE_NAME, raw_document=raw_document)
+        request = documentai.ProcessRequest(
+            name=RESOURCE_NAME, raw_document=raw_document
+        )
     except Exception as e:
         _log.error(f"error on documentai.ProcessRequest: {e}")
         record = {
@@ -255,7 +257,9 @@ def process_image(
             "status": "error",
             "error_message": str(e),
         }
-        data_manager.updateRecord(record_id, record, update_type="record", forceUpdate=True)
+        data_manager.updateRecord(
+            record_id, record, update_type="record", forceUpdate=True
+        )
         return
 
     # Use the Document AI client to process the document
@@ -269,9 +273,11 @@ def process_image(
             "status": "error",
             "error_message": str(e),
         }
-        data_manager.updateRecord(record_id, record, update_type="record", forceUpdate=True)
+        data_manager.updateRecord(
+            record_id, record, update_type="record", forceUpdate=True
+        )
         return
-    
+
     _log.info(f"processed document in doc_ai")
     document_object = result.document
 
