@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 import datetime
 import json
@@ -24,9 +25,11 @@ PROCESSOR_ID = os.getenv("PROCESSOR_ID")
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 os.environ["GCLOUD_PROJECT"] = PROJECT_ID
+DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
 
 docai_client = documentai.DocumentProcessorServiceClient(
-    client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
+    client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com"),
+    # credentials=f"{DIRNAME}/creds.json"
 )
 
 
@@ -367,8 +370,11 @@ def process_image(
 ## Google Cloud Storage Functions
 async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET_NAME):
     """Upload image file to bucket."""
+
     async with aiohttp.ClientSession() as session:
-        storage = Storage(service_file="./internal/creds.json", session=session)
+        storage = Storage(
+            service_file=f"{DIRNAME}/internal/creds.json", session=session
+        )
         status = await storage.upload(bucket_name, f"{folder}/{blob_name}", file_obj)
         return status["selfLink"]
 
@@ -393,7 +399,7 @@ def generate_download_signed_url_v4(
     """
 
     storage_client = storage.Client.from_service_account_json(
-        f"./internal/{STORAGE_SERVICE_KEY}"
+        f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
     )
 
     # blob_name: path to file in google cloud bucket
@@ -415,7 +421,7 @@ def generate_download_signed_url_v4(
 def delete_google_storage_directory(project_id, bucket_name=BUCKET_NAME):
     _log.info(f"deleting project {project_id} from google storage")
     storage_client = storage.Client.from_service_account_json(
-        f"./internal/{STORAGE_SERVICE_KEY}"
+        f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
     )
     bucket = storage_client.get_bucket(bucket_name)
     blobs = bucket.list_blobs(prefix=f"uploads/{project_id}")
