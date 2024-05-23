@@ -3,7 +3,7 @@ name: Deploy ISGS Server
 
 on:
   push:
-    branches: [dockerize]
+    branches: [isgs]
 
 defaults:
   run:
@@ -16,7 +16,7 @@ env:
 jobs:
 
   deploy_isgs:
-    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to ISGS Compute Engine
     runs-on: ubuntu-latest
     steps:
