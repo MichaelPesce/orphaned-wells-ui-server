@@ -154,7 +154,9 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
     Returns:
         user account information
     """
-    role = data_manager.checkForUser({"email": user_info.get("email", "")}, update=False, add=False)
+    role = data_manager.checkForUser(
+        {"email": user_info.get("email", "")}, update=False, add=False
+    )
     user_info["role"] = role
     return user_info
 
