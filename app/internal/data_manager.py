@@ -476,10 +476,14 @@ class DataManager:
             if update_type == "record":
                 update_query = {"$set": new_data}
             else:
-                update_query = {"$set": {update_type: new_data.get(update_type, None)}}
+                data_update = {update_type: new_data.get(update_type, None)}
+                if update_type == "attributes" and new_data.get("review_status", None) == "unreviewed":
+                    ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
+                    data_update["review_status"] = "incomplete"
+                update_query = {"$set": data_update}
             self.db.records.update_one(search_query, update_query)
             self.recordHistory("updateRecord", user, record_id=record_id)
-            return True
+            return data_update
         else:
             return False
 
