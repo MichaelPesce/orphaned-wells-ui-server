@@ -474,7 +474,8 @@ class DataManager:
             _id = ObjectId(record_id)
             search_query = {"_id": _id}
             if update_type == "record":
-                update_query = {"$set": new_data}
+                data_update = new_data
+                update_query = {"$set": data_update}
             else:
                 data_update = {update_type: new_data.get(update_type, None)}
                 if (
