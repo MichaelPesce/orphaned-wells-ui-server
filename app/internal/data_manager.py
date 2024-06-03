@@ -479,7 +479,7 @@ class DataManager:
             else:
                 data_update = {update_type: new_data.get(update_type, None)}
                 if (
-                    update_type == "attributes"
+                    update_type == "attributesList"
                     and new_data.get("review_status", None) == "unreviewed"
                 ):
                     ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
@@ -498,44 +498,33 @@ class DataManager:
 
     def resetRecord(self, record_id, record_data, user):
         print(f"resetting record: {record_id}")
-        record_attributes = record_data["attributes"]
-        for attribute_name in record_attributes:
-            if record_attributes[attribute_name]["normalized_value"] != "":
-                original_value = record_attributes[attribute_name]["normalized_value"]
+        record_attributes = record_data["attributesList"]
+        for attribute in record_attributes:
+            attribute_name = attribute["key"]
+            if attribute["normalized_value"] != "":
+                original_value = attribute["normalized_value"]
             else:
-                original_value = record_attributes[attribute_name]["raw_text"]
-            record_attributes[attribute_name]["value"] = original_value
-            record_attributes[attribute_name]["confidence"] = record_attributes[
-                attribute_name
-            ]["ai_confidence"]
-            record_attributes[attribute_name]["edited"] = False
+                original_value = attribute["raw_text"]
+            attribute["value"] = original_value
+            attribute["confidence"] = attribute["ai_confidence"]
+            attribute["edited"] = False
             ## check for subattributes and reset those
-            if record_attributes[attribute_name]["subattributes"] is not None:
-                record_subattributes = record_attributes[attribute_name][
-                    "subattributes"
-                ]
-                for subattribute_name in record_subattributes:
+            if attribute["subattributes"] is not None:
+                record_subattributes = attribute["subattributes"]
+                for subattribute in record_subattributes:
                     if (
-                        record_subattributes[subattribute_name]["normalized_value"]
+                        subattribute["normalized_value"]
                         != ""
                     ):
-                        original_value = record_subattributes[subattribute_name][
-                            "normalized_value"
-                        ]
+                        original_value = subattribute["normalized_value"]
                     else:
-                        original_value = record_subattributes[subattribute_name][
-                            "raw_text"
-                        ]
-                    record_subattributes[subattribute_name]["value"] = original_value
-                    record_subattributes[subattribute_name][
-                        "confidence"
-                    ] = record_subattributes[subattribute_name].get(
-                        "ai_confidence", None
-                    )
-                    record_subattributes[subattribute_name]["edited"] = False
+                        original_value = subattribute["raw_text"]
+                    subattribute["value"] = original_value
+                    subattribute["confidence"] = subattribute.get("ai_confidence", None)
+                    subattribute["edited"] = False
         update = {
             "review_status": "unreviewed",
-            "attributes": record_attributes,
+            "attributesList": record_attributes,
         }
         self.recordHistory("resetRecord", user, record_id=record_id)
         return update
