@@ -360,6 +360,8 @@ def process_image(
 
         if len(subattributes) == 0:
             subattributes = None
+        if len(subattributesList) == 0:
+            subattributesList = None
 
         counter = 2
         original_attribute = attribute
