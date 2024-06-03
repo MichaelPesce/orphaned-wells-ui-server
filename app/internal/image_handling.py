@@ -353,6 +353,8 @@ def process_image(
                 "value": sub_value,
                 "normalized_vertices": sub_coordinates,
                 "normalized_value": sub_normalized_value,
+                "isSubattribute": True,
+                "topLevelAttribute": attribute,
                 "edited": False,
             })
 
@@ -388,6 +390,7 @@ def process_image(
             "normalized_vertices": coordinates,
             "normalized_value": normalized_value,
             "subattributes": subattributesList,
+            "isSubattribute": False,
             "edited": False,
         })
 
@@ -407,6 +410,19 @@ def process_image(
                 "subattributes": None,
                 "edited": False,
             }
+            attributesList.append({
+                "key": attr,
+                "ai_confidence": None,
+                "confidence": None,
+                "raw_text": "",
+                "text_value": "",
+                "value": "",
+                "normalized_vertices": None,
+                "normalized_value": None,
+                "subattributes": None,
+                "isSubattribute": False,
+                "edited": False,
+            })
 
     ## gotta update the record in the db
     record = {
