@@ -342,6 +342,7 @@ def process_image(
                 "value": sub_value,
                 "normalized_vertices": sub_coordinates,
                 "normalized_value": sub_normalized_value,
+                "edited": False,
             }
             subattributesList.append({
                 "key": original_sub_attribute,
@@ -352,6 +353,7 @@ def process_image(
                 "value": sub_value,
                 "normalized_vertices": sub_coordinates,
                 "normalized_value": sub_normalized_value,
+                "edited": False,
             })
 
         if len(subattributes) == 0:
