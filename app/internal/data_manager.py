@@ -617,34 +617,27 @@ class DataManager:
         attributes = ["file"]
         subattributes = []
         project_document = project_cursor.next()
-        for each in project_document.get("attributes", {}):
-            if each["name"] in selectedColumns:
-                attributes.append(each["name"])
+        # for each in project_document.get("attributes", {}):
+        #     if each["name"] in selectedColumns:
+        #         attributes.append(each["name"])
         project_name = project_document.get("name", "")
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
         if exportType == "csv":
             for document in cursor:
                 record_attribute = {}
-                for attribute in attributes:
-                    if attribute in document.get("attributes", []):
-                        document_attribute = document["attributes"][attribute]
-                        record_attribute[attribute] = document_attribute["value"]
-
+                for document_attribute in document["attributesList"]:
+                    attribute_name = document_attribute["key"]
+                    if attribute_name in selectedColumns:
+                        attributes.append(attribute_name)
+                        record_attribute[attribute_name] = document_attribute["value"]
                         ## add subattributes
                         if document_attribute.get("subattributes", None):
-                            for subattribute in document_attribute["subattributes"]:
-                                document_subattribute = document_attribute[
-                                    "subattributes"
-                                ][subattribute]
-                                record_attribute[subattribute] = document_subattribute[
-                                    "value"
-                                ]
-                                if subattribute not in subattributes:
-                                    subattributes.append(subattribute)
-
-                    else:
-                        record_attribute[attribute] = "N/A"
+                            for document_subattribute in document_attribute["subattributes"]:
+                                subattribute_name = document_subattribute["key"]
+                                record_attribute[subattribute_name] = document_subattribute["value"]
+                                # if subattribute_name not in subattributes:
+                                subattributes.append(subattribute_name)
                 record_attribute["file"] = document.get("filename", "")
                 record_attributes.append(record_attribute)
 
@@ -656,12 +649,10 @@ class DataManager:
         else:
             for document in cursor:
                 record_attribute = {}
-                for attribute in attributes:
-                    if attribute in document.get("attributes", []):
-                        document_attribute = document["attributes"][attribute]
-                        record_attribute[attribute] = document_attribute
-                    else:
-                        record_attribute[attribute] = "N/A"
+                for document_attribute in document["attributesList"]:
+                    attribute_name = document_attribute["key"]
+                    if attribute_name in selectedColumns:
+                        record_attribute[attribute_name] = document_attribute
                 record_attribute["file"] = document.get("filename", "")
                 record_attributes.append(record_attribute)
             with open(output_file, "w", newline="") as jsonfile:
