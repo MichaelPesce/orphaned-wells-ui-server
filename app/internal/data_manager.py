@@ -154,7 +154,9 @@ class DataManager:
             _log.error(f"unable to find {query} in {collection}: {e}")
             return None
 
-    def checkForUser(self, user_info, update=True, add=True, team="Testing", login=False):
+    def checkForUser(
+        self, user_info, update=True, add=True, team="Testing", login=False
+    ):
         cursor = self.db.users.find({"email": user_info["email"]})
         foundUser = False
         for document in cursor:
