@@ -517,10 +517,7 @@ class DataManager:
             if attribute["subattributes"] is not None:
                 record_subattributes = attribute["subattributes"]
                 for subattribute in record_subattributes:
-                    if (
-                        subattribute["normalized_value"]
-                        != ""
-                    ):
+                    if subattribute["normalized_value"] != "":
                         original_value = subattribute["normalized_value"]
                     else:
                         original_value = subattribute["raw_text"]
@@ -638,9 +635,13 @@ class DataManager:
                         record_attribute[attribute_name] = document_attribute["value"]
                         ## add subattributes
                         if document_attribute.get("subattributes", None):
-                            for document_subattribute in document_attribute["subattributes"]:
+                            for document_subattribute in document_attribute[
+                                "subattributes"
+                            ]:
                                 subattribute_name = document_subattribute["key"]
-                                record_attribute[subattribute_name] = document_subattribute["value"]
+                                record_attribute[
+                                    subattribute_name
+                                ] = document_subattribute["value"]
                                 # if subattribute_name not in subattributes:
                                 subattributes.append(subattribute_name)
                 record_attribute["file"] = document.get("filename", "")
