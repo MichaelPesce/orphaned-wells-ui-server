@@ -631,7 +631,8 @@ class DataManager:
                 for document_attribute in document["attributesList"]:
                     attribute_name = document_attribute["key"]
                     if attribute_name in selectedColumns:
-                        attributes.append(attribute_name)
+                        if attribute_name not in attributes:
+                            attributes.append(attribute_name)
                         record_attribute[attribute_name] = document_attribute["value"]
                         ## add subattributes
                         if document_attribute.get("subattributes", None):
@@ -642,8 +643,8 @@ class DataManager:
                                 record_attribute[
                                     subattribute_name
                                 ] = document_subattribute["value"]
-                                # if subattribute_name not in subattributes:
-                                subattributes.append(subattribute_name)
+                                if subattribute_name not in subattributes:
+                                    subattributes.append(subattribute_name)
                 record_attribute["file"] = document.get("filename", "")
                 record_attributes.append(record_attribute)
 
