@@ -627,10 +627,19 @@ class DataManager:
         record_attributes = []
         if exportType == "csv":
             for document in cursor:
+                current_attributes = set()
                 record_attribute = {}
                 for document_attribute in document["attributesList"]:
-                    attribute_name = document_attribute["key"]
+                    attribute_name = document_attribute["key"].replace(" ","")
                     if attribute_name in selectedColumns:
+                        original_attribute_name = attribute_name
+                        i = 2
+                        while attribute_name in current_attributes:
+                            ## add a number to the end of the attribute so it (and its subattributes)
+                            ## is differentiable from other instances of the attribute
+                            attribute_name = f"{original_attribute_name}_{i}"
+                            i+=1
+                        current_attributes.add(attribute_name)
                         if attribute_name not in attributes:
                             attributes.append(attribute_name)
                         record_attribute[attribute_name] = document_attribute["value"]
@@ -639,7 +648,7 @@ class DataManager:
                             for document_subattribute in document_attribute[
                                 "subattributes"
                             ]:
-                                subattribute_name = document_subattribute["key"]
+                                subattribute_name = f"{attribute_name}[{document_subattribute["key"]}]"
                                 record_attribute[
                                     subattribute_name
                                 ] = document_subattribute["value"]
