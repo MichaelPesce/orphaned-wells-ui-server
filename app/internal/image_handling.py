@@ -138,10 +138,11 @@ def process_document(
 
     ## upload to cloud storage (this will overwrite any existing files of the same name):
     for output_path in output_paths:
+        filepath = output_path.split("/")[-1]
         background_tasks.add_task(
             upload_to_google_storage,
             file_path=output_path,
-            file_name=f"{filename}{file_ext}",
+            file_name=f"{filepath}",
             folder=f"uploads/{project_id}/{new_record_id}",
         )
 
