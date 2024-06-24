@@ -130,6 +130,7 @@ def process_document(
         "contributor": user_info,
         "status": "processing",
         "review_status": "unreviewed",
+        "image_files": [output_path.split("/")[-1] for output_path in output_paths],
     }
     new_record_id = data_manager.createRecord(new_record, user_info)
 
