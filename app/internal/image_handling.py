@@ -117,7 +117,9 @@ def process_document(
         )
         file_ext = ".png"
     elif file_ext.lower() == ".pdf":
-        output_paths = convert_pdf(filename, file_ext, data_manager.app_settings.img_dir)
+        output_paths = convert_pdf(
+            filename, file_ext, data_manager.app_settings.img_dir
+        )
         file_ext = ".png"
     else:
         output_paths = [original_output_path]
@@ -162,7 +164,7 @@ def process_document(
 
     ## remove file after 120 seconds to allow for the operations to finish
     ## if file was converted to PNG, remove original file as well
-    files_to_delete = output_paths # [output_path]
+    files_to_delete = output_paths  # [output_path]
     if original_output_path not in output_path:
         files_to_delete.append(original_output_path)
     background_tasks.add_task(
@@ -183,7 +185,7 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
         ## we must assume the PDF has one page
         i = 0
         for page in doc:
-        # page = doc.load_page(0)
+            # page = doc.load_page(0)
             pix = page.get_pixmap(matrix=mat, dpi=dpi)
             if i == 0:
                 print(f" i = 1")
@@ -196,7 +198,7 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
                 print(f"outfile is {outfile}")
             pix.save(outfile)
             output_paths.append(outfile)
-            i+=1
+            i += 1
         doc.close()
         return output_paths
     except Exception as e:
@@ -236,6 +238,7 @@ def get_coordinates(entity, attribute):
         _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
     return coordinates
 
+
 def get_page(entity, attribute):
     try:
         page = entity.page_anchor.page_refs[0].page
@@ -243,6 +246,7 @@ def get_page(entity, attribute):
         page = None
         _log.info(f"unable to get coordinates of attribute {attribute}: {e}")
     return page
+
 
 ## Document AI functions
 def process_image(

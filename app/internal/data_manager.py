@@ -379,7 +379,7 @@ class DataManager:
         if not project_id in user_projects:
             return None, None
         image_urls = []
-        for image in document.get("image_files",[]):
+        for image in document.get("image_files", []):
             image_urls.append(
                 generate_download_signed_url_v4(
                     document["project_id"], document["_id"], image
