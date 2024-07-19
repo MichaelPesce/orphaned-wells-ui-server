@@ -49,7 +49,7 @@ def upload_documents_from_directory(
     DB_PASSWORD=None,
     DB_CONNECTION=None,
 ):
-    WAIT_TIME_BETWEEN_UPLOADS = 15
+    WAIT_TIME_BETWEEN_UPLOADS = 120
     count = 0
     if project_id is None:
         print("please provide a project id to upload documents to")
