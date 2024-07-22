@@ -34,6 +34,7 @@ def connectToDatabase(DB_USERNAME, DB_PASSWORD, DB_CONNECTION):
 
     return client
 
+
 def upload_documents_from_directory(
     user_email=None,
     project_id=None,
@@ -60,20 +61,20 @@ def upload_documents_from_directory(
     if local_directory is None and (cloud_directory is None or cloud_bucket is None):
         print("please provide either a local directory or a cloud directory")
         return
-    if ogrre_version == None or ogrre_version.lower()=="uow":
+    if ogrre_version == None or ogrre_version.lower() == "uow":
         backend_url = f"https://server.uow-carbon.org"
     elif ogrre_version.lower() == "isgs":
         backend_url = f"https://isgs-server.uow-carbon.org"
 
     if preventDuplicates:
         if DB_USERNAME is None:
-            DB_USERNAME=os.getenv("DB_USERNAME")
+            DB_USERNAME = os.getenv("DB_USERNAME")
         if DB_PASSWORD is None:
-            DB_PASSWORD=os.getenv("DB_PASSWORD")
+            DB_PASSWORD = os.getenv("DB_PASSWORD")
         if DB_CONNECTION is None:
-            DB_CONNECTION=os.getenv("DB_CONNECTION")
-        client=connectToDatabase(DB_USERNAME, DB_PASSWORD, DB_CONNECTION)
-        db=client[ogrre_version]
+            DB_CONNECTION = os.getenv("DB_CONNECTION")
+        client = connectToDatabase(DB_USERNAME, DB_PASSWORD, DB_CONNECTION)
+        db = client[ogrre_version]
         cursor = db["records"].find({})
         dontAdd = []
         for document in cursor:
@@ -114,9 +115,11 @@ def upload_documents_from_directory(
                             "Content-Type": mime_type,
                         }
                         requests.post(post_url, files=upload_files)
-                        count+=1
+                        count += 1
                         if count == amount:
-                            print(f"reached upload amount. waiting {WAIT_TIME_BETWEEN_UPLOADS} seconds before continuing")
+                            print(
+                                f"reached upload amount. waiting {WAIT_TIME_BETWEEN_UPLOADS} seconds before continuing"
+                            )
                             time.sleep(WAIT_TIME_BETWEEN_UPLOADS)
                             count = 0
                     else:
@@ -175,37 +178,66 @@ def upload_documents_from_directory(
                         "Content-Type": mime_type,
                     }
                     requests.post(post_url, files=upload_files)
-                    count+=1
+                    count += 1
                     if count == amount:
-                        print(f"reached upload amount. waiting {WAIT_TIME_BETWEEN_UPLOADS} seconds before continuing")
+                        print(
+                            f"reached upload amount. waiting {WAIT_TIME_BETWEEN_UPLOADS} seconds before continuing"
+                        )
                         time.sleep(WAIT_TIME_BETWEEN_UPLOADS)
                         count = 0
                 else:
                     print(f"not adding duplicate {file}")
-    
+
     if preventDuplicates:
         client.close()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-p", "--project_id", help="Project id to upload documents to")
     parser.add_argument("-e", "--email", help="Email of contributor")
-    parser.add_argument("-l", "--local_directory", help="Location of local directory. O")
+    parser.add_argument(
+        "-l", "--local_directory", help="Location of local directory. O"
+    )
     parser.add_argument("-b", "--cloud_bucket", help="Location of cloud bucket")
     parser.add_argument("-c", "--cloud_directory", help="Location of cloud directory")
-    parser.add_argument("-s", "--storage_service_key", help="Location of storage service key")
-    parser.add_argument("-a", "--amount", help="Amount of records to upload before waiting to continue")
-    parser.add_argument("-v", "--OGRRE_version", help="Version of OGRRE that project is on (uow or isgs)")
-    parser.add_argument("-d", "--prevent_duplicates", help="Prevent duplicates from being uploaded to OGRRE")
-    parser.add_argument("-dbu", "--DB_USERNAME", help="Database Username. This can also be stored in .env file.")
-    parser.add_argument("-dbp", "--DB_PASSWORD", help="Database Password. This can also be stored in .env file.")
-    parser.add_argument("-dbc", "--DB_CONNECTION", help="Database Connection String. This can also be stored in .env file.")
+    parser.add_argument(
+        "-s", "--storage_service_key", help="Location of storage service key"
+    )
+    parser.add_argument(
+        "-a", "--amount", help="Amount of records to upload before waiting to continue"
+    )
+    parser.add_argument(
+        "-v",
+        "--OGRRE_version",
+        help="Version of OGRRE that project is on (uow or isgs)",
+    )
+    parser.add_argument(
+        "-d",
+        "--prevent_duplicates",
+        help="Prevent duplicates from being uploaded to OGRRE",
+    )
+    parser.add_argument(
+        "-dbu",
+        "--DB_USERNAME",
+        help="Database Username. This can also be stored in .env file.",
+    )
+    parser.add_argument(
+        "-dbp",
+        "--DB_PASSWORD",
+        help="Database Password. This can also be stored in .env file.",
+    )
+    parser.add_argument(
+        "-dbc",
+        "--DB_CONNECTION",
+        help="Database Connection String. This can also be stored in .env file.",
+    )
     args = parser.parse_args()
 
     cloud_directory = ""
     if args.cloud_directory is not None:
         cloud_directory = args.cloud_directory
-    
+
     amount = 3
     if args.amount is not None:
         amount = args.amount
@@ -216,13 +248,13 @@ if __name__ == "__main__":
     if args.prevent_duplicates is not None:
         preventDuplicates = args.prevent_duplicates
     upload_documents_from_directory(
-        user_email=args.email, 
-        project_id=args.project_id, 
+        user_email=args.email,
+        project_id=args.project_id,
         local_directory=args.local_directory,
         cloud_bucket=args.cloud_bucket,
         cloud_directory=cloud_directory,
         delete_local_files=False,
-        storage_service_key = args.storage_service_key,
+        storage_service_key=args.storage_service_key,
         amount=amount,
         preventDuplicates=preventDuplicates,
         ogrre_version=args.OGRRE_version,
