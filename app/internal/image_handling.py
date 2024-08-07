@@ -110,7 +110,7 @@ def process_document(
     filename,
     data_manager,
     mime_type,
-    content
+    content,
 ):
     # _log.info(f"inside process document, content type is: {type(content)}")
     if file_ext == ".tif" or file_ext == ".tiff":
