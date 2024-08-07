@@ -83,7 +83,7 @@ async def process_single_file(
     ## read document file
     try:
         async with aiofiles.open(original_output_path, "wb") as out_file:
-            content = await file.read()  # async read
+            content = await file.read()
             await out_file.write(content)
 
         return await process_document(
@@ -112,7 +112,6 @@ def process_document(
     mime_type,
     content,
 ):
-    # _log.info(f"inside process document, content type is: {type(content)}")
     if file_ext == ".tif" or file_ext == ".tiff":
         output_paths = convert_tiff(
             filename, file_ext, data_manager.app_settings.img_dir
@@ -141,7 +140,7 @@ def process_document(
     ## fetch processor id
     processor_id, processor_attributes = data_manager.getProcessor(project_id)
 
-    ## upload to cloud storage (this will overwrite any existing files of the same name):
+    ## upload to cloud storage
     for output_path in output_paths:
         filepath = output_path.split("/")[-1]
         background_tasks.add_task(
@@ -164,7 +163,7 @@ def process_document(
         image_content=content,
     )
 
-    ## remove file after 120 seconds to allow for the operations to finish
+    ## remove file after 60 seconds to allow for the operations to finish
     ## if file was converted to PNG, remove original file as well
     files_to_delete = output_paths  # [output_path]
     if original_output_path not in output_path:
@@ -186,7 +185,6 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
 
         i = 0
         for page in doc:
-            # page = doc.load_page(0)
             pix = page.get_pixmap(matrix=mat, dpi=dpi)
             if i == 0:
                 outfile = f"{output_directory}/{filename}{convert_to}"
@@ -204,11 +202,9 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
 
 
 def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
-    # print(f'converting: {filename}.{file_ext} to {convert_to}')
     filepath = f"{output_directory}/{filename}{file_ext}"
     try:
         outfile = f"{output_directory}/{filename}{convert_to}"
-        # print(f'outfile is {outfile}')
         try:
             im = Image.open(filepath)
             im.thumbnail(im.size)
@@ -323,7 +319,6 @@ def process_image(
             text: "1972-08-25"
         }
     """
-    # attributes = {}
     attributesList = []
     found_attributes = {}
     for entity in document_entities:
@@ -436,6 +431,7 @@ def process_image(
     del attributesList
     del sortedAttributesList
     del document_object
+    del found_attributes
     
     _log.info(f"updated record in db: {record_id}")
 
