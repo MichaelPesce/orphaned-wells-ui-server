@@ -184,20 +184,15 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
         zoom = 4
         mat = fitz.Matrix(zoom, zoom)
 
-        ## we must assume the PDF has one page
         i = 0
         for page in doc:
             # page = doc.load_page(0)
             pix = page.get_pixmap(matrix=mat, dpi=dpi)
             if i == 0:
-                print(f" i = 1")
                 outfile = f"{output_directory}/{filename}{convert_to}"
-                print(f"outfile is {outfile}")
             else:
                 print(f"this doc has more than one page")
-                print(f"i == {i}")
                 outfile = f"{output_directory}/{filename}_{i+1}{convert_to}"
-                print(f"outfile is {outfile}")
             pix.save(outfile)
             output_paths.append(outfile)
             i += 1
@@ -286,6 +281,10 @@ def process_image(
             record_id, record, update_type="record", forceUpdate=True
         )
         return
+    
+    ## delete raw document and image_content to free up memory
+    del image_content
+    del raw_document
 
     # Use the Document AI client to process the document
     try:
@@ -431,6 +430,13 @@ def process_image(
         "status": "digitized",
     }
     data_manager.updateRecord(record_id, record, update_type="record", forceUpdate=True)
+
+    ## delete objects to free up memory
+    del record
+    del attributesList
+    del sortedAttributesList
+    del document_object
+    
     _log.info(f"updated record in db: {record_id}")
 
     return record_id
