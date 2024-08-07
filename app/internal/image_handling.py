@@ -199,7 +199,6 @@ def convert_pdf(filename, file_ext, output_directory, convert_to=".png"):
                 outfile = f"{output_directory}/{filename}_{i+1}{convert_to}"
                 print(f"outfile is {outfile}")
             pix.save(outfile)
-            # _log.info(f"inside convert_pdf, pix type is {type(pix)}")
             output_paths.append(outfile)
             i += 1
         doc.close()
@@ -262,10 +261,6 @@ def process_image(
     data_manager,
     image_content,
 ):
-    # _log.info(f"processing {file_path} with mime type {mime_type}")
-    # with open(file_path, "rb") as image:
-    #     image_content = image.read()
-
     if processor_id is None:
         _log.info(
             f"processor id is none, rolling with default processor: {PROCESSOR_ID}"
