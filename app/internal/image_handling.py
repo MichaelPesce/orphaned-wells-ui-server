@@ -277,7 +277,7 @@ def process_image(
             record_id, record, update_type="record", forceUpdate=True
         )
         return
-    
+
     ## delete raw document and image_content to free up memory
     del image_content
     del raw_document
@@ -432,7 +432,7 @@ def process_image(
     del sortedAttributesList
     del document_object
     del found_attributes
-    
+
     _log.info(f"updated record in db: {record_id}")
 
     return record_id
