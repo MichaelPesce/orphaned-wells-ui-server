@@ -197,7 +197,7 @@ async def get_project_data(
     if sort_by[1] != 1 and sort_by[1] !=-1:
         sort_by[1] = 1
     filter_by = request_body.get("filter", {})
-    project_data, records = data_manager.fetchProjectData(
+    project_data, records, record_count = data_manager.fetchProjectData(
         project_id, 
         user_info.get("email", ""),
         page,
@@ -210,7 +210,7 @@ async def get_project_data(
             403,
             detail=f"You do not have access to this project, please contact the project creator to gain access.",
         )
-    return {"project_data": project_data, "records": records}
+    return {"project_data": project_data, "records": records, "record_count": record_count}
 
 
 @router.get("/get_team_records")

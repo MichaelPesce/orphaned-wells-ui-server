@@ -338,7 +338,9 @@ class DataManager:
             document["recordIndex"] = record_index
             record_index += 1
             records.append(document)
-        return project_data, records
+
+        record_count = self.db.records.count_documents(filter_by)
+        return project_data, records, record_count
 
     def getTeamRecords(self, user_info):
         user = user_info.get("email", "")
