@@ -320,7 +320,7 @@ class DataManager:
         ## get project's records
         records = []
         filter_by["project_id"] = project_id
-        if page is not None and records_per_page is not None:
+        if page is not None and records_per_page is not None and records_per_page != -1:
             ## TODO: get only records on page
             cursor = self.db.records.find(filter_by).sort(
                 sort_by[0], sort_by[1]
