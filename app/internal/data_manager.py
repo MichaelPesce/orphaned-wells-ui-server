@@ -320,19 +320,20 @@ class DataManager:
         ## get project's records
         records = []
         filter_by["project_id"] = project_id
+        record_index = 1
         if page is not None and records_per_page is not None and records_per_page != -1:
-            ## TODO: get only records on page
             cursor = self.db.records.find(filter_by).sort(
                 sort_by[0], sort_by[1]
             # )
             ).skip(
                 records_per_page * page
             ).limit(records_per_page)
+            record_index += page * records_per_page
         else:
             cursor = self.db.records.find(filter_by).sort(
                 sort_by[0], sort_by[1]
             )
-        record_index = 1
+        
         for document in cursor:
             document["_id"] = str(document["_id"])
             document["recordIndex"] = record_index
