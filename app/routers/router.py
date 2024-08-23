@@ -179,11 +179,12 @@ async def get_projects(user_info: dict = Depends(authenticate)):
 
 @router.post("/get_project/{project_id}")
 async def get_project_data(
-        request: Request,
-        project_id: str, 
-        page: int = None, 
-        records_per_page: int = None,
-        user_info: dict = Depends(authenticate)):
+    request: Request,
+    project_id: str,
+    page: int = None,
+    records_per_page: int = None,
+    user_info: dict = Depends(authenticate),
+):
     """Fetch individual project data.
 
     Args:
@@ -193,24 +194,30 @@ async def get_project_data(
         Dictionary containing project data, list of records
     """
     request_body = await request.json()
-    sort_by = request_body.get("sort", ["dateCreated", 1]) ## 1 is ascending, -1 is descending`
-    if sort_by[1] != 1 and sort_by[1] !=-1:
+    sort_by = request_body.get(
+        "sort", ["dateCreated", 1]
+    )  ## 1 is ascending, -1 is descending`
+    if sort_by[1] != 1 and sort_by[1] != -1:
         sort_by[1] = 1
     filter_by = request_body.get("filter", {})
     project_data, records, record_count = data_manager.fetchProjectData(
-        project_id, 
+        project_id,
         user_info.get("email", ""),
         page,
         records_per_page,
         sort_by,
-        filter_by
+        filter_by,
     )
     if project_data is None:
         raise HTTPException(
             403,
             detail=f"You do not have access to this project, please contact the project creator to gain access.",
         )
-    return {"project_data": project_data, "records": records, "record_count": record_count}
+    return {
+        "project_data": project_data,
+        "records": records,
+        "record_count": record_count,
+    }
 
 
 @router.get("/get_team_records")
