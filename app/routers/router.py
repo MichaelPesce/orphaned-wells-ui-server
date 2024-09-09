@@ -255,7 +255,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
             status_code=303, content={"direction": "next", "recordData": record}
         )
     _log.info("sending 202 response")
-    return record
+    return {"recordData": record}
 
 
 @router.post("/get_next_record")
@@ -283,7 +283,7 @@ async def get_next_record(request: Request, user_info: dict = Depends(authentica
         return JSONResponse(
             status_code=303, content={"direction": "next", "recordData": record}
         )
-    return record
+    return {"recordData": record}
 
 
 @router.post("/get_previous_record")
@@ -306,7 +306,7 @@ async def get_previous_record(
         return JSONResponse(
             status_code=303, content={"direction": "previous", "recordData": record}
         )
-    return record
+    return {"recordData": record}
 
 
 @router.post("/add_project")
