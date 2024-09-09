@@ -387,10 +387,8 @@ class DataManager:
         projectId = document.get("project_id", "")
         project_id = ObjectId(projectId)
 
-        ## check that record is not locked
+        ## try to attain lock
         attained_lock = self.tryLockingRecord(record_id, user)
-        if not attained_lock:
-            return document, True
 
         user_projects = self.getUserProjectList(user)
         if not project_id in user_projects:
@@ -424,7 +422,7 @@ class DataManager:
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
 
-        return document, False
+        return document, not attained_lock
 
     def fetchNextRecord(self, dateCreated, projectId, user_info):
         # _log.info(f"fetching next record\n{dateCreated}\n{projectId}\n{user_info}")

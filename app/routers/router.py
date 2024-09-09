@@ -254,6 +254,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         return JSONResponse(
             status_code=303, content={"direction": "next", "recordData": record}
         )
+    _log.info("sending 202 response")
     return record
 
 
