@@ -422,7 +422,40 @@ class DataManager:
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
 
+        ## get previous and next IDs
+        document["previous_id"] = self.getPreviousRecordId(dateCreated, projectId)
+        document["next_id"] = self.getNextRecordId(dateCreated, projectId)
+
         return document, not attained_lock
+    
+    def getNextRecordId(self, dateCreated, projectId):
+        cursor = self.db.records.find(
+            {"dateCreated": {"$gt": dateCreated}, "project_id": projectId}
+        ).sort("dateCreated", ASCENDING)
+        for document in cursor:
+            record_id = str(document.get("_id", ""))
+            return record_id
+        cursor = self.db.records.find({"project_id": projectId}).sort(
+            "dateCreated", ASCENDING
+        )
+        document = cursor.next()
+        record_id = str(document.get("_id", ""))
+        return record_id
+
+    def getPreviousRecordId(self, dateCreated, projectId):
+        _log.info(f"fetching previous record")
+        cursor = self.db.records.find(
+            {"dateCreated": {"$lt": dateCreated}, "project_id": projectId}
+        ).sort("dateCreated", DESCENDING)
+        for document in cursor:
+            record_id = str(document.get("_id", ""))
+            return record_id
+        cursor = self.db.records.find({"project_id": projectId}).sort(
+            "dateCreated", DESCENDING
+        )
+        document = cursor.next()
+        record_id = str(document.get("_id", ""))
+        return record_id
 
     def fetchNextRecord(self, dateCreated, projectId, user_info):
         # _log.info(f"fetching next record\n{dateCreated}\n{projectId}\n{user_info}")
