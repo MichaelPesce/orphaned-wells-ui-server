@@ -182,26 +182,6 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return user
 
-    def checkForUser(
-        self, user_info, update=True, add=True, team="Testing", login=False
-    ):
-        cursor = self.db.users.find({"email": user_info["email"]})
-        foundUser = False
-        for document in cursor:
-            foundUser = True
-            role = document.get("role", Roles.pending)
-            if update:
-                self.updateUser(user_info)
-            if login:
-                self.recordHistory("login", user_info["email"])
-        if not foundUser and add:
-            role = Roles.base_user
-            self.addUser(user_info, team, role)
-            self.recordHistory("addUser", user_info["email"])
-        elif not foundUser and not add:
-            role = "not found"
-        return role
-
     def addUser(self, user_info, default_team, role=Roles.pending):
         _log.info(f"adding user {user_info}")
         _log.info(f"team is {default_team}")

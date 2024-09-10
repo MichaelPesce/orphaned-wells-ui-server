@@ -507,26 +507,30 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
             "users", {"email": user_info.get("email", "")}
         )
         team = admin_document.get("default_team", None)
-        ## this function will check for and then add user if it is not found
-        role = data_manager.checkForUser(
-            {"email": email}, update=False, team=team, add=False
-        )
-        if role == "not found":
+
+        new_user = data_manager.getUser(email)
+        if new_user is None:
             resp = data_manager.addUser({"email": email}, team, role=Roles.base_user)
-        elif role > 0:
-            ## TODO: in this case, just add user to team without creating new user
-            resp = data_manager.addUserToTeam(email, team, role=Roles.base_user)
-            if resp == "already_exists":
-                ## 406 Not acceptable: user provided an email that is already on this team
+        else:
+            new_user_role = new_user.get("role", None)
+            if new_user_role is None: ## this shouldnt be possible
+                resp = data_manager.addUser({"email": email}, team, role=Roles.base_user)
+
+            elif new_user_role > 0:
+                ## in this case, just add user to team without creating new user
+                resp = data_manager.addUserToTeam(email, team, role=Roles.base_user)
+                if resp == "already_exists":
+                    ## 406 Not acceptable: user provided an email that is already on this team
+                    raise HTTPException(
+                        status_code=406, detail=f"This user is already on this team."
+                    )
+                else:
+                    return {"base_user": email}
+            else:
+                ## TODO: user exists but is pending
                 raise HTTPException(
                     status_code=406, detail=f"This user is already on this team."
                 )
-            else:
-                return {"base_user": email}
-
-        else:
-            return {"base_user": email}
-
     else:
         raise HTTPException(
             status_code=403, detail=f"User is not authorized to perform this operation"
