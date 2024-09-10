@@ -191,7 +191,15 @@ class DataManager:
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
             "role": role,
-            "projects": [],
+            "roles": {
+                "teams": {
+                    default_team: role,
+                },
+                "projects": {
+
+                },
+                "system": role,
+            },
             "time_created": time.time(),
         }
         if default_team is not None:
