@@ -254,58 +254,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         return JSONResponse(
             status_code=303, content={"direction": "next", "recordData": record}
         )
-    return record
-
-
-@router.post("/get_next_record")
-async def get_next_record(request: Request, user_info: dict = Depends(authenticate)):
-    """Fetch next document record data.
-
-    Args:
-        record_id: Record identifier
-
-    Returns:
-        List containing record data
-    """
-    req = await request.json()
-    data = req.get("data", {})
-    reviewed = req.get("reviewed", False)
-    reviewStatus = req.get("review_status", None)
-    if reviewed:
-        data_manager.updateRecordReviewStatus(
-            data.get("_id", ""), reviewStatus, user_info
-        )
-    record, is_locked = data_manager.fetchNextRecord(
-        data.get("dateCreated", ""), data.get("project_id", ""), user_info
-    )
-    if is_locked:
-        return JSONResponse(
-            status_code=303, content={"direction": "next", "recordData": record}
-        )
-    return record
-
-
-@router.post("/get_previous_record")
-async def get_previous_record(
-    request: Request, user_info: dict = Depends(authenticate)
-):
-    """Fetch previous document record data.
-
-    Args:
-        record_id: Record identifier
-
-    Returns:
-        List containing record data
-    """
-    data = await request.json()
-    record, is_locked = data_manager.fetchPreviousRecord(
-        data.get("dateCreated", ""), data.get("project_id", ""), user_info
-    )
-    if is_locked:
-        return JSONResponse(
-            status_code=303, content={"direction": "previous", "recordData": record}
-        )
-    return record
+    return {"recordData": record}
 
 
 @router.post("/add_project")
