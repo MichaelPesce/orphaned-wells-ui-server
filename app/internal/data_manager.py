@@ -173,7 +173,7 @@ class DataManager:
         ## update name, picture, hd
         for each in ["name", "picture", "hd"]:
             new_val = user_info.get(each, False)
-            if new_val:
+            if new_val and new_val != "":
                 user[each] = new_val
         
         email = user_info.get("email", "")
