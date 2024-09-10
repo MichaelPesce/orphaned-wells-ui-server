@@ -153,6 +153,34 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
             return None
+    
+    def getUser(self, email):
+        cursor = self.db.users.find({"email": email})
+        user = None
+        for document in cursor:
+            user = document
+            user["_id"] = str(user["_id"])
+        return user
+    
+    def updateUserObject(self, user_info):
+        cursor = self.db.users.find({"email": user_info["email"]})
+        user = None
+        for document in cursor:
+            user = document
+        if user == None:
+            return None
+        
+        ## update name, picture, hd
+        for each in ["name", "picture", "hd"]:
+            new_val = user_info.get(each, False)
+            if new_val:
+                user[each] = new_val
+        
+        email = user_info.get("email", "")
+        myquery = {"email": email}
+        newvalues = {"$set": user}
+        self.db.users.update_one(myquery, newvalues)
+        return user
 
     def checkForUser(
         self, user_info, update=True, add=True, team="Testing", login=False

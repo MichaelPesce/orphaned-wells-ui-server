@@ -83,16 +83,21 @@ async def auth_login(request: Request):
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
 
-    role = data_manager.checkForUser(user_info, add=False, login=True)
-    if role == "not found":
-        _log.info(f"user is not authorized")
+    email = user_info["email"]
+    user = data_manager.getUser(email)
+    if user is None:
+        _log.info(f"user {email} is not found in database")
+        data_manager.recordHistory("login", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
+    role = user.get("role", None)
+    _log.info(f"{email} has role {role}")
     if role < Roles.base_user:
         _log.info(f"user is not authorized")
+        data_manager.recordHistory("login", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
-    else:
-        _log.info(f"user has role {role}")
-        return user_tokens
+    data_manager.recordHistory("login", email)
+    data_manager.updateUserObject(user_info)
+    return user_tokens
 
 
 @router.post("/auth_refresh")
@@ -121,13 +126,20 @@ async def auth_refresh(request: Request):
     except Exception as e:
         _log.info(f"unable to authenticate: {e}")
         raise HTTPException(status_code=401, detail=f"unable to authenticate: {e}")
-    role = data_manager.checkForUser(user_info)
+    email = user_info["email"]
+    user = data_manager.getUser(email)
+    if user is None:
+        _log.info(f"user {email} is not found in database")
+        data_manager.recordHistory("refresh", email, notes="denied access")
+        raise HTTPException(status_code=403, detail=user_info)
+    role = user.get("role", None)
+    _log.info(f"{email} has role {role}")
     if role < Roles.base_user:
         _log.info(f"user is not authorized")
+        data_manager.recordHistory("refresh", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
-    else:
-        _log.info(f"user has role {role}")
-        return user_tokens
+    data_manager.recordHistory("refresh", email)
+    return user_tokens
 
 
 @router.post("/check_auth")
@@ -140,11 +152,10 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
     Returns:
         user account information
     """
-    role = data_manager.checkForUser(
-        {"email": user_info.get("email", "")}, update=False, add=False
-    )
-    user_info["role"] = role
-    return user_info
+    email = user_info["email"]
+    user = data_manager.getUser(email)
+    _log.info(f"check auth returning user info: {user}")
+    return user
 
 
 @router.post("/logout")
@@ -457,24 +468,6 @@ async def get_users(
     project_id = req.get("project_id", None)
     users = data_manager.getUsers(Roles[role], user_info, project_id_exclude=project_id)
     return users
-
-
-# @router.post("/add_contributors/{project_id}")
-# async def add_contributors(
-#     project_id: str, request: Request, user_info: dict = Depends(authenticate)
-# ):
-#     """Add user to application database with role 'pending'
-
-#     Args:
-#         email: User email address
-
-#     Returns:
-#         user status
-#     """
-#     ## TODO: change project to team
-#     req = await request.json()
-#     users = req.get("users", "")
-#     return data_manager.addUsersToProject(users, project_id)
 
 
 ## admin functions
