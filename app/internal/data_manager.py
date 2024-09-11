@@ -154,41 +154,61 @@ class DataManager:
             _log.error(f"unable to find {query} in {collection}: {e}")
             return None
 
-    def checkForUser(
-        self, user_info, update=True, add=True, team="Testing", login=False
-    ):
-        cursor = self.db.users.find({"email": user_info["email"]})
-        foundUser = False
+    def getUser(self, email):
+        cursor = self.db.users.find({"email": email})
+        user = None
         for document in cursor:
-            foundUser = True
-            role = document.get("role", Roles.pending)
-            if update:
-                self.updateUser(user_info)
-            if login:
-                self.recordHistory("login", user_info["email"])
-        if not foundUser and add:
-            role = Roles.base_user
-            self.addUser(user_info, team, role)
-            self.recordHistory("addUser", user_info["email"])
-        elif not foundUser and not add:
-            role = "not found"
-        return role
+            user = document
+            user["_id"] = str(user["_id"])
+        return user
 
-    def addUser(self, user_info, default_team, role=Roles.pending):
-        _log.info(f"adding user {user_info}")
-        _log.info(f"team is {default_team}")
+    def updateUserObject(self, user_info):
+        cursor = self.db.users.find({"email": user_info["email"]})
+        user = None
+        for document in cursor:
+            user = document
+        if user == None:
+            return None
+
+        ## update name, picture, hd
+        for each in ["name", "picture", "hd"]:
+            new_val = user_info.get(each, False)
+            if new_val and new_val != "":
+                user[each] = new_val
+
+        email = user_info.get("email", "")
+        myquery = {"email": email}
+        newvalues = {"$set": user}
+        self.db.users.update_one(myquery, newvalues)
+        return user
+
+    def addUser(self, user_info, default_team, role=Roles.base_user):
+        if default_team is None:
+            _log.error(f"failed to add user {user_info}. default team is required")
+            return False
+
+        ## get team's projects
+        project_list = self.getTeamProjectList(default_team)
+        project_roles = {}
+        for project in project_list:
+            project_roles[str(project)] = role
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
+            "default_team": default_team,
             "role": role,
-            "projects": [],
+            "roles": {
+                "teams": {
+                    default_team: role,
+                },
+                "projects": project_roles,
+                "system": 1,
+            },
             "time_created": time.time(),
         }
-        if default_team is not None:
-            user["default_team"] = default_team
-            # user["teams"] = [default_team]
+        user["default_team"] = default_team
         db_response = self.db.users.insert_one(user)
 
         ## add user to team's users
@@ -240,17 +260,19 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return "success"
 
+    def getTeamProjectList(self, team):
+        team_query = {"name": team}
+        team_cursor = self.db.teams.find(team_query)
+        team_document = team_cursor.next()
+        projects = team_document.get("projects", [])
+        return projects
+
     def getUserProjectList(self, user):
         user_query = {"email": user}
         user_cursor = self.db.users.find(user_query)
         user_document = user_cursor.next()
         default_team = user_document.get("default_team", None)
-
-        team_query = {"name": default_team}
-        team_cursor = self.db.teams.find(team_query)
-        team_document = team_cursor.next()
-        projects = team_document.get("projects", [])
-        return projects
+        return self.getTeamProjectList(default_team)
 
     def fetchProjects(self, user):
         user_projects = self.getUserProjectList(user)
@@ -567,12 +589,10 @@ class DataManager:
 
         ## add to deleted projects collection first
         project_cursor = self.db.projects.find(myquery)
-        try:
-            project_document = project_cursor.next()
-            project_document["deleted_by"] = user_info
-            self.db.deleted_projects.insert_one(project_document)
-        except Exception as e:
-            _log.error(f"unable to add project {project_id} to deleted projects: {e}")
+        project_document = project_cursor.next()
+        project_document["deleted_by"] = user_info
+        team = project_document.get("team", "")
+        self.db.deleted_projects.insert_one(project_document)
 
         ## delete from projects collection
         self.db.projects.delete_one(myquery)
@@ -588,12 +608,7 @@ class DataManager:
             "deleteProject", user_info.get("email", None), project_id=project_id
         )
 
-        ## delete project directory where photos are stored in GCP
-        ## hold off on this for now - we may end up wanting to keep these
-        # background_tasks.add_task(
-        #     delete_google_storage_directory,
-        #     project_id=project_id,
-        # )
+        self.removeProjectFromTeam(_id, team)
         return "success"
 
     def deleteRecord(self, record_id, user_info):
@@ -622,6 +637,11 @@ class DataManager:
         self.db.records.delete_many(query)
         # self.recordHistory("deleteRecords", user=user, notes=query)
         return "success"
+
+    def removeProjectFromTeam(self, project_id, team):
+        team_query = {"name": team}
+        update = {"$pull": {"projects": project_id}}
+        self.db.teams.update_many(team_query, update)
 
     def getProcessor(self, project_id):
         _id = ObjectId(project_id)
