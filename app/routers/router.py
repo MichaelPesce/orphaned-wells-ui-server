@@ -512,8 +512,10 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
             resp = data_manager.addUser({"email": email}, team, role=Roles.base_user)
         else:
             new_user_role = new_user.get("role", None)
-            if new_user_role is None: ## this shouldnt be possible
-                resp = data_manager.addUser({"email": email}, team, role=Roles.base_user)
+            if new_user_role is None:  ## this shouldnt be possible
+                resp = data_manager.addUser(
+                    {"email": email}, team, role=Roles.base_user
+                )
 
             elif new_user_role > 0:
                 ## in this case, just add user to team without creating new user

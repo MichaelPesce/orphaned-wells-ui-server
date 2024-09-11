@@ -153,7 +153,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
             return None
-    
+
     def getUser(self, email):
         cursor = self.db.users.find({"email": email})
         user = None
@@ -161,7 +161,7 @@ class DataManager:
             user = document
             user["_id"] = str(user["_id"])
         return user
-    
+
     def updateUserObject(self, user_info):
         cursor = self.db.users.find({"email": user_info["email"]})
         user = None
@@ -169,13 +169,13 @@ class DataManager:
             user = document
         if user == None:
             return None
-        
+
         ## update name, picture, hd
         for each in ["name", "picture", "hd"]:
             new_val = user_info.get(each, False)
             if new_val and new_val != "":
                 user[each] = new_val
-        
+
         email = user_info.get("email", "")
         myquery = {"email": email}
         newvalues = {"$set": user}
@@ -259,7 +259,7 @@ class DataManager:
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return "success"
-    
+
     def getTeamProjectList(self, team):
         team_query = {"name": team}
         team_cursor = self.db.teams.find(team_query)
@@ -637,11 +637,11 @@ class DataManager:
         self.db.records.delete_many(query)
         # self.recordHistory("deleteRecords", user=user, notes=query)
         return "success"
-    
+
     def removeProjectFromTeam(self, project_id, team):
         team_query = {"name": team}
-        update = { "$pull": { "projects": project_id } }
-        self.db.teams.update_many( team_query, update )
+        update = {"$pull": {"projects": project_id}}
+        self.db.teams.update_many(team_query, update)
 
     def getProcessor(self, project_id):
         _id = ObjectId(project_id)
