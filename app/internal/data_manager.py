@@ -589,12 +589,10 @@ class DataManager:
 
         ## add to deleted projects collection first
         project_cursor = self.db.projects.find(myquery)
-        try:
-            project_document = project_cursor.next()
-            project_document["deleted_by"] = user_info
-            self.db.deleted_projects.insert_one(project_document)
-        except Exception as e:
-            _log.error(f"unable to add project {project_id} to deleted projects: {e}")
+        project_document = project_cursor.next()
+        project_document["deleted_by"] = user_info
+        team = project_document.get("team", "")
+        self.db.deleted_projects.insert_one(project_document)
 
         ## delete from projects collection
         self.db.projects.delete_one(myquery)
@@ -610,12 +608,7 @@ class DataManager:
             "deleteProject", user_info.get("email", None), project_id=project_id
         )
 
-        ## delete project directory where photos are stored in GCP
-        ## hold off on this for now - we may end up wanting to keep these
-        # background_tasks.add_task(
-        #     delete_google_storage_directory,
-        #     project_id=project_id,
-        # )
+        self.removeProjectFromTeam(_id, team)
         return "success"
 
     def deleteRecord(self, record_id, user_info):
@@ -644,6 +637,11 @@ class DataManager:
         self.db.records.delete_many(query)
         # self.recordHistory("deleteRecords", user=user, notes=query)
         return "success"
+    
+    def removeProjectFromTeam(self, project_id, team):
+        team_query = {"name": team}
+        update = { "$pull": { "projects": project_id } }
+        self.db.teams.update_many( team_query, update )
 
     def getProcessor(self, project_id):
         _id = ObjectId(project_id)
