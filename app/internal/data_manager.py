@@ -182,29 +182,33 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return user
 
-    def addUser(self, user_info, default_team, role=Roles.pending):
-        _log.info(f"adding user {user_info}")
-        _log.info(f"team is {default_team}")
+    def addUser(self, user_info, default_team, role=Roles.base_user):
+        if default_team is None:
+            _log.error(f"failed to add user {user_info}. default team is required")
+            return False
+
+        ## get team's projects
+        project_list = self.getTeamProjectList(default_team)
+        project_roles = {}
+        for project in project_list:
+            project_roles[str(project)] = role
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
+            "default_team": default_team,
             "role": role,
             "roles": {
                 "teams": {
                     default_team: role,
                 },
-                "projects": {
-
-                },
-                "system": role,
+                "projects": project_roles,
+                "system": 1,
             },
             "time_created": time.time(),
         }
-        if default_team is not None:
-            user["default_team"] = default_team
-            # user["teams"] = [default_team]
+        user["default_team"] = default_team
         db_response = self.db.users.insert_one(user)
 
         ## add user to team's users
@@ -255,18 +259,20 @@ class DataManager:
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return "success"
+    
+    def getTeamProjectList(self, team):
+        team_query = {"name": team}
+        team_cursor = self.db.teams.find(team_query)
+        team_document = team_cursor.next()
+        projects = team_document.get("projects", [])
+        return projects
 
     def getUserProjectList(self, user):
         user_query = {"email": user}
         user_cursor = self.db.users.find(user_query)
         user_document = user_cursor.next()
         default_team = user_document.get("default_team", None)
-
-        team_query = {"name": default_team}
-        team_cursor = self.db.teams.find(team_query)
-        team_document = team_cursor.next()
-        projects = team_document.get("projects", [])
-        return projects
+        return self.getTeamProjectList(default_team)
 
     def fetchProjects(self, user):
         user_projects = self.getUserProjectList(user)

@@ -154,7 +154,6 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
     """
     email = user_info["email"]
     user = data_manager.getUser(email)
-    _log.info(f"check auth returning user info: {user}")
     return user
 
 
