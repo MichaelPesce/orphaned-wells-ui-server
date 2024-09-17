@@ -293,6 +293,14 @@ class DataManager:
                 )
             )
         return projects
+    
+    def fetchProcessors(self, user, state):
+        processors = []
+        cursor = self.db.processors.find({"state": state})
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            processors.append(document)
+        return processors
 
     def createProject(self, project_info, user_info):
         ## get user's default team
