@@ -291,7 +291,7 @@ class DataManager:
                 )
             )
         return projects
-    
+
     def getProcessorByGoogleId(self, google_id):
         cursor = self.db.processors.find({"processor_id": google_id})
         for document in cursor:
