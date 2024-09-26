@@ -300,7 +300,7 @@ class DataManager:
         return None
 
     def fetchProcessor(self, google_id):
-        cursor = self.db.processors.find({"processor_id": google_id})
+        cursor = self.db.processors.find({"processorId": google_id})
         for document in cursor:
             document["_id"] = str(document["_id"])
             return document
