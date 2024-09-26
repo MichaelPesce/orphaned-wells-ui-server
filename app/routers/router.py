@@ -199,7 +199,7 @@ async def get_processors(state: str, user_info: dict = Depends(authenticate)):
 
 
 @router.get("/get_processor_data/{processor_id}", response_model=dict)
-async def get_processors(processor_id: str, user_info: dict = Depends(authenticate)):
+async def get_processor_data(processor_id: str, user_info: dict = Depends(authenticate)):
     """Fetch processor data for provided id.
 
     Returns:
