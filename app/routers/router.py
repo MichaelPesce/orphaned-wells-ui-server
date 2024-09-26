@@ -381,9 +381,7 @@ async def update_project(
         Success response
     """
     data = await request.json()
-    data_manager.updateProject(project_id, data, user_info)
-
-    return {"response": "success"}
+    return data_manager.updateProject(project_id, data, user_info)
 
 
 @router.post("/update_record/{record_id}")
