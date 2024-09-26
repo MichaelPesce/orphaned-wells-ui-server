@@ -198,16 +198,16 @@ async def get_processors(state: str, user_info: dict = Depends(authenticate)):
     return resp
 
 
-@router.get("/get_processor_data/{processor_id}", response_model=dict)
+@router.get("/get_processor_data/{google_id}", response_model=dict)
 async def get_processor_data(
-    processor_id: str, user_info: dict = Depends(authenticate)
+    google_id: str, user_info: dict = Depends(authenticate)
 ):
     """Fetch processor data for provided id.
 
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.fetchProcessor(processor_id)
+    resp = data_manager.fetchProcessor(google_id)
     return resp
 
 
