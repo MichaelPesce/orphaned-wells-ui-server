@@ -514,7 +514,6 @@ class DataManager:
         return str(new_id)
 
     def updateProject(self, project_id, new_data, user_info={}):
-        _log.info(f"updating project: {new_data}")
         user = user_info.get("email", None)
         _id = ObjectId(project_id)
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
