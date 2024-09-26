@@ -299,6 +299,13 @@ class DataManager:
             return document
         return None
 
+    def fetchProcessor(self, google_id):
+        cursor = self.db.processors.find({"processor_id": google_id})
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            return document
+        return None
+
     def fetchProcessors(self, user, state):
         processors = []
         cursor = self.db.processors.find({"state": state})
