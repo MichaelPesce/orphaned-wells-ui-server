@@ -514,6 +514,7 @@ class DataManager:
         return str(new_id)
 
     def updateProject(self, project_id, new_data, user_info={}):
+        _log.info(f"updating project: {new_data}")
         user = user_info.get("email", None)
         _id = ObjectId(project_id)
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
@@ -521,7 +522,11 @@ class DataManager:
         newvalues = {"$set": new_data}
         self.db.projects.update_one(myquery, newvalues)
         self.recordHistory("updateProject", user, project_id)
-        return "success"
+        cursor = self.db.projects.find(myquery)
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            return document
+        return None
 
     def updateUserProjects(self, email, new_data):
         _log.info(f"updating {email} to be {new_data}")
@@ -752,11 +757,6 @@ class DataManager:
             with open(output_file, "w", newline="") as jsonfile:
                 json.dump(record_attributes, jsonfile)
 
-        ## update export attributes in project document
-        settings = project_document.get("settings", {})
-        settings["exportColumns"] = selectedColumns
-        update = {"settings": settings}
-        self.updateProject(project_id, update, user_info)
         self.recordHistory("downloadRecords", user=user, project_id=project_id)
         return output_file
 
