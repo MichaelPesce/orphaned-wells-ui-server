@@ -34,20 +34,6 @@ class Roles(int, Enum):
     admin = 10
 
 
-class Project(BaseModel):
-    """Information about a project."""
-
-    # static information
-    id_: str
-    name: str
-    description: str = ""
-    state: str = ""
-    history: List = []
-    documentType: str = ""
-    creator: Union[str, dict] = ""
-    dateCreated: Union[float, None] = None
-
-
 class DataManager:
     """Manage the active data."""
 
@@ -278,18 +264,8 @@ class DataManager:
         projects = []
         cursor = self.db.projects.find({"_id": {"$in": user_projects}})
         for document in cursor:
-            projects.append(
-                Project(
-                    id_=str(document.get("_id", None)),
-                    name=document.get("name", ""),
-                    description=document.get("description", ""),
-                    state=document.get("state", ""),
-                    history=document.get("history", []),
-                    documentType=document.get("documentType", ""),
-                    creator=document.get("creator", ""),
-                    dateCreated=document.get("dateCreated", None),
-                )
-            )
+            document["_id"] = str(document["_id"])
+            projects.append(document)
         return projects
 
     def getProcessorByGoogleId(self, google_id):
@@ -362,8 +338,7 @@ class DataManager:
         ## get project data
         cursor = self.db.projects.find({"_id": _id})
         project_data = cursor.next()
-        project_data["id_"] = str(project_data["_id"])
-        del project_data["_id"]
+        project_data["_id"] = str(project_data["_id"])
 
         ## get project's records
         records = []
@@ -408,8 +383,7 @@ class DataManager:
             ## errors out sometimes ?
             try:
                 project_data = cursor.next()
-                project_data["id_"] = str(project_data["_id"])
-                del project_data["_id"]
+                project_data["_id"] = str(project_data["_id"])
                 # _log.info(f"checking for records with project_id {project_id}")
                 cursor = self.db.records.find({"project_id": project_id}).sort(
                     "dateCreated", ASCENDING
