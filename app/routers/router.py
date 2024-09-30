@@ -187,6 +187,17 @@ async def get_projects(user_info: dict = Depends(authenticate)):
     return resp
 
 
+@router.get("/get_document_groups/{project_id}", response_model=list)
+async def get_projects(project_id: str, user_info: dict = Depends(authenticate)):
+    """Fetch all document groups are in a project.
+
+    Returns:
+        List containing document groups and metadata
+    """
+    ## TODO: create function for fetching document groups
+    # return data_manager.fetchDocumentGroups(project_id, user_info.get("email", ""))
+
+
 @router.get("/get_processors/{state}", response_model=list)
 async def get_processors(state: str, user_info: dict = Depends(authenticate)):
     """Fetch all projects that a user has access to.
@@ -252,6 +263,50 @@ async def get_project_data(
     }
 
 
+@router.post("/get_document_group/{dg_id}")
+async def get_document_group_data(
+    request: Request,
+    dg_id: str,
+    page: int = None,
+    records_per_page: int = None,
+    user_info: dict = Depends(authenticate),
+):
+    """Fetch document group data.
+
+    Args:
+        dg_id: Document group identifier
+
+    Returns:
+        Dictionary containing document group data, list of records
+    """
+    ## TODO: write data manager function for fetching document group data
+    # request_body = await request.json()
+    # sort_by = request_body.get(
+    #     "sort", ["dateCreated", 1]
+    # )  ## 1 is ascending, -1 is descending`
+    # if sort_by[1] != 1 and sort_by[1] != -1:
+    #     sort_by[1] = 1
+    # filter_by = request_body.get("filter", {})
+    # dg_data, records, record_count = data_manager.fetchDocumentGroupData(
+    #     dg_id,
+    #     user_info.get("email", ""),
+    #     page,
+    #     records_per_page,
+    #     sort_by,
+    #     filter_by,
+    # )
+    # if dg_data is None:
+    #     raise HTTPException(
+    #         403,
+    #         detail=f"You do not have access to this project, please contact the project creator to gain access.",
+    #     )
+    # return {
+    #     "dg_data": dg_data,
+    #     "records": records,
+    #     "record_count": record_count,
+    # }
+
+
 @router.get("/get_team_records")
 async def get_team_records(user_info: dict = Depends(authenticate)):
     """Fetch records from all projects that a team has access to.
@@ -305,6 +360,23 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
     # _log.info(f"adding project with data: {data}")
     new_id = data_manager.createProject(data, user_info)
     return new_id
+
+
+@router.post("/add_document_group")
+async def add_document_group(request: Request, user_info: dict = Depends(authenticate)):
+    """Add new document group.
+
+    Args:
+        Request body
+            data: Document group data
+
+    Returns:
+        New project id
+    """
+    data = await request.json()
+    ## TODO: write create function
+    # return data_manager.createDocumentGroup(data, user_info)
+    
 
 
 @router.post("/upload_document/{project_id}/{user_email}")
@@ -382,6 +454,25 @@ async def update_project(
     return data_manager.updateProject(project_id, data, user_info)
 
 
+@router.post("/update_document_group/{dg_id}")
+async def update_document_group(
+    dg_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    """Update document group data.
+
+    Args:
+        dg_id: Project identifier
+        request body:
+            data: New data for provided project
+
+    Returns:
+        Success response
+    """
+    ## TODO: write function for update
+    # data = await request.json()
+    # return data_manager.updateDocumentGroup(dg_id, data, user_info)
+
+
 @router.post("/update_record/{record_id}")
 async def update_record(
     record_id: str, request: Request, user_info: dict = Depends(authenticate)
@@ -423,6 +514,25 @@ async def delete_project(
     data_manager.deleteProject(project_id, background_tasks, user_info)
 
     return {"response": "success"}
+
+
+@router.post("/delete_document_group/{dg_id}")
+async def delete_document_group(
+    dg_id: str,
+    background_tasks: BackgroundTasks,
+    user_info: dict = Depends(authenticate),
+):
+    """Delete Document group.
+
+    Args:
+        dg_id: Document group identifier
+
+    Returns:
+        Success response
+    """
+    ## TODO: write function for deleting document group
+    # data_manager.deleteDocumentGroup(dg_id, background_tasks, user_info)
+    # return {"response": "success"}
 
 
 @router.post("/delete_record/{record_id}")
@@ -482,7 +592,6 @@ async def get_users(
     Returns:
         List of users, role types
     """
-    ## TODO: add team id as a request parameter
     req = await request.json()
     project_id = req.get("project_id", None)
     users = data_manager.getUsers(Roles[role], user_info, project_id_exclude=project_id)
@@ -521,7 +630,6 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
     """
     email = email.lower().replace(" ", "")
     if data_manager.hasRole(user_info, Roles.admin):
-        ## TODO check if provided email is a valid email address
         admin_document = data_manager.getDocument(
             "users", {"email": user_info.get("email", "")}
         )
