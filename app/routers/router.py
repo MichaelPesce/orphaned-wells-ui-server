@@ -194,8 +194,7 @@ async def get_projects(project_id: str, user_info: dict = Depends(authenticate))
     Returns:
         List containing document groups and metadata
     """
-    ## TODO: create function for fetching document groups
-    # return data_manager.fetchDocumentGroups(project_id, user_info.get("email", ""))
+    return data_manager.fetchDocumentGroups(project_id, user_info.get("email", ""))
 
 
 @router.get("/get_processors/{state}", response_model=list)
@@ -279,32 +278,31 @@ async def get_document_group_data(
     Returns:
         Dictionary containing document group data, list of records
     """
-    ## TODO: write data manager function for fetching document group data
-    # request_body = await request.json()
-    # sort_by = request_body.get(
-    #     "sort", ["dateCreated", 1]
-    # )  ## 1 is ascending, -1 is descending`
-    # if sort_by[1] != 1 and sort_by[1] != -1:
-    #     sort_by[1] = 1
-    # filter_by = request_body.get("filter", {})
-    # dg_data, records, record_count = data_manager.fetchDocumentGroupData(
-    #     dg_id,
-    #     user_info.get("email", ""),
-    #     page,
-    #     records_per_page,
-    #     sort_by,
-    #     filter_by,
-    # )
-    # if dg_data is None:
-    #     raise HTTPException(
-    #         403,
-    #         detail=f"You do not have access to this project, please contact the project creator to gain access.",
-    #     )
-    # return {
-    #     "dg_data": dg_data,
-    #     "records": records,
-    #     "record_count": record_count,
-    # }
+    request_body = await request.json()
+    sort_by = request_body.get(
+        "sort", ["dateCreated", 1]
+    )  ## 1 is ascending, -1 is descending`
+    if sort_by[1] != 1 and sort_by[1] != -1:
+        sort_by[1] = 1
+    filter_by = request_body.get("filter", {})
+    dg_data, records, record_count = data_manager.fetchDocumentGroupData(
+        dg_id,
+        user_info.get("email", ""),
+        page,
+        records_per_page,
+        sort_by,
+        filter_by,
+    )
+    if dg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
+    return {
+        "dg_data": dg_data,
+        "records": records,
+        "record_count": record_count,
+    }
 
 
 @router.get("/get_team_records")
@@ -374,8 +372,7 @@ async def add_document_group(request: Request, user_info: dict = Depends(authent
         New project id
     """
     data = await request.json()
-    ## TODO: write create function
-    # return data_manager.createDocumentGroup(data, user_info)
+    return data_manager.createDocumentGroup(data, user_info)
     
 
 
@@ -468,9 +465,8 @@ async def update_document_group(
     Returns:
         Success response
     """
-    ## TODO: write function for update
-    # data = await request.json()
-    # return data_manager.updateDocumentGroup(dg_id, data, user_info)
+    data = await request.json()
+    return data_manager.updateDocumentGroup(dg_id, data, user_info)
 
 
 @router.post("/update_record/{record_id}")
@@ -530,9 +526,8 @@ async def delete_document_group(
     Returns:
         Success response
     """
-    ## TODO: write function for deleting document group
-    # data_manager.deleteDocumentGroup(dg_id, background_tasks, user_info)
-    # return {"response": "success"}
+    data_manager.deleteDocumentGroup(dg_id, background_tasks, user_info)
+    return {"response": "success"}
 
 
 @router.post("/delete_record/{record_id}")

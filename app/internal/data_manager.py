@@ -267,6 +267,23 @@ class DataManager:
             document["_id"] = str(document["_id"])
             projects.append(document)
         return projects
+    
+    def getProjectDocumentGroupsList(self, project_id):
+        query = {"_id": ObjectId(project_id)}
+        cursor = self.db.projects.find(query)
+        document = cursor.next()
+        document_groups_list = document.get("document_groups", [])
+        return document_groups_list
+    
+    def fetchDocumentGroups(self, project_id, user):
+        ## TODO: update this once db contains proper structure
+        project_document_groups = self.getUserProjectList(user)
+        document_groups = []
+        cursor = self.db.document_groups.find({"_id": {"$in": project_document_groups}})
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            document_groups.append(document)
+        return document_groups
 
     def getProcessorByGoogleId(self, google_id):
         cursor = self.db.processors.find({"processor_id": google_id})
@@ -325,6 +342,41 @@ class DataManager:
         self.recordHistory("createProject", user_email, str(new_project_id))
 
         return str(new_project_id)
+    
+    def createDocumentGroup(self, dg_info, user_info):
+        ## get user's default team
+        user_email = user_info.get("email", "")
+        user_document = self.getDocument("users", ({"email": user_email}))
+        default_team = user_document.get("default_team", None)
+        if default_team is None:
+            _log.info(f"user {user_email} has no default team")
+            return False
+
+        ## add user and timestamp to document group
+        dg_info["creator"] = user_info
+        dg_info["team"] = default_team
+        dg_info["dateCreated"] = time.time()
+        dg_info["settings"] = {}
+
+        ## get processor id
+        processor_document = self.getProcessorByGoogleId(dg_info["processorId"])
+        dg_info["processor_id"] = str(processor_document["_id"])
+
+        ## add document group to db collection
+        db_response = self.db.document_groups.insert_one(dg_info)
+        new_dg_id = db_response.inserted_id
+
+        ## add document group to team's dg list:
+        team_query = {"name": default_team}
+        team_document = self.getDocument("teams", team_query)
+        team_document_groups = team_document.get("document_groups", [])
+        team_document_groups.append(new_dg_id)
+        newvalues = {"$set": {"document_groups": team_document_groups}}
+        self.db.teams.update_one(team_query, newvalues)
+
+        self.recordHistory("createDocumentGroup", user_email, str(new_dg_id))
+
+        return str(new_dg_id)
 
     def fetchProjectData(
         self, project_id, user, page, records_per_page, sort_by, filter_by
@@ -367,6 +419,49 @@ class DataManager:
 
         record_count = self.db.records.count_documents(filter_by)
         return project_data, records, record_count
+    
+    def fetchDocumentGroupData(
+        self, dg_id, user, page, records_per_page, sort_by, filter_by
+    ):
+        ## get user's projects, check if user has access to this project
+        ## TODO: update this check once db contains proper structure
+        user_projects = self.getUserProjectList(user)
+        _id = ObjectId(dg_id)
+        if not _id in user_projects:
+            return None, None
+
+        ## get project data
+        cursor = self.db.document_groups.find({"_id": _id})
+        document_group = cursor.next()
+        document_group["_id"] = str(document_group["_id"])
+
+        ## get project's records
+        records = []
+        filter_by["document_group_id"] = dg_id
+        record_index = 1
+        if page is not None and records_per_page is not None and records_per_page != -1:
+            cursor = (
+                self.db.records.find(filter_by)
+                .sort(
+                    sort_by[0],
+                    sort_by[1]
+                    # )
+                )
+                .skip(records_per_page * page)
+                .limit(records_per_page)
+            )
+            record_index += page * records_per_page
+        else:
+            cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
+
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            document["recordIndex"] = record_index
+            record_index += 1
+            records.append(document)
+
+        record_count = self.db.records.count_documents(filter_by)
+        return document_group, records, record_count
 
     def getTeamRecords(self, user_info):
         user = user_info.get("email", "")
@@ -500,6 +595,20 @@ class DataManager:
             document["_id"] = str(document["_id"])
             return document
         return None
+    
+    def updateDocumentGroup(self, dg_id, new_data, user_info={}):
+        user = user_info.get("email", None)
+        _id = ObjectId(dg_id)
+        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
+        myquery = {"_id": _id}
+        newvalues = {"$set": new_data}
+        self.db.document_groups.update_one(myquery, newvalues)
+        self.recordHistory("updateDocumentGroup", user, dg_id)
+        cursor = self.db.document_groups.find(myquery)
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            return document
+        return None
 
     def updateUserProjects(self, email, new_data):
         _log.info(f"updating {email} to be {new_data}")
@@ -612,6 +721,35 @@ class DataManager:
 
         self.removeProjectFromTeam(_id, team)
         return "success"
+    
+    def deleteDocumentGroup(self, dg_id, background_tasks, user_info):
+        _log.info(f"deleting document group {dg_id}")
+        _id = ObjectId(dg_id)
+        myquery = {"_id": _id}
+
+        ## add to deleted document groups collection first
+        document_group_cursor = self.db.document_groups.find(myquery)
+        document_group_doc = document_group_cursor.next()
+        document_group_doc["deleted_by"] = user_info
+        team = document_group_doc.get("team", "")
+        self.db.deleted_document_groups.insert_one(document_group_doc)
+
+        ## delete from document groups collection
+        self.db.document_groups.delete_one(myquery)
+
+        ## add records to deleted records collection and remove from records collection
+        background_tasks.add_task(
+            self.deleteRecords,
+            query={"document_group": dg_id},
+            deletedBy=user_info,
+        )
+
+        self.recordHistory(
+            "deleteDocumentGroup", user_info.get("email", None), dg_id=dg_id
+        )
+
+        self.removeDocumentGroupFromTeam(_id, team)
+        return "success"
 
     def deleteRecord(self, record_id, user_info):
         user = user_info.get("email", None)
@@ -643,6 +781,12 @@ class DataManager:
     def removeProjectFromTeam(self, project_id, team):
         team_query = {"name": team}
         update = {"$pull": {"projects": project_id}}
+        self.db.teams.update_many(team_query, update)
+
+    
+    def removeDocumentGroupFromTeam(self, dg_id, team):
+        team_query = {"name": team}
+        update = {"$pull": {"document_groups": dg_id}}
         self.db.teams.update_many(team_query, update)
 
     def getProcessor(self, project_id):
@@ -853,13 +997,14 @@ class DataManager:
             return True
 
     def recordHistory(
-        self, action, user=None, project_id=None, record_id=None, notes=None
+        self, action, user=None, project_id=None, dg_id=None, record_id=None, notes=None
     ):
         try:
             history_item = {
                 "action": action,
                 "user": user,
                 "project_id": project_id,
+                "document_group_id": dg_id,
                 "record_id": record_id,
                 "notes": notes,
                 "timestamp": time.time(),
