@@ -194,7 +194,8 @@ async def get_record_groups(project_id: str, user_info: dict = Depends(authentic
     Returns:
         List containing record groups and metadata
     """
-    return data_manager.fetchRecordGroups(project_id, user_info.get("email", ""))
+    resp = data_manager.fetchRecordGroups(project_id, user_info.get("email", ""))
+    return resp
 
 
 @router.get("/get_processors/{state}", response_model=list)
@@ -262,10 +263,10 @@ async def get_project_data(
     }
 
 
-@router.post("/get_record_group/{dg_id}")
+@router.post("/get_record_group/{rg_id}")
 async def get_record_group_data(
     request: Request,
-    dg_id: str,
+    rg_id: str,
     page: int = None,
     records_per_page: int = None,
     user_info: dict = Depends(authenticate),
@@ -273,7 +274,7 @@ async def get_record_group_data(
     """Fetch record group data.
 
     Args:
-        dg_id: Document group identifier
+        rg_id: Document group identifier
 
     Returns:
         Dictionary containing record group data, list of records
@@ -285,21 +286,21 @@ async def get_record_group_data(
     if sort_by[1] != 1 and sort_by[1] != -1:
         sort_by[1] = 1
     filter_by = request_body.get("filter", {})
-    dg_data, records, record_count = data_manager.fetchRecordGroupData(
-        dg_id,
+    rg_data, records, record_count = data_manager.fetchRecordGroupData(
+        rg_id,
         user_info.get("email", ""),
         page,
         records_per_page,
         sort_by,
         filter_by,
     )
-    if dg_data is None:
+    if rg_data is None:
         raise HTTPException(
             403,
             detail=f"You do not have access to this project, please contact the project creator to gain access.",
         )
     return {
-        "dg_data": dg_data,
+        "rg_data": rg_data,
         "records": records,
         "record_count": record_count,
     }
@@ -451,14 +452,14 @@ async def update_project(
     return data_manager.updateProject(project_id, data, user_info)
 
 
-@router.post("/update_record_group/{dg_id}")
+@router.post("/update_record_group/{rg_id}")
 async def update_record_group(
-    dg_id: str, request: Request, user_info: dict = Depends(authenticate)
+    rg_id: str, request: Request, user_info: dict = Depends(authenticate)
 ):
     """Update record group data.
 
     Args:
-        dg_id: Project identifier
+        rg_id: Project identifier
         request body:
             data: New data for provided project
 
@@ -466,7 +467,7 @@ async def update_record_group(
         Success response
     """
     data = await request.json()
-    return data_manager.updateRecordGroup(dg_id, data, user_info)
+    return data_manager.updateRecordGroup(rg_id, data, user_info)
 
 
 @router.post("/update_record/{record_id}")
@@ -512,21 +513,21 @@ async def delete_project(
     return {"response": "success"}
 
 
-@router.post("/delete_record_group/{dg_id}")
+@router.post("/delete_record_group/{rg_id}")
 async def delete_record_group(
-    dg_id: str,
+    rg_id: str,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
 ):
     """Delete Document group.
 
     Args:
-        dg_id: Document group identifier
+        rg_id: Document group identifier
 
     Returns:
         Success response
     """
-    data_manager.deleteRecordGroup(dg_id, background_tasks, user_info)
+    data_manager.deleteRecordGroup(rg_id, background_tasks, user_info)
     return {"response": "success"}
 
 
