@@ -187,14 +187,14 @@ async def get_projects(user_info: dict = Depends(authenticate)):
     return resp
 
 
-@router.get("/get_document_groups/{project_id}", response_model=list)
+@router.get("/get_record_groups/{project_id}", response_model=list)
 async def get_projects(project_id: str, user_info: dict = Depends(authenticate)):
-    """Fetch all document groups are in a project.
+    """Fetch all record groups are in a project.
 
     Returns:
-        List containing document groups and metadata
+        List containing record groups and metadata
     """
-    return data_manager.fetchDocumentGroups(project_id, user_info.get("email", ""))
+    return data_manager.fetchRecordGroups(project_id, user_info.get("email", ""))
 
 
 @router.get("/get_processors/{state}", response_model=list)
@@ -262,21 +262,21 @@ async def get_project_data(
     }
 
 
-@router.post("/get_document_group/{dg_id}")
-async def get_document_group_data(
+@router.post("/get_record_group/{dg_id}")
+async def get_record_group_data(
     request: Request,
     dg_id: str,
     page: int = None,
     records_per_page: int = None,
     user_info: dict = Depends(authenticate),
 ):
-    """Fetch document group data.
+    """Fetch record group data.
 
     Args:
         dg_id: Document group identifier
 
     Returns:
-        Dictionary containing document group data, list of records
+        Dictionary containing record group data, list of records
     """
     request_body = await request.json()
     sort_by = request_body.get(
@@ -285,7 +285,7 @@ async def get_document_group_data(
     if sort_by[1] != 1 and sort_by[1] != -1:
         sort_by[1] = 1
     filter_by = request_body.get("filter", {})
-    dg_data, records, record_count = data_manager.fetchDocumentGroupData(
+    dg_data, records, record_count = data_manager.fetchRecordGroupData(
         dg_id,
         user_info.get("email", ""),
         page,
@@ -360,9 +360,9 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
     return new_id
 
 
-@router.post("/add_document_group")
-async def add_document_group(request: Request, user_info: dict = Depends(authenticate)):
-    """Add new document group.
+@router.post("/add_record_group")
+async def add_record_group(request: Request, user_info: dict = Depends(authenticate)):
+    """Add new record group.
 
     Args:
         Request body
@@ -372,7 +372,7 @@ async def add_document_group(request: Request, user_info: dict = Depends(authent
         New project id
     """
     data = await request.json()
-    return data_manager.createDocumentGroup(data, user_info)
+    return data_manager.createRecordGroup(data, user_info)
     
 
 
@@ -451,11 +451,11 @@ async def update_project(
     return data_manager.updateProject(project_id, data, user_info)
 
 
-@router.post("/update_document_group/{dg_id}")
-async def update_document_group(
+@router.post("/update_record_group/{dg_id}")
+async def update_record_group(
     dg_id: str, request: Request, user_info: dict = Depends(authenticate)
 ):
-    """Update document group data.
+    """Update record group data.
 
     Args:
         dg_id: Project identifier
@@ -466,7 +466,7 @@ async def update_document_group(
         Success response
     """
     data = await request.json()
-    return data_manager.updateDocumentGroup(dg_id, data, user_info)
+    return data_manager.updateRecordGroup(dg_id, data, user_info)
 
 
 @router.post("/update_record/{record_id}")
@@ -512,8 +512,8 @@ async def delete_project(
     return {"response": "success"}
 
 
-@router.post("/delete_document_group/{dg_id}")
-async def delete_document_group(
+@router.post("/delete_record_group/{dg_id}")
+async def delete_record_group(
     dg_id: str,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
@@ -526,7 +526,7 @@ async def delete_document_group(
     Returns:
         Success response
     """
-    data_manager.deleteDocumentGroup(dg_id, background_tasks, user_info)
+    data_manager.deleteRecordGroup(dg_id, background_tasks, user_info)
     return {"response": "success"}
 
 
