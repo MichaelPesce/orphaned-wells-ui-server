@@ -187,7 +187,7 @@ async def get_projects(user_info: dict = Depends(authenticate)):
     return resp
 
 
-@router.get("/get_record_groups/{project_id}", response_model=list)
+@router.get("/get_record_groups/{project_id}", response_model=dict)
 async def get_record_groups(project_id: str, user_info: dict = Depends(authenticate)):
     """Fetch all record groups are in a project.
 
@@ -286,7 +286,7 @@ async def get_record_group_data(
     if sort_by[1] != 1 and sort_by[1] != -1:
         sort_by[1] = 1
     filter_by = request_body.get("filter", {})
-    rg_data, records, record_count = data_manager.fetchRecordGroupData(
+    project_document, rg_data, records, record_count = data_manager.fetchRecordGroupData(
         rg_id,
         user_info.get("email", ""),
         page,
@@ -303,6 +303,7 @@ async def get_record_group_data(
         "rg_data": rg_data,
         "records": records,
         "record_count": record_count,
+        "project": project_document,
     }
 
 

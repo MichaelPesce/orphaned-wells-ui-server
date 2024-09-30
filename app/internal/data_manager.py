@@ -297,14 +297,15 @@ class DataManager:
             _log.info(f"project {project_id} not found")
             return []
         project_record_groups = project.get("record_groups", [])
+        record_group_ids = []
         for i in range(len(project_record_groups)):
-            project_record_groups[i] = ObjectId(project_record_groups[i])
+            record_group_ids.append( ObjectId(project_record_groups[i]))
         record_groups = []
-        cursor = self.db.record_groups.find({"_id": {"$in": project_record_groups}})
+        cursor = self.db.record_groups.find({"_id": {"$in": record_group_ids}})
         for document in cursor:
             document["_id"] = str(document["_id"])
             record_groups.append(document)
-        return record_groups
+        return {"project": project, "record_groups": record_groups}
 
     def getProcessorByGoogleId(self, google_id):
         cursor = self.db.processors.find({"processor_id": google_id})
@@ -445,7 +446,6 @@ class DataManager:
         self, rg_id, user, page, records_per_page, sort_by, filter_by
     ):
         ## get user's projects, check if user has access to this project
-        ## TODO: update this check once db contains proper structure
         user_record_groups = self.getUserRecordGroups(user)
         if not rg_id in user_record_groups:
             return None, None, None
@@ -461,8 +461,6 @@ class DataManager:
         filter_by["record_group_id"] = rg_id
         record_index = 1
         if page is not None and records_per_page is not None and records_per_page != -1:
-            print(f"filter_by: {filter_by}")
-            print(f"sort_by: {sort_by}")
             cursor = (
                 self.db.records.find(filter_by)
                 .sort(
@@ -484,7 +482,11 @@ class DataManager:
             records.append(document)
 
         record_count = self.db.records.count_documents(filter_by)
-        return record_group, records, record_count
+
+        project_cursor = self.db.new_projects.find({"record_groups": rg_id})
+        project_document = project_cursor.next()
+        project_document["_id"] = str(project_document["_id"])
+        return project_document, record_group, records, record_count
 
     def getTeamRecords(self, user_info):
         user = user_info.get("email", "")
