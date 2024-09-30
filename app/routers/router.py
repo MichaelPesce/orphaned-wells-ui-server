@@ -188,7 +188,7 @@ async def get_projects(user_info: dict = Depends(authenticate)):
 
 
 @router.get("/get_record_groups/{project_id}", response_model=list)
-async def get_projects(project_id: str, user_info: dict = Depends(authenticate)):
+async def get_record_groups(project_id: str, user_info: dict = Depends(authenticate)):
     """Fetch all record groups are in a project.
 
     Returns:
