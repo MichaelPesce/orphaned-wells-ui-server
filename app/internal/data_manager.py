@@ -546,13 +546,13 @@ class DataManager:
         for image in document.get("image_files", []):
             image_urls.append(
                 generate_download_signed_url_v4(
-                    document["project_id"], document["_id"], image
+                    document["record_group_id"], document["_id"], image
                 )
             )
         if len(image_urls) == 0:
             image_urls.append(
                 generate_download_signed_url_v4(
-                    document["project_id"], document["_id"], document["filename"]
+                    document["record_group_id"], document["_id"], document["filename"]
                 )
             )
         document["img_urls"] = image_urls
@@ -847,6 +847,22 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None
+        
+    def getProcessorByRecordGroupID(self, rg_id):
+        _id = ObjectId(rg_id)
+        try:
+            cursor = self.db.record_groups.find({"_id": _id})
+            document = cursor.next()
+            google_id = document.get("processorId", None)
+            processor_id = document.get("processor_id", None)
+            _processor_id = ObjectId(processor_id)
+            processor_cursor = self.db.processors.find({"_id": _processor_id})
+            processor_document = processor_cursor.next()
+            processor_attributes = processor_document.get("attributes", None)
+            return google_id, processor_attributes
+        except Exception as e:
+            _log.error(f"unable to find processor id: {e}")
+            return None
 
     def downloadRecords(self, project_id, exportType, selectedColumns, user_info):
         user = user_info.get("email", None)
@@ -1037,6 +1053,15 @@ class DataManager:
             return False
         project = self.getDocument("projects", {"_id": project_id})
         if project is not None:
+            return True
+    
+    def checkRecordGroupValidity(self, rg_id):
+        try:
+            rg_id = ObjectId(rg_id)
+        except:
+            return False
+        rg = self.getDocument("record_groups", {"_id": rg_id})
+        if rg is not None:
             return True
 
     def recordHistory(

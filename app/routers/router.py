@@ -377,10 +377,9 @@ async def add_record_group(request: Request, user_info: dict = Depends(authentic
     return data_manager.createRecordGroup(data, user_info)
     
 
-
-@router.post("/upload_document/{project_id}/{user_email}")
+@router.post("/upload_document/{rg_id}/{user_email}")
 async def upload_document(
-    project_id: str,
+    rg_id: str,
     user_email: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -388,7 +387,7 @@ async def upload_document(
     """Upload document for processing. Documents are processed asynchronously.
 
     Args:
-        project_id: Project identifier to be associated with this document
+        rg_id: Record group identifier to be associated with this document
         file: Document file
 
     Returns:
@@ -396,14 +395,14 @@ async def upload_document(
     """
     user_email = user_email.lower()
     user_info = data_manager.getUserInfo(user_email)
-    project_is_valid = data_manager.checkProjectValidity(project_id)
+    project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
     if not project_is_valid:
         raise HTTPException(404, detail=f"Project not found")
     filename, file_ext = os.path.splitext(file.filename)
     if file_ext.lower() == ".zip":
         output_dir = f"{data_manager.app_settings.img_dir}"
         return process_zip(
-            project_id,
+            rg_id,
             user_info,
             background_tasks,
             file,
@@ -420,7 +419,7 @@ async def upload_document(
                 content = await file.read()  # async read
                 await out_file.write(content)
             return process_document(
-                project_id,
+                rg_id,
                 user_info,
                 background_tasks,
                 original_output_path,
