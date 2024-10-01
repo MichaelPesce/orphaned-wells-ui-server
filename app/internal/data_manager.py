@@ -631,9 +631,9 @@ class DataManager:
         ## need to choose a subset of the data to update. can't update entire record because _id is immutable
         myquery = {"_id": _id}
         newvalues = {"$set": new_data}
-        self.db.projects.update_one(myquery, newvalues)
+        self.db.new_projects.update_one(myquery, newvalues)
         self.recordHistory("updateProject", user, project_id)
-        cursor = self.db.projects.find(myquery)
+        cursor = self.db.new_projects.find(myquery)
         for document in cursor:
             document["_id"] = str(document["_id"])
             return document
@@ -742,19 +742,23 @@ class DataManager:
         myquery = {"_id": _id}
 
         ## add to deleted projects collection first
-        project_cursor = self.db.projects.find(myquery)
+        project_cursor = self.db.new_projects.find(myquery)
         project_document = project_cursor.next()
         project_document["deleted_by"] = user_info
         team = project_document.get("team", "")
         self.db.deleted_projects.insert_one(project_document)
 
         ## delete from projects collection
-        self.db.projects.delete_one(myquery)
+        self.db.new_projects.delete_one(myquery)
+
+        ## delete record groups
+        record_groups = project_document.get("record_groups", [])
+        self.deleteRecordGroups(record_groups=record_groups, deletedBy=user_info)
 
         ## add records to deleted records collection and remove from records collection
         background_tasks.add_task(
             self.deleteRecords,
-            query={"project_id": project_id},
+            query={"record_group_id": {"$in": record_groups}},
             deletedBy=user_info,
         )
 
@@ -822,6 +826,26 @@ class DataManager:
         ## Delete records associated with this project
         self.db.records.delete_many(query)
         # self.recordHistory("deleteRecords", user=user, notes=query)
+        return "success"
+    
+    def deleteRecordGroups(self, record_groups, deletedBy):
+        user = deletedBy.get("email", None)
+        _log.info(f"deleting record groups: {record_groups}")
+        record_group_ids = []
+        for i in range(len(record_groups)):
+            record_group_ids.append(ObjectId(record_groups[i]))
+        ## add to deleted records collection
+        query = {"_id": {"$in": record_group_ids}}
+        cursor = self.db.record_groups.find(query)
+        try:
+            for document in cursor:
+                document["deleted_by"] = deletedBy
+                self.db.deleted_record_groups.insert_one(document)
+        except Exception as e:
+            _log.error(f"unable to move all deleted record groups: {e}")
+
+        ## Delete records associated with this project
+        self.db.record_groups.delete_many(query)
         return "success"
 
     def removeProjectFromTeam(self, project_id, team):
