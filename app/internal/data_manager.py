@@ -342,30 +342,28 @@ class DataManager:
         user_document = self.getDocument("users", ({"email": user_email}))
         default_team = user_document.get("default_team", None)
         if default_team is None:
-            ## TODO: handle project creation when a user has no default project
             _log.info(f"user {user_email} has no default team")
             return False
 
-        ## add user and timestamp to project
+        ## add default data to project
         project_info["creator"] = user_info
         project_info["team"] = default_team
         project_info["dateCreated"] = time.time()
+        project_info["record_groups"] = []
+        project_info["history"] = []
+        project_info["tags"] = []
         project_info["settings"] = {}
 
-        ## get processor id
-        processor_document = self.getProcessorByGoogleId(project_info["processorId"])
-        project_info["processor_id"] = str(processor_document["_id"])
-        ## add project to db collection
-        # _log.info(f"creating project with data: {project_info}")
-        db_response = self.db.projects.insert_one(project_info)
+        ## create new project entry
+        db_response = self.db.new_projects.insert_one(project_info)
         new_project_id = db_response.inserted_id
 
         ## add project to team's project list:
         team_query = {"name": default_team}
         team_document = self.getDocument("teams", team_query)
-        team_projects = team_document.get("projects", [])
+        team_projects = team_document.get("project_list", [])
         team_projects.append(new_project_id)
-        newvalues = {"$set": {"projects": team_projects}}
+        newvalues = {"$set": {"project_list": team_projects}}
         self.db.teams.update_one(team_query, newvalues)
 
         self.recordHistory("createProject", user_email, str(new_project_id))
@@ -395,13 +393,17 @@ class DataManager:
         db_response = self.db.record_groups.insert_one(rg_info)
         new_rg_id = db_response.inserted_id
 
-        ## add record group to team's dg list:
-        team_query = {"name": default_team}
-        team_document = self.getDocument("teams", team_query)
-        team_record_groups = team_document.get("record_groups", [])
-        team_record_groups.append(new_rg_id)
-        newvalues = {"$set": {"record_groups": team_record_groups}}
-        self.db.teams.update_one(team_query, newvalues)
+        ## add record group to project's rg list:
+        project_query = {"_id": ObjectId(rg_info.get("project_id", None))}
+        _log.info(f"project_query: {project_query}")
+        project_update = {
+            "$push": {
+                "record_groups": str(new_rg_id)
+            }
+        }
+
+        _log.info(f"project_update: {project_update}")
+        self.db.new_projects.update_one(project_query, project_update)
 
         self.recordHistory("createRecordGroup", user_email, str(new_rg_id))
 
