@@ -244,6 +244,13 @@ class DataManager:
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return "success"
+    
+    def getProjectFromRecordGroup(self, rg_id):
+        project_cursor = self.db.new_projects.find({"record_groups": rg_id})
+        project_document = project_cursor.next()
+        project_document["_id"] = str(project_document["_id"])
+        return project_document
+
 
     def getTeamProjectList(self, team):
         team_query = {"name": team}
@@ -483,9 +490,8 @@ class DataManager:
 
         record_count = self.db.records.count_documents(filter_by)
 
-        project_cursor = self.db.new_projects.find({"record_groups": rg_id})
-        project_document = project_cursor.next()
-        project_document["_id"] = str(project_document["_id"])
+        project_document = self.getProjectFromRecordGroup(rg_id)
+        
         return project_document, record_group, records, record_count
 
     def getTeamRecords(self, user_info):
@@ -524,14 +530,15 @@ class DataManager:
         cursor = self.db.records.find({"_id": _id})
         document = cursor.next()
         document["_id"] = str(document["_id"])
-        projectId = document.get("project_id", "")
-        project_id = ObjectId(projectId)
+        rg_id = document.get("record_group_id", "")
+        # projectId = document.get("project_id", "")
+        # project_id = ObjectId(projectId)
 
         ## try to attain lock
         attained_lock = self.tryLockingRecord(record_id, user)
 
-        user_projects = self.getUserProjectList(user)
-        if not project_id in user_projects:
+        user_record_groups = self.getUserRecordGroups(user)
+        if not rg_id in user_record_groups:
             return None, None
         image_urls = []
         for image in document.get("image_files", []):
@@ -548,49 +555,58 @@ class DataManager:
             )
         document["img_urls"] = image_urls
 
+        ## get record group name
+        rg = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
+        rg_name = rg.get("name", "")
+        document["rg_name"] = rg_name
+        document["rg_id"] = rg_id
+
         ## get project name
-        project = self.getDocument("projects", {"_id": project_id})
-        project_name = project.get("name", "")
+        project_document = self.getProjectFromRecordGroup(rg_id)
+        project_name = project_document.get("name", "")
+        project_id = str(project_document.get("_id", ""))
         document["project_name"] = project_name
+        document["project_id"] = project_id
 
         ## get record index
         dateCreated = document.get("dateCreated", 0)
         record_index_query = {
             "dateCreated": {"$lte": dateCreated},
-            "project_id": projectId,
+            "record_group_id": rg_id,
         }
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
 
         ## get previous and next IDs
-        document["previous_id"] = self.getPreviousRecordId(dateCreated, projectId)
-        document["next_id"] = self.getNextRecordId(dateCreated, projectId)
+        document["previous_id"] = self.getPreviousRecordId(dateCreated, rg_id)
+        document["next_id"] = self.getNextRecordId(dateCreated, rg_id)
 
         return document, not attained_lock
 
-    def getNextRecordId(self, dateCreated, projectId):
+    def getNextRecordId(self, dateCreated, rg_id):
+        # _log.info(f"fetching next record for {dateCreated} and {rg_id}")
         cursor = self.db.records.find(
-            {"dateCreated": {"$gt": dateCreated}, "project_id": projectId}
+            {"dateCreated": {"$gt": dateCreated}, "record_group_id": rg_id}
         ).sort("dateCreated", ASCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
-        cursor = self.db.records.find({"project_id": projectId}).sort(
+        cursor = self.db.records.find({"record_group_id": rg_id}).sort(
             "dateCreated", ASCENDING
         )
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
 
-    def getPreviousRecordId(self, dateCreated, projectId):
-        _log.info(f"fetching previous record")
+    def getPreviousRecordId(self, dateCreated, rg_id):
+        # _log.info(f"fetching previous record for {dateCreated} and {rg_id}")
         cursor = self.db.records.find(
-            {"dateCreated": {"$lt": dateCreated}, "project_id": projectId}
+            {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
         ).sort("dateCreated", DESCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
-        cursor = self.db.records.find({"project_id": projectId}).sort(
+        cursor = self.db.records.find({"record_group_id": rg_id}).sort(
             "dateCreated", DESCENDING
         )
         document = cursor.next()
