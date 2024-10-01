@@ -764,7 +764,7 @@ class DataManager:
 
         self.removeProjectFromTeam(_id, team)
         return "success"
-    
+
     def deleteRecordGroup(self, rg_id, background_tasks, user_info):
         _log.info(f"deleting record group {rg_id}")
         _id = ObjectId(rg_id)
@@ -790,6 +790,9 @@ class DataManager:
         self.recordHistory(
             "deleteRecordGroup", user_info.get("email", None), rg_id=rg_id
         )
+
+        ## remove from project list
+        self.removeRecordGroupFromProject(rg_id)
 
         self.removeRecordGroupFromTeam(_id, team)
         return "success"
@@ -826,7 +829,11 @@ class DataManager:
         update = {"$pull": {"projects": project_id}}
         self.db.teams.update_many(team_query, update)
 
-    
+    def removeRecordGroupFromProject(self, rg_id):
+        query = {"record_groups": rg_id}
+        update = {"$pull": {"record_groups": rg_id}}
+        self.db.new_projects.update_many(query, update)
+
     def removeRecordGroupFromTeam(self, rg_id, team):
         team_query = {"name": team}
         update = {"$pull": {"record_groups": rg_id}}
