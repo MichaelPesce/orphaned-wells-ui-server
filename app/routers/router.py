@@ -212,8 +212,8 @@ async def get_team_records(user_info: dict = Depends(authenticate)):
     return {"records": records}
 
 
-@router.post("/get_records", response_model=list)
-async def get_records(request: Request, user_info: dict = Depends(authenticate)):
+@router.post("/get_records/{get_by}", response_model=list)
+async def get_records(request: Request, get_by: str, user_info: dict = Depends(authenticate)):
     """Fetch records for a given query.
 
     Args:
@@ -222,14 +222,16 @@ async def get_records(request: Request, user_info: dict = Depends(authenticate))
     Returns:
         List of records
     """
+    _log.info(f"inside get records")
     data = await request.json()
-    query = data.get("query", None)
-    if query:
-        records = data_manager.fetchRecords(user_info)
-        return records
-    else:
-        _log.error(f"unable to process record query")
-        raise HTTPException(400, detail=f"unable to process record query")
+    if get_by == "project_id":
+        project_id = data.get("project_id", None)
+        if project_id is not None:
+            records = data_manager.fetchRecordsByProjectId(project_id, user_info)
+            _log.info(f"returning {len(records)} records")
+            return records
+    _log.error(f"unable to process record query")
+    raise HTTPException(400, detail=f"unable to process record query")
 
 
 @router.get("/get_processors/{state}", response_model=list)

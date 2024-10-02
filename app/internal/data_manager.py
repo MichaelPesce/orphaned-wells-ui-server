@@ -397,7 +397,7 @@ class DataManager:
 
     def getProjectRecordGroupsList(self, project_id):
         query = {"_id": ObjectId(project_id)}
-        cursor = self.db.projects.find(query)
+        cursor = self.db.new_projects.find(query)
         document = cursor.next()
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
@@ -409,6 +409,12 @@ class DataManager:
             document["_id"] = str(document["_id"])
             records.append(document)
         return records
+    
+    def fetchRecordsByProjectId(self, project_id, user):
+        _log.info(f"project id is: {project_id}")
+        record_group_ids = self.getProjectRecordGroupsList(project_id)
+        query = {"record_group_id": {"$in": record_group_ids}}
+        return self.fetchRecords(query, user)
 
     def fetchRecordGroups(self, project_id, user):
         project = self.fetchProject(project_id)
