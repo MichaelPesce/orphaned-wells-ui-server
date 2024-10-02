@@ -49,6 +49,7 @@ class DataManager:
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
 
+    ## lock functions
     def fetchLock(self, user):
         ## Can't use variable stored in memory for this
         while self.LOCKED and self.LOCKED != user:
@@ -126,19 +127,8 @@ class DataManager:
             _log.error(f"error trying to lock record: {e}")
             return False
 
-    def getDocument(self, collection, query, clean_id=False, return_list=False):
-        try:
-            cursor = self.db[collection].find(query)
-            if not return_list:
-                document = cursor.next()
-                if clean_id:
-                    document_id = document.get("_id", "")
-                    document["_id"] = str(document_id)
-                return document
-        except Exception as e:
-            _log.error(f"unable to find {query} in {collection}: {e}")
-            return None
 
+    ## user functions
     def getUser(self, email):
         cursor = self.db.users.find({"email": email})
         user = None
@@ -245,6 +235,123 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return "success"
 
+    def hasRole(self, user_info, role=Roles.admin):
+        email = user_info.get("email", "")
+        cursor = self.db.users.find({"email": email})
+        try:
+            document = cursor.next()
+            if document.get("role", Roles.pending) == role:
+                return True
+            else:
+                return False
+        except:
+            return False
+
+    def getUserInfo(self, email):
+        user_document = self.getDocument("users", {"email": email}, clean_id=True)
+        return user_document
+
+    def getUsers(
+        self, role, user_info, project_id_exclude=None, includeLowerRoles=True
+    ):
+        ## TODO: accept team id as parameter and use that to determine which users to return
+        user = user_info.get("email", "")
+        user_document = self.getDocument("users", {"email": user})
+        team_id = user_document.get("default_team", None)
+        team_document = self.getDocument("teams", {"name": team_id})
+        team_users = team_document.get("users", [])
+        if includeLowerRoles:  # get all users with provided role or lower
+            query = {"role": {"$lte": role}}
+        else:  # get only users with provided role
+            query = {"role": role}
+        cursor = self.db.users.find(query)
+        users = []
+        if project_id_exclude is not None:
+            project_id = ObjectId(project_id_exclude)
+            for document in cursor:
+                if project_id not in document.get("projects", []):
+                    next_user = document.get("email", "")
+                    if next_user in team_users:
+                        users.append(
+                            {
+                                "email": document.get("email", ""),
+                                "name": document.get("name", ""),
+                                "hd": document.get("hd", ""),
+                                "picture": document.get("picture", ""),
+                                "role": document.get("role", -1),
+                            }
+                        )
+        else:
+            for document in cursor:
+                next_user = document.get("email", "")
+                if next_user in team_users:
+                    users.append(
+                        {
+                            "email": document.get("email", ""),
+                            "name": document.get("name", ""),
+                            "hd": document.get("hd", ""),
+                            "picture": document.get("picture", ""),
+                            "role": document.get("role", -1),
+                        }
+                    )
+        return users
+
+    def removeUserFromTeam(self, user, team):
+        query = {"email": user}
+        # delete_response = self.db.users.delete_one(query)
+        return user
+
+    def deleteUser(self, email, user_info):
+        admin_email = user_info.get("email", None)
+        query = {"email": email}
+        delete_response = self.db.users.delete_one(query)
+        ## TODO: remove user form all teams that include him/her
+        query = {"users": email}
+        teams_cursor = self.db.teams.find(query)
+        for document in teams_cursor:
+            team_id = document["_id"]
+            user_list = document.get("users", [])
+            user_list.remove(email)
+            query = {"_id": team_id}
+            newvalue = {"$set": {"users": user_list}}
+            self.db.teams.update_one(query, newvalue)
+        self.recordHistory("deleteUser", user=admin_email)
+        return email
+
+    def addUsersToProject(self, users, project_id):
+        ## TODO:
+        ## (1) change project to team
+        _id = ObjectId(project_id)
+        try:
+            for user in users:
+                email = user.get("email", "")
+                query = {"email": email}
+                cursor = self.db.users.find(query)
+                user_object = cursor.next()
+                user_projects = user_object.get("projects", [])
+                user_projects.append(_id)
+                update_query = {"projects": user_projects}
+                self.updateUserProjects(email, update_query)
+            return {"result": "success"}
+        except Exception as e:
+            _log.error(f"unable to add users: {e}")
+            return {"result": f"{e}"}
+
+
+    ## Fetch/get functions
+    def getDocument(self, collection, query, clean_id=False, return_list=False):
+        try:
+            cursor = self.db[collection].find(query)
+            if not return_list:
+                document = cursor.next()
+                if clean_id:
+                    document_id = document.get("_id", "")
+                    document["_id"] = str(document_id)
+                return document
+        except Exception as e:
+            _log.error(f"unable to find {query} in {collection}: {e}")
+            return None
+
     def getProjectFromRecordGroup(self, rg_id):
         project_cursor = self.db.new_projects.find({"record_groups": rg_id})
         project_document = project_cursor.next()
@@ -342,75 +449,6 @@ class DataManager:
             document["_id"] = str(document["_id"])
             processors.append(document)
         return processors
-
-    def createProject(self, project_info, user_info):
-        ## get user's default team
-        user_email = user_info.get("email", "")
-        user_document = self.getDocument("users", ({"email": user_email}))
-        default_team = user_document.get("default_team", None)
-        if default_team is None:
-            _log.info(f"user {user_email} has no default team")
-            return False
-
-        ## add default data to project
-        project_info["creator"] = user_info
-        project_info["team"] = default_team
-        project_info["dateCreated"] = time.time()
-        project_info["record_groups"] = []
-        project_info["history"] = []
-        project_info["tags"] = []
-        project_info["settings"] = {}
-
-        ## create new project entry
-        db_response = self.db.new_projects.insert_one(project_info)
-        new_project_id = db_response.inserted_id
-
-        ## add project to team's project list:
-        team_query = {"name": default_team}
-        team_document = self.getDocument("teams", team_query)
-        team_projects = team_document.get("project_list", [])
-        team_projects.append(new_project_id)
-        newvalues = {"$set": {"project_list": team_projects}}
-        self.db.teams.update_one(team_query, newvalues)
-
-        self.recordHistory("createProject", user_email, str(new_project_id))
-
-        return str(new_project_id)
-
-    def createRecordGroup(self, rg_info, user_info):
-        ## get user's default team
-        user_email = user_info.get("email", "")
-        user_document = self.getDocument("users", ({"email": user_email}))
-        default_team = user_document.get("default_team", None)
-        if default_team is None:
-            _log.info(f"user {user_email} has no default team")
-            return False
-
-        ## add user and timestamp to record group
-        rg_info["creator"] = user_info
-        rg_info["team"] = default_team
-        rg_info["dateCreated"] = time.time()
-        rg_info["settings"] = {}
-
-        ## get processor id
-        processor_document = self.getProcessorByGoogleId(rg_info["processorId"])
-        rg_info["processor_id"] = str(processor_document["_id"])
-
-        ## add record group to db collection
-        db_response = self.db.record_groups.insert_one(rg_info)
-        new_rg_id = db_response.inserted_id
-
-        ## add record group to project's rg list:
-        project_query = {"_id": ObjectId(rg_info.get("project_id", None))}
-        _log.info(f"project_query: {project_query}")
-        project_update = {"$push": {"record_groups": str(new_rg_id)}}
-
-        _log.info(f"project_update: {project_update}")
-        self.db.new_projects.update_one(project_query, project_update)
-
-        self.recordHistory("createRecordGroup", user_email, str(new_rg_id))
-
-        return str(new_rg_id)
 
     def fetchProjectData(
         self, project_id, user, page, records_per_page, sort_by, filter_by
@@ -617,6 +655,108 @@ class DataManager:
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
+    
+    def getProcessor(self, project_id):
+        _id = ObjectId(project_id)
+        try:
+            cursor = self.db.projects.find({"_id": _id})
+            document = cursor.next()
+            google_id = document.get("processorId", None)
+            processor_id = document.get("processor_id", None)
+            _processor_id = ObjectId(processor_id)
+            processor_cursor = self.db.processors.find({"_id": _processor_id})
+            processor_document = processor_cursor.next()
+            processor_attributes = processor_document.get("attributes", None)
+            return google_id, processor_attributes
+        except Exception as e:
+            _log.error(f"unable to find processor id: {e}")
+            return None
+
+    def getProcessorByRecordGroupID(self, rg_id):
+        _id = ObjectId(rg_id)
+        try:
+            cursor = self.db.record_groups.find({"_id": _id})
+            document = cursor.next()
+            google_id = document.get("processorId", None)
+            processor_id = document.get("processor_id", None)
+            _processor_id = ObjectId(processor_id)
+            processor_cursor = self.db.processors.find({"_id": _processor_id})
+            processor_document = processor_cursor.next()
+            processor_attributes = processor_document.get("attributes", None)
+            return google_id, processor_attributes
+        except Exception as e:
+            _log.error(f"unable to find processor id: {e}")
+            return None
+
+    ## create/add functions
+    def createProject(self, project_info, user_info):
+        ## get user's default team
+        user_email = user_info.get("email", "")
+        user_document = self.getDocument("users", ({"email": user_email}))
+        default_team = user_document.get("default_team", None)
+        if default_team is None:
+            _log.info(f"user {user_email} has no default team")
+            return False
+
+        ## add default data to project
+        project_info["creator"] = user_info
+        project_info["team"] = default_team
+        project_info["dateCreated"] = time.time()
+        project_info["record_groups"] = []
+        project_info["history"] = []
+        project_info["tags"] = []
+        project_info["settings"] = {}
+
+        ## create new project entry
+        db_response = self.db.new_projects.insert_one(project_info)
+        new_project_id = db_response.inserted_id
+
+        ## add project to team's project list:
+        team_query = {"name": default_team}
+        team_document = self.getDocument("teams", team_query)
+        team_projects = team_document.get("project_list", [])
+        team_projects.append(new_project_id)
+        newvalues = {"$set": {"project_list": team_projects}}
+        self.db.teams.update_one(team_query, newvalues)
+
+        self.recordHistory("createProject", user_email, str(new_project_id))
+
+        return str(new_project_id)
+
+    def createRecordGroup(self, rg_info, user_info):
+        ## get user's default team
+        user_email = user_info.get("email", "")
+        user_document = self.getDocument("users", ({"email": user_email}))
+        default_team = user_document.get("default_team", None)
+        if default_team is None:
+            _log.info(f"user {user_email} has no default team")
+            return False
+
+        ## add user and timestamp to record group
+        rg_info["creator"] = user_info
+        rg_info["team"] = default_team
+        rg_info["dateCreated"] = time.time()
+        rg_info["settings"] = {}
+
+        ## get processor id
+        processor_document = self.getProcessorByGoogleId(rg_info["processorId"])
+        rg_info["processor_id"] = str(processor_document["_id"])
+
+        ## add record group to db collection
+        db_response = self.db.record_groups.insert_one(rg_info)
+        new_rg_id = db_response.inserted_id
+
+        ## add record group to project's rg list:
+        project_query = {"_id": ObjectId(rg_info.get("project_id", None))}
+        _log.info(f"project_query: {project_query}")
+        project_update = {"$push": {"record_groups": str(new_rg_id)}}
+
+        _log.info(f"project_update: {project_update}")
+        self.db.new_projects.update_one(project_query, project_update)
+
+        self.recordHistory("createRecordGroup", user_email, str(new_rg_id))
+
+        return str(new_rg_id)
 
     def createRecord(self, record, user_info={}):
         user = user_info.get("email", None)
@@ -628,6 +768,8 @@ class DataManager:
         self.recordHistory("createRecord", user, record_id=str(new_id))
         return str(new_id)
 
+
+    ## update functions
     def updateProject(self, project_id, new_data, user_info={}):
         user = user_info.get("email", None)
         _id = ObjectId(project_id)
@@ -738,6 +880,8 @@ class DataManager:
         self.recordHistory("resetRecord", user, record_id=record_id)
         return update
 
+
+    ## delete functions
     def deleteProject(self, project_id, background_tasks, user_info):
         ## TODO: check if user is a part of the team who owns this project
         _log.info(f"deleting project {project_id}")
@@ -866,38 +1010,8 @@ class DataManager:
         update = {"$pull": {"record_groups": rg_id}}
         self.db.teams.update_many(team_query, update)
 
-    def getProcessor(self, project_id):
-        _id = ObjectId(project_id)
-        try:
-            cursor = self.db.projects.find({"_id": _id})
-            document = cursor.next()
-            google_id = document.get("processorId", None)
-            processor_id = document.get("processor_id", None)
-            _processor_id = ObjectId(processor_id)
-            processor_cursor = self.db.processors.find({"_id": _processor_id})
-            processor_document = processor_cursor.next()
-            processor_attributes = processor_document.get("attributes", None)
-            return google_id, processor_attributes
-        except Exception as e:
-            _log.error(f"unable to find processor id: {e}")
-            return None
 
-    def getProcessorByRecordGroupID(self, rg_id):
-        _id = ObjectId(rg_id)
-        try:
-            cursor = self.db.record_groups.find({"_id": _id})
-            document = cursor.next()
-            google_id = document.get("processorId", None)
-            processor_id = document.get("processor_id", None)
-            _processor_id = ObjectId(processor_id)
-            processor_cursor = self.db.processors.find({"_id": _processor_id})
-            processor_document = processor_cursor.next()
-            processor_attributes = processor_document.get("attributes", None)
-            return google_id, processor_attributes
-        except Exception as e:
-            _log.error(f"unable to find processor id: {e}")
-            return None
-
+    ## miscellaneous functions
     def downloadRecords(self, project_id, exportType, selectedColumns, user_info):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
@@ -977,108 +1091,6 @@ class DataManager:
             if os.path.isfile(filepath):
                 os.remove(filepath)
                 _log.info(f"deleted {filepath}")
-
-    def hasRole(self, user_info, role=Roles.admin):
-        email = user_info.get("email", "")
-        cursor = self.db.users.find({"email": email})
-        try:
-            document = cursor.next()
-            if document.get("role", Roles.pending) == role:
-                return True
-            else:
-                return False
-        except:
-            return False
-
-    def getUserInfo(self, email):
-        user_document = self.getDocument("users", {"email": email}, clean_id=True)
-        return user_document
-
-    def getUsers(
-        self, role, user_info, project_id_exclude=None, includeLowerRoles=True
-    ):
-        ## TODO: accept team id as parameter and use that to determine which users to return
-        user = user_info.get("email", "")
-        user_document = self.getDocument("users", {"email": user})
-        team_id = user_document.get("default_team", None)
-        team_document = self.getDocument("teams", {"name": team_id})
-        team_users = team_document.get("users", [])
-        if includeLowerRoles:  # get all users with provided role or lower
-            query = {"role": {"$lte": role}}
-        else:  # get only users with provided role
-            query = {"role": role}
-        cursor = self.db.users.find(query)
-        users = []
-        if project_id_exclude is not None:
-            project_id = ObjectId(project_id_exclude)
-            for document in cursor:
-                if project_id not in document.get("projects", []):
-                    next_user = document.get("email", "")
-                    if next_user in team_users:
-                        users.append(
-                            {
-                                "email": document.get("email", ""),
-                                "name": document.get("name", ""),
-                                "hd": document.get("hd", ""),
-                                "picture": document.get("picture", ""),
-                                "role": document.get("role", -1),
-                            }
-                        )
-        else:
-            for document in cursor:
-                next_user = document.get("email", "")
-                if next_user in team_users:
-                    users.append(
-                        {
-                            "email": document.get("email", ""),
-                            "name": document.get("name", ""),
-                            "hd": document.get("hd", ""),
-                            "picture": document.get("picture", ""),
-                            "role": document.get("role", -1),
-                        }
-                    )
-        return users
-
-    def removeUserFromTeam(self, user, team):
-        query = {"email": user}
-        # delete_response = self.db.users.delete_one(query)
-        return user
-
-    def deleteUser(self, email, user_info):
-        admin_email = user_info.get("email", None)
-        query = {"email": email}
-        delete_response = self.db.users.delete_one(query)
-        ## TODO: remove user form all teams that include him/her
-        query = {"users": email}
-        teams_cursor = self.db.teams.find(query)
-        for document in teams_cursor:
-            team_id = document["_id"]
-            user_list = document.get("users", [])
-            user_list.remove(email)
-            query = {"_id": team_id}
-            newvalue = {"$set": {"users": user_list}}
-            self.db.teams.update_one(query, newvalue)
-        self.recordHistory("deleteUser", user=admin_email)
-        return email
-
-    def addUsersToProject(self, users, project_id):
-        ## TODO:
-        ## (1) change project to team
-        _id = ObjectId(project_id)
-        try:
-            for user in users:
-                email = user.get("email", "")
-                query = {"email": email}
-                cursor = self.db.users.find(query)
-                user_object = cursor.next()
-                user_projects = user_object.get("projects", [])
-                user_projects.append(_id)
-                update_query = {"projects": user_projects}
-                self.updateUserProjects(email, update_query)
-            return {"result": "success"}
-        except Exception as e:
-            _log.error(f"unable to add users: {e}")
-            return {"result": f"{e}"}
 
     def checkProjectValidity(self, projectId):
         try:
