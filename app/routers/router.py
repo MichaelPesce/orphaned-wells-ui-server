@@ -326,6 +326,26 @@ async def get_team_records(user_info: dict = Depends(authenticate)):
     return {"records": records}
 
 
+@router.post("/get_records", response_model=list)
+async def get_records(request: Request, user_info: dict = Depends(authenticate)):
+    """Fetch records for a given query.
+
+    Args:
+        request.query: DB Query
+
+    Returns:
+        List of records
+    """
+    data = await request.json()
+    query = data.get("query", None)
+    if query:
+        records = data_manager.fetchRecords(user_info)
+        return records
+    else:
+        _log.error(f"unable to process record query")
+        raise HTTPException(400, detail=f"unable to process record query")
+
+
 @router.get("/get_record/{record_id}")
 async def get_record_data(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch document record data.

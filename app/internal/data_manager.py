@@ -296,6 +296,14 @@ class DataManager:
         document = cursor.next()
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
+    
+    def fetchRecords(self, query, user):
+        records = []
+        cursor = self.db.records.find(query)
+        for document in cursor:
+            document["_id"] = str(document["_id"])
+            records.append(document)
+        return records
 
     def fetchRecordGroups(self, project_id, user):
         project = self.fetchProject(project_id)
