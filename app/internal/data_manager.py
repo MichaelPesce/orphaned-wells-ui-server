@@ -127,7 +127,6 @@ class DataManager:
             _log.error(f"error trying to lock record: {e}")
             return False
 
-
     ## user functions
     def getUser(self, email):
         cursor = self.db.users.find({"email": email})
@@ -337,7 +336,6 @@ class DataManager:
             _log.error(f"unable to add users: {e}")
             return {"result": f"{e}"}
 
-
     ## Fetch/get functions
     def getDocument(self, collection, query, clean_id=False, return_list=False):
         try:
@@ -403,7 +401,7 @@ class DataManager:
         document = cursor.next()
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
-    
+
     def fetchRecords(self, query, user):
         records = []
         cursor = self.db.records.find(query)
@@ -655,7 +653,7 @@ class DataManager:
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
-    
+
     def getProcessor(self, project_id):
         _id = ObjectId(project_id)
         try:
@@ -768,7 +766,6 @@ class DataManager:
         self.recordHistory("createRecord", user, record_id=str(new_id))
         return str(new_id)
 
-
     ## update functions
     def updateProject(self, project_id, new_data, user_info={}):
         user = user_info.get("email", None)
@@ -879,7 +876,6 @@ class DataManager:
         }
         self.recordHistory("resetRecord", user, record_id=record_id)
         return update
-
 
     ## delete functions
     def deleteProject(self, project_id, background_tasks, user_info):
@@ -1009,7 +1005,6 @@ class DataManager:
         team_query = {"name": team}
         update = {"$pull": {"record_groups": rg_id}}
         self.db.teams.update_many(team_query, update)
-
 
     ## miscellaneous functions
     def downloadRecords(self, project_id, exportType, selectedColumns, user_info):
