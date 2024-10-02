@@ -198,6 +198,40 @@ async def get_record_groups(project_id: str, user_info: dict = Depends(authentic
     return resp
 
 
+@router.get("/get_team_records")
+async def get_team_records(user_info: dict = Depends(authenticate)):
+    """Fetch records from all projects that a team has access to.
+
+    Args:
+        project_id: Project identifier
+
+    Returns:
+        List of records
+    """
+    records = data_manager.getTeamRecords(user_info)
+    return {"records": records}
+
+
+@router.post("/get_records", response_model=list)
+async def get_records(request: Request, user_info: dict = Depends(authenticate)):
+    """Fetch records for a given query.
+
+    Args:
+        request.query: DB Query
+
+    Returns:
+        List of records
+    """
+    data = await request.json()
+    query = data.get("query", None)
+    if query:
+        records = data_manager.fetchRecords(user_info)
+        return records
+    else:
+        _log.error(f"unable to process record query")
+        raise HTTPException(400, detail=f"unable to process record query")
+
+
 @router.get("/get_processors/{state}", response_model=list)
 async def get_processors(state: str, user_info: dict = Depends(authenticate)):
     """Fetch all projects that a user has access to.
@@ -206,17 +240,6 @@ async def get_processors(state: str, user_info: dict = Depends(authenticate)):
         List containing processors and metadata
     """
     resp = data_manager.fetchProcessors(user_info.get("email", ""), state)
-    return resp
-
-
-@router.get("/get_processor_data/{google_id}", response_model=dict)
-async def get_processor_data(google_id: str, user_info: dict = Depends(authenticate)):
-    """Fetch processor data for provided id.
-
-    Returns:
-        Dictionary containing processor data
-    """
-    resp = data_manager.fetchProcessor(google_id)
     return resp
 
 
@@ -312,40 +335,6 @@ async def get_record_group_data(
     }
 
 
-@router.get("/get_team_records")
-async def get_team_records(user_info: dict = Depends(authenticate)):
-    """Fetch records from all projects that a team has access to.
-
-    Args:
-        project_id: Project identifier
-
-    Returns:
-        List of records
-    """
-    records = data_manager.getTeamRecords(user_info)
-    return {"records": records}
-
-
-@router.post("/get_records", response_model=list)
-async def get_records(request: Request, user_info: dict = Depends(authenticate)):
-    """Fetch records for a given query.
-
-    Args:
-        request.query: DB Query
-
-    Returns:
-        List of records
-    """
-    data = await request.json()
-    query = data.get("query", None)
-    if query:
-        records = data_manager.fetchRecords(user_info)
-        return records
-    else:
-        _log.error(f"unable to process record query")
-        raise HTTPException(400, detail=f"unable to process record query")
-
-
 @router.get("/get_record/{record_id}")
 async def get_record_data(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch document record data.
@@ -367,6 +356,17 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
             status_code=303, content={"direction": "next", "recordData": record}
         )
     return {"recordData": record}
+
+
+@router.get("/get_processor_data/{google_id}", response_model=dict)
+async def get_processor_data(google_id: str, user_info: dict = Depends(authenticate)):
+    """Fetch processor data for provided id.
+
+    Returns:
+        Dictionary containing processor data
+    """
+    resp = data_manager.fetchProcessor(google_id)
+    return resp
 
 
 @router.post("/add_project")
