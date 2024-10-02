@@ -286,7 +286,12 @@ async def get_record_group_data(
     if sort_by[1] != 1 and sort_by[1] != -1:
         sort_by[1] = 1
     filter_by = request_body.get("filter", {})
-    project_document, rg_data, records, record_count = data_manager.fetchRecordGroupData(
+    (
+        project_document,
+        rg_data,
+        records,
+        record_count,
+    ) = data_manager.fetchRecordGroupData(
         rg_id,
         user_info.get("email", ""),
         page,
@@ -375,7 +380,7 @@ async def add_record_group(request: Request, user_info: dict = Depends(authentic
     """
     data = await request.json()
     return data_manager.createRecordGroup(data, user_info)
-    
+
 
 @router.post("/upload_document/{rg_id}/{user_email}")
 async def upload_document(

@@ -244,13 +244,12 @@ class DataManager:
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return "success"
-    
+
     def getProjectFromRecordGroup(self, rg_id):
         project_cursor = self.db.new_projects.find({"record_groups": rg_id})
         project_document = project_cursor.next()
         project_document["_id"] = str(project_document["_id"])
         return project_document
-
 
     def getTeamProjectList(self, team):
         team_query = {"name": team}
@@ -267,12 +266,12 @@ class DataManager:
         user_document = user_cursor.next()
         default_team = user_document.get("default_team", None)
         return self.getTeamProjectList(default_team)
-    
+
     def getUserRecordGroups(self, user):
         projects = self.fetchProjects(user)
         record_groups = []
         for project in projects:
-            record_groups += project.get("record_groups",[])
+            record_groups += project.get("record_groups", [])
         return record_groups
 
     def fetchProject(self, project_id):
@@ -290,14 +289,14 @@ class DataManager:
             document["_id"] = str(document["_id"])
             projects.append(document)
         return projects
-    
+
     def getProjectRecordGroupsList(self, project_id):
         query = {"_id": ObjectId(project_id)}
         cursor = self.db.projects.find(query)
         document = cursor.next()
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
-    
+
     def fetchRecordGroups(self, project_id, user):
         project = self.fetchProject(project_id)
         if project is None:
@@ -306,7 +305,7 @@ class DataManager:
         project_record_groups = project.get("record_groups", [])
         record_group_ids = []
         for i in range(len(project_record_groups)):
-            record_group_ids.append( ObjectId(project_record_groups[i]))
+            record_group_ids.append(ObjectId(project_record_groups[i]))
         record_groups = []
         cursor = self.db.record_groups.find({"_id": {"$in": record_group_ids}})
         for document in cursor:
@@ -369,7 +368,7 @@ class DataManager:
         self.recordHistory("createProject", user_email, str(new_project_id))
 
         return str(new_project_id)
-    
+
     def createRecordGroup(self, rg_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
@@ -396,11 +395,7 @@ class DataManager:
         ## add record group to project's rg list:
         project_query = {"_id": ObjectId(rg_info.get("project_id", None))}
         _log.info(f"project_query: {project_query}")
-        project_update = {
-            "$push": {
-                "record_groups": str(new_rg_id)
-            }
-        }
+        project_update = {"$push": {"record_groups": str(new_rg_id)}}
 
         _log.info(f"project_update: {project_update}")
         self.db.new_projects.update_one(project_query, project_update)
@@ -450,7 +445,7 @@ class DataManager:
 
         record_count = self.db.records.count_documents(filter_by)
         return project_data, records, record_count
-    
+
     def fetchRecordGroupData(
         self, rg_id, user, page, records_per_page, sort_by, filter_by
     ):
@@ -493,7 +488,7 @@ class DataManager:
         record_count = self.db.records.count_documents(filter_by)
 
         project_document = self.getProjectFromRecordGroup(rg_id)
-        
+
         return project_document, record_group, records, record_count
 
     def getTeamRecords(self, user_info):
@@ -638,7 +633,7 @@ class DataManager:
             document["_id"] = str(document["_id"])
             return document
         return None
-    
+
     def updateRecordGroup(self, rg_id, new_data, user_info={}):
         user = user_info.get("email", None)
         _id = ObjectId(rg_id)
@@ -827,7 +822,7 @@ class DataManager:
         self.db.records.delete_many(query)
         # self.recordHistory("deleteRecords", user=user, notes=query)
         return "success"
-    
+
     def deleteRecordGroups(self, record_groups, deletedBy):
         user = deletedBy.get("email", None)
         _log.info(f"deleting record groups: {record_groups}")
@@ -878,7 +873,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None
-        
+
     def getProcessorByRecordGroupID(self, rg_id):
         _id = ObjectId(rg_id)
         try:
@@ -1085,7 +1080,7 @@ class DataManager:
         project = self.getDocument("projects", {"_id": project_id})
         if project is not None:
             return True
-    
+
     def checkRecordGroupValidity(self, rg_id):
         try:
             rg_id = ObjectId(rg_id)
