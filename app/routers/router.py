@@ -583,9 +583,11 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     return {"response": "success"}
 
 
-@router.post("/download_records/{project_id}", response_class=FileResponse)
+@router.post("/download_records/{location}/{_id}/{export_type}", response_class=FileResponse)
 async def download_records(
-    project_id: str,
+    location: str,
+    _id: str,
+    export_type: str,
     request: Request,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
@@ -603,13 +605,21 @@ async def download_records(
     """
     req = await request.json()
     # _log.info(req)
-    exportType = req.get("exportType", "csv")
     selectedColumns = req.get("columns", [])
     keep_all_columns = False
     if len(selectedColumns) == 0:
         keep_all_columns = True
+    
+    if location == "project":
+        records, _ = data_manager.fetchRecordsByProject(user_info, _id)
+    elif location == "record_group":
+        records, _ = data_manager.fetchRecordsByRecordGroup(user_info, _id)
+    else:
+        return None
+
+    
     export_file = data_manager.downloadRecords(
-        project_id, exportType, user_info, selectedColumns=selectedColumns, keep_all_columns=keep_all_columns
+        records, export_type, user_info, _id, location, selectedColumns=selectedColumns, keep_all_columns=keep_all_columns
     )
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(

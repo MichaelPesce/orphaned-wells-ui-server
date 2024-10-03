@@ -431,13 +431,25 @@ class DataManager:
         return records, record_count
 
     def fetchRecordsByRecordGroup(
-        self, rg_id, page, records_per_page, sort_by, filter_by, user
+        self, 
+        user,
+        rg_id, 
+        page=None, 
+        records_per_page=None, 
+        sort_by = ["dateCreated", 1], 
+        filter_by = {}, 
     ):
         filter_by["record_group_id"] = rg_id
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
     def fetchRecordsByProject(
-        self, project_id, page, records_per_page, sort_by, filter_by, user
+        self, 
+        user,
+        project_id, 
+        page=None, 
+        records_per_page=None, 
+        sort_by = ["dateCreated", 1], 
+        filter_by = {}, 
     ):
         ## if we arent filtering by record_group_id, add filter to look for ALL record_ids in given project
         if "record_group_id" not in filter_by:
@@ -1040,23 +1052,17 @@ class DataManager:
         self.db.teams.update_many(team_query, update)
 
     ## miscellaneous functions
-    def downloadRecords(self, project_id, exportType, user_info, selectedColumns=[], keep_all_columns=False):
+    def downloadRecords(self, records, exportType, user_info, _id, location, selectedColumns=[], keep_all_columns=False):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
-
-        _id = ObjectId(project_id)
         today = time.time()
         output_dir = self.app_settings.export_dir
-        output_file = os.path.join(output_dir, f"{project_id}_{today}.{exportType}")
-        project_cursor = self.db.projects.find({"_id": _id})
+        output_file = os.path.join(output_dir, f"{_id}_{today}.{exportType}")
         attributes = ["file"]
         subattributes = []
-        project_document = project_cursor.next()
-        project_name = project_document.get("name", "")
-        cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
         if exportType == "csv":
-            for document in cursor:
+            for document in records:
                 current_attributes = set()
                 record_attribute = {}
                 for document_attribute in document["attributesList"]:
@@ -1095,7 +1101,7 @@ class DataManager:
                 writer.writeheader()
                 writer.writerows(record_attributes)
         else:
-            for document in cursor:
+            for document in records:
                 record_attribute = {}
                 for document_attribute in document["attributesList"]:
                     attribute_name = document_attribute["key"]
@@ -1106,7 +1112,10 @@ class DataManager:
             with open(output_file, "w", newline="") as jsonfile:
                 json.dump(record_attributes, jsonfile)
 
-        self.recordHistory("downloadRecords", user=user, project_id=project_id)
+        if location == "project":
+            self.recordHistory("downloadRecords", user=user, project_id=_id)
+        elif location == "record_group":
+            self.recordHistory("downloadRecords", user=user, rg_id=_id)
         return output_file
 
     def deleteFiles(self, filepaths, sleep_time=5):
