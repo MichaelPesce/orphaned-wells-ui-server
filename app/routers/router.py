@@ -370,6 +370,17 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
     return resp
 
 
+@router.get("/get_column_data/{location}/{_id}", response_model=dict)
+async def get_column_data(location: str, _id: str, user_info: dict = Depends(authenticate)):
+    """Fetch processor data for provided id.
+
+    Returns:
+        Dictionary containing processor data
+    """
+    resp = data_manager.fetchColumnData(location, _id)
+    return resp
+
+
 @router.post("/add_project")
 async def add_project(request: Request, user_info: dict = Depends(authenticate)):
     """Add new project.
@@ -593,10 +604,12 @@ async def download_records(
     req = await request.json()
     # _log.info(req)
     exportType = req.get("exportType", "csv")
-    selectedColumns = req.get("columns", None)
-
+    selectedColumns = req.get("columns", [])
+    keep_all_columns = False
+    if len(selectedColumns) == 0:
+        keep_all_columns = True
     export_file = data_manager.downloadRecords(
-        project_id, exportType, selectedColumns, user_info
+        project_id, exportType, user_info, selectedColumns=selectedColumns, keep_all_columns=keep_all_columns
     )
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(

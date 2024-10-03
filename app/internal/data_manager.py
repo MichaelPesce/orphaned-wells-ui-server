@@ -460,6 +460,33 @@ class DataManager:
             document["_id"] = str(document["_id"])
             record_groups.append(document)
         return {"project": project, "record_groups": record_groups}
+    
+    def fetchColumnData(self, location, _id):
+        if location == "project":
+            # get project, set name and settings
+            project_document = self.db.new_projects.find({"_id": ObjectId(_id)}).next()
+            project_document["_id"] = _id
+            columns = set()
+            # get all record groups
+            record_groups = self.getProjectRecordGroupsList(_id)
+            for rg_id in record_groups:
+                rg_document = self.db.record_groups.find({"_id": ObjectId(rg_id)}).next()
+                google_id = rg_document["processorId"]
+                processor = self.getProcessorByGoogleId(google_id)
+                for attr in processor["attributes"]:
+                    columns.add(attr["name"])
+            columns = list(columns)
+            return {"columns": columns, "obj": project_document}
+        elif location == "record_group":
+            columns = []
+            rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
+            rg_document["_id"] = _id
+            google_id = rg_document["processorId"]
+            processor = self.getProcessorByGoogleId(google_id)
+            for attr in processor["attributes"]:
+                columns.append(attr["name"])
+            return {"columns": columns, "obj": rg_document}
+        return None
 
     def getProcessorByGoogleId(self, google_id):
         cursor = self.db.processors.find({"processor_id": google_id})
@@ -1013,7 +1040,7 @@ class DataManager:
         self.db.teams.update_many(team_query, update)
 
     ## miscellaneous functions
-    def downloadRecords(self, project_id, exportType, selectedColumns, user_info):
+    def downloadRecords(self, project_id, exportType, user_info, selectedColumns=[], keep_all_columns=False):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
 
@@ -1025,9 +1052,6 @@ class DataManager:
         attributes = ["file"]
         subattributes = []
         project_document = project_cursor.next()
-        # for each in project_document.get("attributes", {}):
-        #     if each["name"] in selectedColumns:
-        #         attributes.append(each["name"])
         project_name = project_document.get("name", "")
         cursor = self.db.records.find({"project_id": project_id})
         record_attributes = []
@@ -1037,7 +1061,7 @@ class DataManager:
                 record_attribute = {}
                 for document_attribute in document["attributesList"]:
                     attribute_name = document_attribute["key"].replace(" ", "")
-                    if attribute_name in selectedColumns:
+                    if attribute_name in selectedColumns or keep_all_columns:
                         original_attribute_name = attribute_name
                         i = 2
                         while attribute_name in current_attributes:
@@ -1075,7 +1099,7 @@ class DataManager:
                 record_attribute = {}
                 for document_attribute in document["attributesList"]:
                     attribute_name = document_attribute["key"]
-                    if attribute_name in selectedColumns:
+                    if attribute_name in selectedColumns or keep_all_columns:
                         record_attribute[attribute_name] = document_attribute
                 record_attribute["file"] = document.get("filename", "")
                 record_attributes.append(record_attribute)
