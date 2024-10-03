@@ -402,7 +402,9 @@ class DataManager:
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
 
-    def fetchRecords(self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None):
+    def fetchRecords(
+        self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None
+    ):
         records = []
         record_index = 1
         if page is not None and records_per_page is not None and records_per_page != -1:
@@ -427,13 +429,17 @@ class DataManager:
             records.append(document)
         record_count = self.db.records.count_documents(filter_by)
         return records, record_count
-    
-    def fetchRecordsByRecordGroup(self, rg_id, page, records_per_page, sort_by, filter_by, user):
+
+    def fetchRecordsByRecordGroup(
+        self, rg_id, page, records_per_page, sort_by, filter_by, user
+    ):
         filter_by["record_group_id"] = rg_id
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
-    def fetchRecordsByProject(self, project_id, page, records_per_page, sort_by, filter_by, user):
-        ## if we arent filtering by record_group_id, add filter to look for ALL record_ids in given project 
+    def fetchRecordsByProject(
+        self, project_id, page, records_per_page, sort_by, filter_by, user
+    ):
+        ## if we arent filtering by record_group_id, add filter to look for ALL record_ids in given project
         if "record_group_id" not in filter_by:
             record_group_ids = self.getProjectRecordGroupsList(project_id)
             filter_by["record_group_id"] = {"$in": record_group_ids}

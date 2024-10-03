@@ -214,12 +214,12 @@ async def get_team_records(user_info: dict = Depends(authenticate)):
 
 @router.post("/get_records/{get_by}", response_model=dict)
 async def get_records(
-        request: Request,
-        get_by: str,
-        page: int = None,
-        records_per_page: int = None,
-        user_info: dict = Depends(authenticate),
-    ):
+    request: Request,
+    get_by: str,
+    page: int = None,
+    records_per_page: int = None,
+    user_info: dict = Depends(authenticate),
+):
     """Fetch records for a given query.
 
     Args:
@@ -240,12 +240,16 @@ async def get_records(
         if get_by == "project":
             project_id = data.get("id", None)
             if project_id is not None:
-                records, record_count = data_manager.fetchRecordsByProject(project_id, page, records_per_page, sort_by, filter_by, user_info)
+                records, record_count = data_manager.fetchRecordsByProject(
+                    project_id, page, records_per_page, sort_by, filter_by, user_info
+                )
                 return {"records": records, "record_count": record_count}
         elif get_by == "record_group":
             rg_id = data.get("id", None)
             if rg_id is not None:
-                records, record_count = data_manager.fetchRecordsByRecordGroup(rg_id, page, records_per_page, sort_by, filter_by, user_info)
+                records, record_count = data_manager.fetchRecordsByRecordGroup(
+                    rg_id, page, records_per_page, sort_by, filter_by, user_info
+                )
                 return {"records": records, "record_count": record_count}
     _log.error(f"unable to process record query")
     raise HTTPException(400, detail=f"unable to process record query")
@@ -319,8 +323,7 @@ async def get_record_group_data(
         Dictionary containing record group data, list of records
     """
     project_document, rg_data = data_manager.fetchRecordGroupData(
-        rg_id,
-        user_info.get("email", "")
+        rg_id, user_info.get("email", "")
     )
     if rg_data is None:
         raise HTTPException(
