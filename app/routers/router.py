@@ -213,7 +213,13 @@ async def get_team_records(user_info: dict = Depends(authenticate)):
 
 
 @router.post("/get_records/{get_by}", response_model=dict)
-async def get_records(request: Request, get_by: str, user_info: dict = Depends(authenticate)):
+async def get_records(
+        request: Request,
+        get_by: str,
+        page: int = None,
+        records_per_page: int = None,
+        user_info: dict = Depends(authenticate),
+    ):
     """Fetch records for a given query.
 
     Args:
@@ -224,11 +230,23 @@ async def get_records(request: Request, get_by: str, user_info: dict = Depends(a
     """
     _log.info(f"inside get records")
     data = await request.json()
-    if get_by == "project_id":
-        project_id = data.get("project_id", None)
-        if project_id is not None:
-            records = data_manager.fetchRecordsByProjectId(project_id, user_info)
-            return {"records": records, "record_count": len(records)}
+    if get_by == "project" or get_by == "record_group":
+        sort_by = data.get(
+            "sort", ["dateCreated", 1]
+        )  ## 1 is ascending, -1 is descending`
+        if sort_by[1] != 1 and sort_by[1] != -1:
+            sort_by[1] = 1
+        filter_by = data.get("filter", {})
+        if get_by == "project":
+            project_id = data.get("project_id", None)
+            if project_id is not None:
+                records, record_count = data_manager.fetchRecordsByProject(project_id, page, records_per_page, sort_by, filter_by, user_info)
+                return {"records": records, "record_count": record_count}
+        elif get_by == "record_group":
+            rg_id = data.get("rg_id", None)
+            if rg_id is not None:
+                records, record_count = data_manager.fetchRecordsByRecordGroup(rg_id, page, records_per_page, sort_by, filter_by, user_info)
+                return {"records": records, "record_count": record_count}
     _log.error(f"unable to process record query")
     raise HTTPException(400, detail=f"unable to process record query")
 

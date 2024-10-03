@@ -402,18 +402,40 @@ class DataManager:
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
 
-    def fetchRecords(self, query, user):
+    def fetchRecords(self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None):
         records = []
-        cursor = self.db.records.find(query)
+        record_index = 1
+        if page is not None and records_per_page is not None and records_per_page != -1:
+            cursor = (
+                self.db.records.find(filter_by)
+                .sort(
+                    sort_by[0],
+                    sort_by[1]
+                    # )
+                )
+                .skip(records_per_page * page)
+                .limit(records_per_page)
+            )
+            record_index += page * records_per_page
+        else:
+            cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
+
         for document in cursor:
             document["_id"] = str(document["_id"])
+            document["recordIndex"] = record_index
+            record_index += 1
             records.append(document)
-        return records
+        record_count = self.db.records.count_documents(filter_by)
+        return records, record_count
     
-    def fetchRecordsByProjectId(self, project_id, user):
+    def fetchRecordsByRecordGroup(self, rg_id, page, records_per_page, sort_by, filter_by, user):
+        filter_by["record_group_id"] = rg_id
+        return self.fetchRecords(sort_by, filter_by, page, records_per_page)
+
+    def fetchRecordsByProject(self, project_id, page, records_per_page, sort_by, filter_by, user):
         record_group_ids = self.getProjectRecordGroupsList(project_id)
-        query = {"record_group_id": {"$in": record_group_ids}}
-        return self.fetchRecords(query, user)
+        filter_by["record_group_id"] = {"$in": record_group_ids}
+        return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
     def fetchRecordGroups(self, project_id, user):
         project = self.fetchProject(project_id)
