@@ -241,14 +241,14 @@ async def get_records(
             project_id = data.get("id", None)
             if project_id is not None:
                 records, record_count = data_manager.fetchRecordsByProject(
-                    project_id, page, records_per_page, sort_by, filter_by, user_info
+                    user_info, project_id, page, records_per_page, sort_by, filter_by,
                 )
                 return {"records": records, "record_count": record_count}
         elif get_by == "record_group":
             rg_id = data.get("id", None)
             if rg_id is not None:
                 records, record_count = data_manager.fetchRecordsByRecordGroup(
-                    rg_id, page, records_per_page, sort_by, filter_by, user_info
+                    user_info, rg_id, page, records_per_page, sort_by, filter_by
                 )
                 return {"records": records, "record_count": record_count}
     _log.error(f"unable to process record query")
