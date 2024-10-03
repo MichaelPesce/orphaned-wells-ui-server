@@ -433,8 +433,10 @@ class DataManager:
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
     def fetchRecordsByProject(self, project_id, page, records_per_page, sort_by, filter_by, user):
-        record_group_ids = self.getProjectRecordGroupsList(project_id)
-        filter_by["record_group_id"] = {"$in": record_group_ids}
+        ## if we arent filtering by record_group_id, add filter to look for ALL record_ids in given project 
+        if "record_group_id" not in filter_by:
+            record_group_ids = self.getProjectRecordGroupsList(project_id)
+            filter_by["record_group_id"] = {"$in": record_group_ids}
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
     def fetchRecordGroups(self, project_id, user):
