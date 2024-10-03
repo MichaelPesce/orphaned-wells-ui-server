@@ -238,12 +238,12 @@ async def get_records(
             sort_by[1] = 1
         filter_by = data.get("filter", {})
         if get_by == "project":
-            project_id = data.get("project_id", None)
+            project_id = data.get("id", None)
             if project_id is not None:
                 records, record_count = data_manager.fetchRecordsByProject(project_id, page, records_per_page, sort_by, filter_by, user_info)
                 return {"records": records, "record_count": record_count}
         elif get_by == "record_group":
-            rg_id = data.get("rg_id", None)
+            rg_id = data.get("id", None)
             if rg_id is not None:
                 records, record_count = data_manager.fetchRecordsByRecordGroup(rg_id, page, records_per_page, sort_by, filter_by, user_info)
                 return {"records": records, "record_count": record_count}
