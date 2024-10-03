@@ -411,7 +411,6 @@ class DataManager:
         return records
     
     def fetchRecordsByProjectId(self, project_id, user):
-        _log.info(f"project id is: {project_id}")
         record_group_ids = self.getProjectRecordGroupsList(project_id)
         query = {"record_group_id": {"$in": record_group_ids}}
         return self.fetchRecords(query, user)
