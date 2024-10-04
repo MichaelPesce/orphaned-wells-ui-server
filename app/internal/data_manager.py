@@ -699,22 +699,6 @@ class DataManager:
         record_id = str(document.get("_id", ""))
         return record_id
 
-    def getProcessor(self, project_id):
-        _id = ObjectId(project_id)
-        try:
-            cursor = self.db.projects.find({"_id": _id})
-            document = cursor.next()
-            google_id = document.get("processorId", None)
-            processor_id = document.get("processor_id", None)
-            _processor_id = ObjectId(processor_id)
-            processor_cursor = self.db.processors.find({"_id": _processor_id})
-            processor_document = processor_cursor.next()
-            processor_attributes = processor_document.get("attributes", None)
-            return google_id, processor_attributes
-        except Exception as e:
-            _log.error(f"unable to find processor id: {e}")
-            return None
-
     def getProcessorByRecordGroupID(self, rg_id):
         _id = ObjectId(rg_id)
         try:
