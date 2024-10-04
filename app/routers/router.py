@@ -198,20 +198,6 @@ async def get_record_groups(project_id: str, user_info: dict = Depends(authentic
     return resp
 
 
-@router.get("/get_team_records")
-async def get_team_records(user_info: dict = Depends(authenticate)):
-    """Fetch records from all projects that a team has access to.
-
-    Args:
-        project_id: Project identifier
-
-    Returns:
-        List of records
-    """
-    records = data_manager.getTeamRecords(user_info)
-    return {"records": records}
-
-
 @router.post("/get_records/{get_by}", response_model=dict)
 async def get_records(
     request: Request,

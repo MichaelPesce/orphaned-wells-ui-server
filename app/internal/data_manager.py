@@ -580,36 +580,6 @@ class DataManager:
 
         return project_document, record_group
 
-    def getTeamRecords(self, user_info):
-        user = user_info.get("email", "")
-        ## get user's projects, check if user has access to this project
-        user_document = self.getDocument("users", {"email": user})
-        default_team = user_document.get("default_team", None)
-        team_document = self.getDocument("teams", {"name": default_team})
-        projects_list = team_document.get("projects", [])
-        records = []
-        for _id in projects_list:
-            project_id = str(_id)
-            ## get project data
-            cursor = self.db.projects.find({"_id": _id})
-            ## errors out sometimes ?
-            try:
-                project_data = cursor.next()
-                project_data["_id"] = str(project_data["_id"])
-                # _log.info(f"checking for records with project_id {project_id}")
-                cursor = self.db.records.find({"project_id": project_id}).sort(
-                    "dateCreated", ASCENDING
-                )
-                record_index = 1
-                for document in cursor:
-                    document["_id"] = str(document["_id"])
-                    document["recordIndex"] = record_index
-                    record_index += 1
-                    records.append(document)
-            except Exception as e:
-                _log.error(f"unable to add records from project {project_id}: {e}")
-        return records
-
     def fetchRecordData(self, record_id, user_info, direction="next"):
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
