@@ -431,25 +431,25 @@ class DataManager:
         return records, record_count
 
     def fetchRecordsByRecordGroup(
-        self, 
+        self,
         user,
-        rg_id, 
-        page=None, 
-        records_per_page=None, 
-        sort_by = ["dateCreated", 1], 
-        filter_by = {}, 
+        rg_id,
+        page=None,
+        records_per_page=None,
+        sort_by=["dateCreated", 1],
+        filter_by={},
     ):
         filter_by["record_group_id"] = rg_id
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
     def fetchRecordsByProject(
-        self, 
+        self,
         user,
-        project_id, 
-        page=None, 
-        records_per_page=None, 
-        sort_by = ["dateCreated", 1], 
-        filter_by = {}, 
+        project_id,
+        page=None,
+        records_per_page=None,
+        sort_by=["dateCreated", 1],
+        filter_by={},
     ):
         ## if we arent filtering by record_group_id, add filter to look for ALL record_ids in given project
         if "record_group_id" not in filter_by:
@@ -472,7 +472,7 @@ class DataManager:
             document["_id"] = str(document["_id"])
             record_groups.append(document)
         return {"project": project, "record_groups": record_groups}
-    
+
     def fetchColumnData(self, location, _id):
         if location == "project":
             # get project, set name and settings
@@ -482,7 +482,9 @@ class DataManager:
             # get all record groups
             record_groups = self.getProjectRecordGroupsList(_id)
             for rg_id in record_groups:
-                rg_document = self.db.record_groups.find({"_id": ObjectId(rg_id)}).next()
+                rg_document = self.db.record_groups.find(
+                    {"_id": ObjectId(rg_id)}
+                ).next()
                 google_id = rg_document["processorId"]
                 processor = self.getProcessorByGoogleId(google_id)
                 for attr in processor["attributes"]:
@@ -608,7 +610,9 @@ class DataManager:
             if document.get("filename", False):
                 image_urls.append(
                     generate_download_signed_url_v4(
-                        document["record_group_id"], document["_id"], document["filename"]
+                        document["record_group_id"],
+                        document["_id"],
+                        document["filename"],
                     )
                 )
         document["img_urls"] = image_urls
@@ -1008,7 +1012,16 @@ class DataManager:
         self.db.teams.update_many(team_query, update)
 
     ## miscellaneous functions
-    def downloadRecords(self, records, exportType, user_info, _id, location, selectedColumns=[], keep_all_columns=False):
+    def downloadRecords(
+        self,
+        records,
+        exportType,
+        user_info,
+        _id,
+        location,
+        selectedColumns=[],
+        keep_all_columns=False,
+    ):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
         today = time.time()

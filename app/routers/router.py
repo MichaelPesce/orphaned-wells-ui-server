@@ -227,7 +227,12 @@ async def get_records(
             project_id = data.get("id", None)
             if project_id is not None:
                 records, record_count = data_manager.fetchRecordsByProject(
-                    user_info, project_id, page, records_per_page, sort_by, filter_by,
+                    user_info,
+                    project_id,
+                    page,
+                    records_per_page,
+                    sort_by,
+                    filter_by,
                 )
                 return {"records": records, "record_count": record_count}
         elif get_by == "record_group":
@@ -357,7 +362,9 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
 
 
 @router.get("/get_column_data/{location}/{_id}", response_model=dict)
-async def get_column_data(location: str, _id: str, user_info: dict = Depends(authenticate)):
+async def get_column_data(
+    location: str, _id: str, user_info: dict = Depends(authenticate)
+):
     """Fetch processor data for provided id.
 
     Returns:
@@ -569,7 +576,9 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     return {"response": "success"}
 
 
-@router.post("/download_records/{location}/{_id}/{export_type}", response_class=FileResponse)
+@router.post(
+    "/download_records/{location}/{_id}/{export_type}", response_class=FileResponse
+)
 async def download_records(
     location: str,
     _id: str,
@@ -595,7 +604,7 @@ async def download_records(
     keep_all_columns = False
     if len(selectedColumns) == 0:
         keep_all_columns = True
-    
+
     if location == "project":
         records, _ = data_manager.fetchRecordsByProject(user_info, _id)
     elif location == "record_group":
@@ -603,9 +612,14 @@ async def download_records(
     else:
         return None
 
-    
     export_file = data_manager.downloadRecords(
-        records, export_type, user_info, _id, location, selectedColumns=selectedColumns, keep_all_columns=keep_all_columns
+        records,
+        export_type,
+        user_info,
+        _id,
+        location,
+        selectedColumns=selectedColumns,
+        keep_all_columns=keep_all_columns,
     )
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(
