@@ -598,17 +598,19 @@ class DataManager:
             return None, None
         image_urls = []
         for image in document.get("image_files", []):
-            image_urls.append(
-                generate_download_signed_url_v4(
-                    document["record_group_id"], document["_id"], image
+            if self.imageIsValid(image):
+                image_urls.append(
+                    generate_download_signed_url_v4(
+                        document["record_group_id"], document["_id"], image
+                    )
                 )
-            )
         if len(image_urls) == 0:
-            image_urls.append(
-                generate_download_signed_url_v4(
-                    document["record_group_id"], document["_id"], document["filename"]
+            if document.get("filename", False):
+                image_urls.append(
+                    generate_download_signed_url_v4(
+                        document["record_group_id"], document["_id"], document["filename"]
+                    )
                 )
-            )
         document["img_urls"] = image_urls
 
         ## get record group name
@@ -1097,6 +1099,18 @@ class DataManager:
         rg = self.getDocument("record_groups", {"_id": rg_id})
         if rg is not None:
             return True
+
+    def imageIsValid(self, image):
+        ## some broken records have letters saved where image names should be
+        ## for now, just ensure that the name is at least 3 characters long
+        try:
+            if len(image) > 2:
+                return True
+            else:
+                return False
+        except Exception as e:
+            _log.error(f"unable to check validity of image: {e}")
+            return False
 
     def recordHistory(
         self, action, user=None, project_id=None, rg_id=None, record_id=None, notes=None
