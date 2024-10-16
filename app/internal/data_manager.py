@@ -468,8 +468,11 @@ class DataManager:
         team_info = self.fetchTeamInfo(user["email"])
         rg_list = []
         for project_id in team_info["project_list"]:
-            rgs = self.getProjectRecordGroupsList(str(project_id))
-            rg_list += rgs
+            try:
+                rgs = self.getProjectRecordGroupsList(str(project_id))
+                rg_list += rgs
+            except Exception as e:
+                _log.error(f"unable to get record groups for project {project_id}: {e}")
         filter_by["record_group_id"] = {"$in": rg_list}
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
