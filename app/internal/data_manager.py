@@ -428,6 +428,20 @@ class DataManager:
         document = cursor.next()
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
+    
+    def getTeamRecordGroupsList(self, team_name):
+        query = {"name": team_name}
+        cursor = self.db.teams.find(query)
+        document = cursor.next()
+        project_list = document.get("project_list", [])
+        record_groups_list = []
+        for project_id in project_list:
+            try:
+                rgs = self.getProjectRecordGroupsList(str(project_id))
+                record_groups_list += rgs
+            except Exception as e:
+                _log.error(f"unable to get record groups for project {project_id}: {e}")
+        return record_groups_list
 
     def fetchRecords(
         self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None
@@ -466,13 +480,7 @@ class DataManager:
         filter_by={},
     ):
         team_info = self.fetchTeamInfo(user["email"])
-        rg_list = []
-        for project_id in team_info["project_list"]:
-            try:
-                rgs = self.getProjectRecordGroupsList(str(project_id))
-                rg_list += rgs
-            except Exception as e:
-                _log.error(f"unable to get record groups for project {project_id}: {e}")
+        rg_list = self.getTeamRecordGroupsList(team_info["name"])
         filter_by["record_group_id"] = {"$in": rg_list}
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
