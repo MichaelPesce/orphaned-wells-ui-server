@@ -532,13 +532,21 @@ class DataManager:
         return {"project": project, "record_groups": record_groups}
 
     def fetchColumnData(self, location, _id):
-        if location == "project":
-            # get project, set name and settings
-            project_document = self.db.new_projects.find({"_id": ObjectId(_id)}).next()
-            project_document["_id"] = _id
+        if location == "project" or location == "team":
             columns = set()
-            # get all record groups
-            record_groups = self.getProjectRecordGroupsList(_id)
+            if location == "project":
+                # get project, set name and settings
+                document = self.db.new_projects.find({"_id": ObjectId(_id)}).next()
+                document["_id"] = _id
+                # get all record groups
+                record_groups = self.getProjectRecordGroupsList(_id)
+            else:
+                document = self.db.teams.find({"name": _id}).next()
+                document["_id"] = str(document["_id"])
+                ##TODO: fix object ids in team project list?
+                for i in range(len(document["project_list"])):
+                    document["project_list"][i] = str(document["project_list"][i])
+                record_groups = self.getTeamRecordGroupsList(_id)
             for rg_id in record_groups:
                 rg_document = self.db.record_groups.find(
                     {"_id": ObjectId(rg_id)}
@@ -548,7 +556,8 @@ class DataManager:
                 for attr in processor["attributes"]:
                     columns.add(attr["name"])
             columns = list(columns)
-            return {"columns": columns, "obj": project_document}
+            return {"columns": columns, "obj": document}
+        
         elif location == "record_group":
             columns = []
             rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
