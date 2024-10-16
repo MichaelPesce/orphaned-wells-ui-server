@@ -1144,7 +1144,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to check validity of image: {e}")
             return False
-        
+
     def sortRecordAttributes(self, record, rg):
         # start_time = time.time()
 
@@ -1158,7 +1158,9 @@ class DataManager:
         sorted_attributes = []
         for each in processor_attributes:
             attribute_name = each["name"]
-            attribute = next((item for item in attributes if item["key"] == attribute_name), None)
+            attribute = next(
+                (item for item in attributes if item["key"] == attribute_name), None
+            )
             if attribute is None:
                 _log.info(f"{attribute_name} is None")
             else:
@@ -1167,7 +1169,6 @@ class DataManager:
         # end_time = time.time()
         # _log.info(f"sorting process took {end_time-start_time} seconds")
         return sorted_attributes
-    
 
     def recordHistory(
         self, action, user=None, project_id=None, rg_id=None, record_id=None, notes=None
