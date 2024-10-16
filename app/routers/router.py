@@ -242,6 +242,22 @@ async def get_records(
                     user_info, rg_id, page, records_per_page, sort_by, filter_by
                 )
                 return {"records": records, "record_count": record_count}
+    elif get_by == "team":
+        sort_by = data.get(
+            "sort", ["dateCreated", 1]
+        )  ## 1 is ascending, -1 is descending`
+        if sort_by[1] != 1 and sort_by[1] != -1:
+            sort_by[1] = 1
+        filter_by = data.get("filter", {})
+        records, record_count = data_manager.fetchRecordsByTeam(
+            user_info,
+            page,
+            records_per_page,
+            sort_by,
+            filter_by,
+        )
+        return {"records": records, "record_count": record_count}
+
     _log.error(f"unable to process record query")
     raise HTTPException(400, detail=f"unable to process record query")
 

@@ -457,6 +457,22 @@ class DataManager:
         record_count = self.db.records.count_documents(filter_by)
         return records, record_count
 
+    def fetchRecordsByTeam(
+        self,
+        user,
+        page=None,
+        records_per_page=None,
+        sort_by=["dateCreated", 1],
+        filter_by={},
+    ):
+        team_info = self.fetchTeamInfo(user["email"])
+        rg_list = []
+        for project_id in team_info["project_list"]:
+            rgs = self.getProjectRecordGroupsList(str(project_id))
+            rg_list += rgs
+        filter_by["record_group_id"] = {"$in": rg_list}
+        return self.fetchRecords(sort_by, filter_by, page, records_per_page)
+
     def fetchRecordsByRecordGroup(
         self,
         user,
@@ -488,7 +504,7 @@ class DataManager:
         project = self.fetchProject(project_id)
         if project is None:
             _log.info(f"project {project_id} not found")
-            return []
+            return {}
         project_record_groups = project.get("record_groups", [])
         record_group_ids = []
         for i in range(len(project_record_groups)):
