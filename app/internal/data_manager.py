@@ -391,7 +391,7 @@ class DataManager:
         }
         reviewed_amt = self.db.records.count_documents(query)
         return total_amt, reviewed_amt
-    
+
     def fetchTeamInfo(self, email):
         user_doc = self.db.users.find({"email": email}).next()
         team_name = user_doc["default_team"]
@@ -428,7 +428,7 @@ class DataManager:
         document = cursor.next()
         record_groups_list = document.get("record_groups", [])
         return record_groups_list
-    
+
     def getTeamRecordGroupsList(self, team_name):
         query = {"name": team_name}
         cursor = self.db.teams.find(query)
@@ -557,7 +557,7 @@ class DataManager:
                     columns.add(attr["name"])
             columns = list(columns)
             return {"columns": columns, "obj": document}
-        
+
         elif location == "record_group":
             columns = []
             rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
