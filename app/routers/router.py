@@ -374,6 +374,17 @@ async def get_column_data(
     return resp
 
 
+@router.get("/get_team_info")
+async def get_team_info(user_info: dict = Depends(authenticate)):
+    """Get user's team information
+
+    Returns:
+        Dictionary containing team information
+    """
+    resp = data_manager.fetchTeamInfo(user_info["email"])
+    return resp
+
+
 @router.post("/add_project")
 async def add_project(request: Request, user_info: dict = Depends(authenticate)):
     """Add new project.

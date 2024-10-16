@@ -391,6 +391,20 @@ class DataManager:
         }
         reviewed_amt = self.db.records.count_documents(query)
         return total_amt, reviewed_amt
+    
+    def fetchTeamInfo(self, email):
+        user_doc = self.db.users.find({"email": email}).next()
+        team_name = user_doc["default_team"]
+        team_doc = self.db.teams.find({"name": team_name}).next()
+        if "projects" in team_doc:
+            del team_doc["projects"]
+        ## convert object ids to strings
+        team_doc["_id"] = str(team_doc["_id"])
+        for i in range(len(team_doc["project_list"])):
+            project_object_id = team_doc["project_list"][i]
+            team_doc["project_list"][i] = str(project_object_id)
+
+        return team_doc
 
     def fetchProject(self, project_id):
         cursor = self.db.new_projects.find({"_id": ObjectId(project_id)})
@@ -1022,7 +1036,7 @@ class DataManager:
 
     def removeProjectFromTeam(self, project_id, team):
         team_query = {"name": team}
-        update = {"$pull": {"projects": project_id}}
+        update = {"$pull": {"project_list": project_id}}
         self.db.teams.update_many(team_query, update)
 
     def removeRecordGroupFromProject(self, rg_id):
