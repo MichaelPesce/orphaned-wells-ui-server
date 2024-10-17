@@ -921,7 +921,9 @@ class DataManager:
                     data_update = self.resetRecord(record_id, new_data, user)
                 update_query = {"$set": data_update}
             self.db.records.update_one(search_query, update_query)
-            self.recordHistory("updateRecord", user, record_id=record_id, query=update_query)
+            self.recordHistory(
+                "updateRecord", user, record_id=record_id, query=update_query
+            )
             return data_update
         else:
             return False
@@ -1225,7 +1227,14 @@ class DataManager:
         return sorted_attributes
 
     def recordHistory(
-        self, action, user=None, project_id=None, rg_id=None, record_id=None, notes=None, query=None
+        self,
+        action,
+        user=None,
+        project_id=None,
+        rg_id=None,
+        record_id=None,
+        notes=None,
+        query=None,
     ):
         try:
             history_item = {
