@@ -1162,7 +1162,9 @@ class DataManager:
         elif location == "record_group":
             self.recordHistory("downloadRecords", user=user, rg_id=_id)
         elif location == "team":
-            self.recordHistory("downloadRecords", user=user, notes="downloaded team records")
+            self.recordHistory(
+                "downloadRecords", user=user, notes="downloaded team records"
+            )
         return output_file
 
     def deleteFiles(self, filepaths, sleep_time=5):
