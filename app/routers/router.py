@@ -636,8 +636,12 @@ async def download_records(
         records, _ = data_manager.fetchRecordsByProject(user_info, _id)
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(user_info, _id)
+    elif location == "team":
+        records, _ = data_manager.fetchRecordsByTeam(user_info)
     else:
-        return None
+        raise HTTPException(
+            status_code=400, detail=f"Location must be project, record_group, or team"
+        )
 
     export_file = data_manager.downloadRecords(
         records,
