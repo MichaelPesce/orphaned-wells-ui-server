@@ -14,7 +14,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
     for each in processor_attributes:
         attribute_name = each["name"]
         processor_attributes_list.append(attribute_name)
-        
+
         found_ = [item for item in attributes if item["key"] == attribute_name]
         for attribute in found_:
             if attribute is None:
