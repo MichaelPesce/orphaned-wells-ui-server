@@ -669,7 +669,7 @@ class DataManager:
             return None, None
         image_urls = []
         for image in document.get("image_files", []):
-            if self.imageIsValid(image):
+            if util.imageIsValid(image):
                 image_urls.append(
                     generate_download_signed_url_v4(
                         document["record_group_id"], document["_id"], image
@@ -1172,14 +1172,6 @@ class DataManager:
             )
         return output_file
 
-    def deleteFiles(self, filepaths, sleep_time=5):
-        _log.info(f"deleting files: {filepaths} in {sleep_time} seconds")
-        time.sleep(sleep_time)
-        for filepath in filepaths:
-            if os.path.isfile(filepath):
-                os.remove(filepath)
-                _log.info(f"deleted {filepath}")
-
     def checkProjectValidity(self, projectId):
         try:
             project_id = ObjectId(projectId)
@@ -1197,18 +1189,6 @@ class DataManager:
         rg = self.getDocument("record_groups", {"_id": rg_id})
         if rg is not None:
             return True
-
-    def imageIsValid(self, image):
-        ## some broken records have letters saved where image names should be
-        ## for now, just ensure that the name is at least 3 characters long
-        try:
-            if len(image) > 2:
-                return True
-            else:
-                return False
-        except Exception as e:
-            _log.error(f"unable to check validity of image: {e}")
-            return False
 
     def recordHistory(
         self,

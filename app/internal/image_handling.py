@@ -16,6 +16,7 @@ import zipfile
 import mimetypes
 
 from app.internal.bulk_upload import upload_documents_from_directory
+import app.internal.util as util
 
 _log = logging.getLogger(__name__)
 
@@ -169,7 +170,7 @@ def process_document(
     if original_output_path not in output_path:
         files_to_delete.append(original_output_path)
     background_tasks.add_task(
-        data_manager.deleteFiles, filepaths=files_to_delete, sleep_time=60
+        util.deleteFiles, filepaths=files_to_delete, sleep_time=60
     )
     return {"record_id": new_record_id}
 
