@@ -716,7 +716,9 @@ class DataManager:
         try:
             google_id = rg["processorId"]
             processor_doc = self.db.processors.find({"google_id": google_id}).next()
-            sorted_attributes = util.sortRecordAttributes(document["attributesList"], processor_doc)
+            sorted_attributes = util.sortRecordAttributes(
+                document["attributesList"], processor_doc
+            )
             document["attributesList"] = sorted_attributes
         except Exception as e:
             _log.error(f"unable to sort attributes: {e}")

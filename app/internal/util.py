@@ -1,7 +1,9 @@
 import time
 import os
 import logging
+
 _log = logging.getLogger(__name__)
+
 
 def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
     processor_attributes = processor["attributes"]
@@ -24,10 +26,13 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
         for attr in attributes:
             attribute_name = attr["key"]
             if attribute_name not in processor_attributes_list:
-                _log.debug(f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list")
+                _log.debug(
+                    f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
+                )
                 sorted_attributes.append(attr)
 
     return sorted_attributes
+
 
 def imageIsValid(image):
     ## some broken records have letters saved where image names should be
@@ -40,6 +45,7 @@ def imageIsValid(image):
     except Exception as e:
         _log.error(f"unable to check validity of image: {e}")
         return False
+
 
 def deleteFiles(filepaths, sleep_time=5):
     _log.info(f"deleting files: {filepaths} in {sleep_time} seconds")

@@ -654,9 +654,7 @@ async def download_records(
         keep_all_columns=keep_all_columns,
     )
     ## remove file after 30 seconds to allow for the user download to finish
-    background_tasks.add_task(
-        util.deleteFiles, filepaths=[export_file], sleep_time=30
-    )
+    background_tasks.add_task(util.deleteFiles, filepaths=[export_file], sleep_time=30)
     return export_file
 
 
