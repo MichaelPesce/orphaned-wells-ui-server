@@ -1216,6 +1216,7 @@ class DataManager:
 
         ## match record attribute to each processor attribute
         sorted_attributes = []
+        ## TODO: make sure we add EACH INSTANCE of attribute to sorted_attributes
         for each in processor_attributes:
             attribute_name = each["name"]
             attribute = next(

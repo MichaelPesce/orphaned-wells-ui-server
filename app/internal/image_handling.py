@@ -427,11 +427,13 @@ def process_image(
                     "page": None,
                 }
             )
-    
+
     ## double check found attributes to see if we found anything that was NOT in the processor's attributes
     for attr in found_attributes:
         if attr not in processor_attributes_list:
-            _log.info(f"{attr} was not in processor's attributes. adding this to the end of the sorted attributes list")
+            _log.info(
+                f"{attr} was not in processor's attributes. adding this to the end of the sorted attributes list"
+            )
             indexes = found_attributes[attr]
             for idx in indexes:
                 sortedAttributesList.append(attributesList[idx])
