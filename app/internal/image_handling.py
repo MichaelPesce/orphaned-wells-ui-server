@@ -373,7 +373,14 @@ def process_image(
             subattributesList = None
 
         original_attribute = attribute
-        found_attributes[original_attribute] = len(attributesList)
+
+        ## add index to list for this key
+        this_attributes_indexes = found_attributes.get(original_attribute, [])
+        next_index = len(attributesList)
+        this_attributes_indexes.append(next_index)
+        found_attributes[original_attribute] = this_attributes_indexes
+        # found_attributes[original_attribute] = found_attributes.get(original_attribute, []).append(len(attributesList))
+
         attributesList.append(
             {
                 "key": original_attribute,
@@ -393,11 +400,16 @@ def process_image(
 
     ## sort attributes and add attributes that weren't found:
     sortedAttributesList = []
+    processor_attributes_list = []
     for processor_attribute in processor_attributes:
         attr = processor_attribute["name"]
+        processor_attributes_list.append(attr)
         if attr in found_attributes:
-            idx = found_attributes[attr]
-            sortedAttributesList.append(attributesList[idx])
+            indexes = found_attributes[attr]
+            # if len(indexes) > 1:
+            #     print(f"found multiple for {attr}")
+            for idx in indexes:
+                sortedAttributesList.append(attributesList[idx])
         else:
             sortedAttributesList.append(
                 {
@@ -415,6 +427,14 @@ def process_image(
                     "page": None,
                 }
             )
+    
+    ## double check found attributes to see if we found anything that was NOT in the processor's attributes
+    for attr in found_attributes:
+        if attr not in processor_attributes_list:
+            _log.info(f"{attr} was not in processor's attributes. adding this to the end of the sorted attributes list")
+            indexes = found_attributes[attr]
+            for idx in indexes:
+                sortedAttributesList.append(attributesList[idx])
 
     ## gotta update the record in the db
     record = {
