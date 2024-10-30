@@ -3,7 +3,7 @@ name: Deploy CA Server
 
 on:
   push:
-    branches: [setup-ca]
+    branches: [ca]
 
 defaults:
   run:
@@ -16,7 +16,7 @@ env:
 jobs:
 
   deploy_ca:
-    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to CA Compute Engine
     runs-on: ubuntu-latest
     steps:
