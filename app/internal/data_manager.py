@@ -928,9 +928,10 @@ class DataManager:
                     data_update = self.resetRecord(record_id, new_data, user)
                 update_query = {"$set": data_update}
             self.db.records.update_one(search_query, update_query)
-            self.recordHistory(
-                "updateRecord", user, record_id=record_id, query=update_query
-            )
+            if not forceUpdate:
+                self.recordHistory(
+                    "updateRecord", user, record_id=record_id, query=update_query
+                )
             return data_update
         else:
             return False
