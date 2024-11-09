@@ -112,7 +112,7 @@ def process_document(
     data_manager,
     mime_type,
     content,
-    reprocessed=False
+    reprocessed=False,
 ):
     if file_ext == ".tif" or file_ext == ".tiff":
         output_paths = convert_tiff(
@@ -163,7 +163,7 @@ def process_document(
         processor_attributes=processor_attributes,
         data_manager=data_manager,
         image_content=content,
-        reprocessed=reprocessed
+        reprocessed=reprocessed,
     )
 
     ## remove file after 60 seconds to allow for the operations to finish
@@ -254,7 +254,7 @@ def process_image(
     processor_attributes,
     data_manager,
     image_content,
-    reprocessed=False
+    reprocessed=False,
 ):
     if processor_id is None:
         _log.info(
