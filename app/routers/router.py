@@ -487,6 +487,7 @@ async def upload_document(
                 data_manager,
                 mime_type,
                 content,
+                reprocessed=reprocessed
             )
         except Exception as e:
             _log.error(f"unable to read image file: {e}")
