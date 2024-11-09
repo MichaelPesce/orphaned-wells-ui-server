@@ -441,6 +441,7 @@ async def upload_document(
     user_email: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    reprocessed: bool = False
 ):
     """Upload document for processing. Documents are processed asynchronously.
 
