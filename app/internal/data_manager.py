@@ -930,18 +930,24 @@ class DataManager:
             if not forceUpdate:
                 ## fetch record's current data so we know what changed in the future
                 try:
-                    record_doc = self.db.records.find({"_id": ObjectId(record_id)}).next()
+                    record_doc = self.db.records.find(
+                        {"_id": ObjectId(record_id)}
+                    ).next()
                     previous_state = {}
                     for each in data_update:
                         previous_state[each] = record_doc.get(each, None)
                 except Exception as e:
                     _log.info(f"unable to get record's previous state: {e}")
-                    previous_state=None
+                    previous_state = None
                 self.recordHistory(
-                    "updateRecord", user, record_id=record_id, query=data_update, previous_state=previous_state
+                    "updateRecord",
+                    user,
+                    record_id=record_id,
+                    query=data_update,
+                    previous_state=previous_state,
                 )
             self.db.records.update_one(search_query, update_query)
-            
+
             return data_update
         else:
             return False
@@ -1212,7 +1218,7 @@ class DataManager:
         record_id=None,
         notes=None,
         query=None,
-        previous_state=None
+        previous_state=None,
     ):
         try:
             history_item = {
