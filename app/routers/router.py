@@ -742,6 +742,7 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
             status_code=403, detail=f"User is not authorized to perform this operation"
         )
 
+
 @router.post("/update_user_role")
 async def update_user_role(request: Request, user_info: dict = Depends(authenticate)):
     """Update user object
@@ -761,7 +762,8 @@ async def update_user_role(request: Request, user_info: dict = Depends(authentic
             return update
         else:
             raise HTTPException(
-                status_code=400, detail=f"Please provide an update and an email in the request body"
+                status_code=400,
+                detail=f"Please provide an update and an email in the request body",
             )
 
     else:
