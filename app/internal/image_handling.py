@@ -130,6 +130,7 @@ def process_document(
     try:
         # parse api number from filename
         api_number = filename.split("_")[0]
+        api_number = int(api_number)
     except Exception as e:
         _log.info(f"unable to parse api number")
         api_number = None
