@@ -742,6 +742,33 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
             status_code=403, detail=f"User is not authorized to perform this operation"
         )
 
+@router.post("/update_user_role")
+async def update_user_role(request: Request, user_info: dict = Depends(authenticate)):
+    """Update user object
+
+    Args:
+        email: User email address
+
+    Returns:
+        result
+    """
+    data = request.json()
+    update = data.get("update", None)
+    email = data.get("email", None)
+    if data_manager.hasRole(user_info, Roles.admin):
+        if update and email:
+            data_manager.updateUserRole(email, update)
+            return update
+        else:
+            raise HTTPException(
+                status_code=400, detail=f"Please provide an update and an email in the request body"
+            )
+
+    else:
+        raise HTTPException(
+            status_code=403, detail=f"User is not authorized to perform this operation"
+        )
+
 
 @router.post("/delete_user/{email}")
 async def delete_user(email: str, user_info: dict = Depends(authenticate)):

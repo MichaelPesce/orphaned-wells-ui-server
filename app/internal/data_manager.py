@@ -229,6 +229,12 @@ class DataManager:
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
 
+    def updateUserRole(self, email, update):
+        myquery = {"email": email}
+        newvalues = {"$set": update}
+        cursor = self.db.users.update_one(myquery, newvalues)
+        return cursor
+
     def approveUser(self, user_email):
         user = {"role": Roles.base_user}
         myquery = {"email": user_email}
