@@ -199,7 +199,7 @@ class DataManager:
 
         return db_response
 
-    def addUserToTeam(self, email, team, role=Roles.base_user):
+    def addUserToTeam(self, email, team):
         ## CHECK IF USER IS NOT ALREADY ON THIS TEAM
         checkvalues = {"name": team, "users": email}
         found_user = self.db.teams.count_documents(checkvalues)

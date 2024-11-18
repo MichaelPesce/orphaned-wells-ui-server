@@ -691,7 +691,7 @@ async def approve_user(email: str, user_info: dict = Depends(authenticate)):
 
 
 @router.post("/add_user/{email}")
-async def add_user(email: str, user_info: dict = Depends(authenticate)):
+async def add_user(request: Request, email: str, user_info: dict = Depends(authenticate)):
     """Add user to application database with role 'pending'
 
     Args:
@@ -700,38 +700,33 @@ async def add_user(email: str, user_info: dict = Depends(authenticate)):
     Returns:
         user status
     """
+    req = request.json()
+    team_lead = req.get("team_lead", False)
+    sys_admin = req.get("sys_admin", False)
     email = email.lower().replace(" ", "")
-    if data_manager.hasRole(user_info, Roles.admin):
+    if data_manager.hasPermission(user_info, "add_users"):
         admin_document = data_manager.getDocument(
             "users", {"email": user_info.get("email", "")}
         )
         team = admin_document.get("default_team", None)
 
+        ## check if this user exists already. if not add to database
         new_user = data_manager.getUser(email)
         if new_user is None:
-            resp = data_manager.addUser({"email": email}, team, role=Roles.base_user)
+            resp = data_manager.addUser({"email": email}, team, team_lead, sys_admin)
+        
         else:
-            new_user_role = new_user.get("role", None)
-            if new_user_role is None:  ## this shouldnt be possible
-                resp = data_manager.addUser(
-                    {"email": email}, team, role=Roles.base_user
-                )
-
-            elif new_user_role > 0:
-                ## in this case, just add user to team without creating new user
-                resp = data_manager.addUserToTeam(email, team, role=Roles.base_user)
-                if resp == "already_exists":
-                    ## 406 Not acceptable: user provided an email that is already on this team
-                    raise HTTPException(
-                        status_code=406, detail=f"This user is already on this team."
-                    )
-                else:
-                    return {"base_user": email}
-            else:
-                ## TODO: user exists but is pending
+            ## this user exists already. add them to this team
+            new_user_team = new_user["default_team"]
+            if new_user_team == team:
+                _log.info(f"{email} is already on team {team}")
                 raise HTTPException(
                     status_code=406, detail=f"This user is already on this team."
                 )
+            else:
+                ## in this case, just add user to team without creating new user
+                resp = data_manager.addUserToTeam(email, team)
+                return resp
     else:
         raise HTTPException(
             status_code=403, detail=f"User is not authorized to perform this operation"
