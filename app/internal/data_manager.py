@@ -231,11 +231,35 @@ class DataManager:
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
 
-    def updateUserRole(self, email, update):
-        myquery = {"email": email}
-        newvalues = {"$set": update}
-        cursor = self.db.users.update_one(myquery, newvalues)
-        return cursor
+    def updateUserRole(self, email, role_type, new_role):
+        try:
+            myquery = {"email": email}
+            user_doc = self.db.users.find(myquery).next()
+            team = user_doc["default_team"]
+
+            user_roles = user_doc.get("roles", {})
+            if role_type == "system":
+                if new_role in user_roles.get("system", []):
+                    ## this shouldn't happen
+                    _log.info(f"user already has this role")
+                    return None
+                else:
+                    user_roles["system"].append(new_role)
+            elif role_type == "teams":
+                if new_role in user_roles["teams"][team]:
+                    _log.info(f"user already has this role")
+                    return None
+                else:
+                    user_roles["teams"][team].append(new_role)
+            
+
+            update = {"$set": {"roles": user_roles}}
+            cursor = self.db.users.update_one(myquery, update)
+            self.recordHistory("updateUser", query=update["$set"])
+            return cursor
+        except Exception as e:
+            _log.error(f"failed to update user role: {e}")
+            return e
 
     def approveUser(self, user_email):
         user = {"role": Roles.base_user}

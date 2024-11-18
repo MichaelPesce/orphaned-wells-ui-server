@@ -744,12 +744,13 @@ async def update_user_role(request: Request, user_info: dict = Depends(authentic
         result
     """
     data = request.json()
-    update = data.get("update", None)
+    role_type = data.get("role_type", None)
+    new_role = data.get("new_role", None)
     email = data.get("email", None)
-    if data_manager.hasRole(user_info, Roles.admin):
-        if update and email:
-            data_manager.updateUserRole(email, update)
-            return update
+    if data_manager.hasPermission(user_info, "manage_team"):
+        if new_role and role_type and email:
+            data_manager.updateUserRole(email, role_type, new_role)
+            return email
         else:
             raise HTTPException(
                 status_code=400,
@@ -773,7 +774,7 @@ async def delete_user(email: str, user_info: dict = Depends(authenticate)):
         result
     """
     email = email.lower()
-    if data_manager.hasRole(user_info, Roles.admin):
+    if data_manager.hasPermission(user_info, "manage_team"):
         data_manager.deleteUser(email, user_info)
         return {"Deleted", email}
 
