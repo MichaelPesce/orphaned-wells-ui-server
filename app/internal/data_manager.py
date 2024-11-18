@@ -158,7 +158,7 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return user
 
-    def addUser(self, user_info, team, team_admin=False, sys_admin=False):
+    def addUser(self, user_info, team, team_lead=False, sys_admin=False):
         if team is None:
             _log.error(f"failed to add user {user_info}. team is required")
             return False
@@ -169,8 +169,8 @@ class DataManager:
             "projects": {},
             "system": []
         }
-        if team_admin:
-            roles["teams"][team] = ["team_admin"]
+        if team_lead:
+            roles["teams"][team] = ["team_lead"]
         else:
             roles["teams"][team] = ["team_member"]
         
