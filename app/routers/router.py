@@ -90,9 +90,9 @@ async def auth_login(request: Request):
         _log.info(f"user {email} is not found in database")
         data_manager.recordHistory("login", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
-    role = user.get("role", None)
-    _log.info(f"{email} has role {role}")
-    if role < Roles.base_user:
+    
+    authorized = util.validateUser(user)
+    if not authorized:
         _log.info(f"user is not authorized")
         data_manager.recordHistory("login", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
@@ -133,9 +133,8 @@ async def auth_refresh(request: Request):
         _log.info(f"user {email} is not found in database")
         data_manager.recordHistory("refresh", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
-    role = user.get("role", None)
-    _log.info(f"{email} has role {role}")
-    if role < Roles.base_user:
+    authorized = util.validateUser(user)
+    if not authorized:
         _log.info(f"user is not authorized")
         data_manager.recordHistory("refresh", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
