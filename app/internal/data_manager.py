@@ -314,7 +314,7 @@ class DataManager:
         admin_email = user_info.get("email", None)
         query = {"email": email}
         delete_response = self.db.users.delete_one(query)
-        ## TODO: remove user form all teams that include him/her
+        ## remove user form all teams that include him/her
         query = {"users": email}
         teams_cursor = self.db.teams.find(query)
         for document in teams_cursor:
