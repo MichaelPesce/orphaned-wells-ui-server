@@ -684,7 +684,7 @@ async def add_user(
     Returns:
         user status
     """
-    req = request.json()
+    req = await request.json()
     team_lead = req.get("team_lead", False)
     sys_admin = req.get("sys_admin", False)
     email = email.lower().replace(" ", "")
@@ -727,13 +727,14 @@ async def update_user_role(request: Request, user_info: dict = Depends(authentic
     Returns:
         result
     """
-    data = request.json()
-    role_type = data.get("role_type", None)
-    new_role = data.get("new_role", None)
-    email = data.get("email", None)
+    req = await request.json()
+    role_type = req.get("role_type", None)
+    new_role = req.get("new_role", None)
+    email = req.get("email", None)
     if data_manager.hasPermission(user_info, "manage_team"):
+        team = data_manager.getUserInfo(user_info["email"])["default_team"]
         if new_role and role_type and email:
-            data_manager.updateUserRole(email, role_type, new_role)
+            data_manager.updateUserRole(email, team, role_type, new_role)
             return email
         else:
             raise HTTPException(

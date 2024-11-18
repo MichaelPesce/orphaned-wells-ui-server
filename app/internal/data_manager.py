@@ -216,11 +216,11 @@ class DataManager:
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
 
-    def updateUserRole(self, email, role_type, new_role):
+    def updateUserRole(self, email, team, role_type, new_role):
         try:
             myquery = {"email": email}
             user_doc = self.db.users.find(myquery).next()
-            team = user_doc["default_team"]
+            # team = user_doc["default_team"]
 
             user_roles = user_doc.get("roles", {})
             if role_type == "system":
@@ -231,11 +231,15 @@ class DataManager:
                 else:
                     user_roles["system"].append(new_role)
             elif role_type == "teams":
-                if new_role in user_roles["teams"][team]:
+                ## TODO: if adding user as team_member, make sure to remove team_lead role
+                ## or do this on the frontend. have the admin user select/deselect each role they want for this user
+                team_roles = user_roles["teams"].get(team, [])
+                if new_role in team_roles:
                     _log.info(f"user already has this role")
                     return None
                 else:
-                    user_roles["teams"][team].append(new_role)
+                    team_roles.append(new_role)
+                    user_roles["teams"][team]
 
             update = {"$set": {"roles": user_roles}}
             cursor = self.db.users.update_one(myquery, update)
