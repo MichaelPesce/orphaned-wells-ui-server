@@ -262,23 +262,12 @@ class DataManager:
             return e
 
     def approveUser(self, user_email):
+        ## TODO: fix approve user
         user = {"role": Roles.base_user}
         myquery = {"email": user_email}
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return "success"
-
-    def hasRole(self, user_info, role=Roles.admin):
-        email = user_info.get("email", "")
-        cursor = self.db.users.find({"email": email})
-        try:
-            document = cursor.next()
-            if document.get("role", Roles.pending) == role:
-                return True
-            else:
-                return False
-        except:
-            return False
         
     def hasPermission(self, user_info, permission):
         email = user_info.get("email", "")
@@ -311,7 +300,7 @@ class DataManager:
                         "hd": document.get("hd", ""),
                         "picture": document.get("picture", ""),
                         "role": document.get("role", -1),
-                        "roles": document.get("roles", -1),
+                        "roles": document.get("roles", {}),
                     }
                 )
         return users

@@ -683,6 +683,7 @@ async def approve_user(email: str, user_info: dict = Depends(authenticate)):
     """
     email = email.lower()
     if data_manager.hasPermission(user_info, "add_users"):
+        ## TODO: fix approve user
         return data_manager.approveUser(email)
     else:
         raise HTTPException(

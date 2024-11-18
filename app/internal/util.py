@@ -65,7 +65,3 @@ def validateUser(user):
             return False
     except Exception as e:
         _log.error(f"failed attempting to validate user {user}: {e}")
-
-
-def hasRole(user, role):
-    return True
