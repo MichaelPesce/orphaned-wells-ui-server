@@ -90,7 +90,7 @@ async def auth_login(request: Request):
         _log.info(f"user {email} is not found in database")
         data_manager.recordHistory("login", email, notes="denied access")
         raise HTTPException(status_code=403, detail=user_info)
-    
+
     authorized = util.validateUser(user)
     if not authorized:
         _log.info(f"user is not authorized")
@@ -673,7 +673,9 @@ async def get_users(user_info: dict = Depends(authenticate)):
 
 ## admin functions
 @router.post("/add_user/{email}")
-async def add_user(request: Request, email: str, user_info: dict = Depends(authenticate)):
+async def add_user(
+    request: Request, email: str, user_info: dict = Depends(authenticate)
+):
     """Add user to application database with role 'pending'
 
     Args:
@@ -696,7 +698,7 @@ async def add_user(request: Request, email: str, user_info: dict = Depends(authe
         new_user = data_manager.getUser(email)
         if new_user is None:
             resp = data_manager.addUser({"email": email}, team, team_lead, sys_admin)
-        
+
         else:
             ## this user exists already. add them to this team
             new_user_team = new_user["default_team"]

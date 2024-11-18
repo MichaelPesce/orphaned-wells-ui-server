@@ -165,16 +165,12 @@ class DataManager:
             return False
 
         ## assign roles
-        roles = {
-            "teams": {},
-            "projects": {},
-            "system": []
-        }
+        roles = {"teams": {}, "projects": {}, "system": []}
         if team_lead:
             roles["teams"][team] = ["team_lead"]
         else:
             roles["teams"][team] = ["team_member"]
-        
+
         if sys_admin:
             roles["system"].append("sys_admin")
         user = {
@@ -251,7 +247,6 @@ class DataManager:
                     return None
                 else:
                     user_roles["teams"][team].append(new_role)
-            
 
             update = {"$set": {"roles": user_roles}}
             cursor = self.db.users.update_one(myquery, update)
@@ -260,7 +255,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"failed to update user role: {e}")
             return e
-        
+
     def hasPermission(self, user_info, permission):
         email = user_info.get("email", "")
         user_doc = self.getUser(email)
@@ -1205,7 +1200,7 @@ class DataManager:
         # _log.info(f"getting permissions for {user["email"]}")
         user_team = user["default_team"]
         roles = user.get("roles", {})
-        
+
         user_roles = []
         ## get system role
         for role in roles.get("system", []):
@@ -1221,7 +1216,7 @@ class DataManager:
         for each in role_cursor:
             for perm in each["permissions"]:
                 user_permissions.add(perm)
-        
+
         return list(user_permissions)
 
     def checkProjectValidity(self, projectId):
