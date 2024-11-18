@@ -259,49 +259,27 @@ class DataManager:
         user_document = self.getDocument("users", {"email": email}, clean_id=True)
         return user_document
 
-    def getUsers(
-        self, role, user_info, project_id_exclude=None, includeLowerRoles=True
-    ):
-        ## TODO: accept team id as parameter and use that to determine which users to return
+    def getUsers(self, user_info):
         user = user_info.get("email", "")
         user_document = self.getDocument("users", {"email": user})
-        team_id = user_document.get("default_team", None)
-        team_document = self.getDocument("teams", {"name": team_id})
+        team_name = user_document.get("default_team", None)
+        team_document = self.getDocument("teams", {"name": team_name})
         team_users = team_document.get("users", [])
-        if includeLowerRoles:  # get all users with provided role or lower
-            query = {"role": {"$lte": role}}
-        else:  # get only users with provided role
-            query = {"role": role}
-        cursor = self.db.users.find(query)
+        cursor = self.db.users.find()
         users = []
-        if project_id_exclude is not None:
-            project_id = ObjectId(project_id_exclude)
-            for document in cursor:
-                if project_id not in document.get("projects", []):
-                    next_user = document.get("email", "")
-                    if next_user in team_users:
-                        users.append(
-                            {
-                                "email": document.get("email", ""),
-                                "name": document.get("name", ""),
-                                "hd": document.get("hd", ""),
-                                "picture": document.get("picture", ""),
-                                "role": document.get("role", -1),
-                            }
-                        )
-        else:
-            for document in cursor:
-                next_user = document.get("email", "")
-                if next_user in team_users:
-                    users.append(
-                        {
-                            "email": document.get("email", ""),
-                            "name": document.get("name", ""),
-                            "hd": document.get("hd", ""),
-                            "picture": document.get("picture", ""),
-                            "role": document.get("role", -1),
-                        }
-                    )
+        for document in cursor:
+            next_user = document.get("email", "")
+            if next_user in team_users:
+                users.append(
+                    {
+                        "email": document.get("email", ""),
+                        "name": document.get("name", ""),
+                        "hd": document.get("hd", ""),
+                        "picture": document.get("picture", ""),
+                        "role": document.get("role", -1),
+                        "roles": document.get("roles", -1),
+                    }
+                )
         return users
 
     def removeUserFromTeam(self, user, team):
