@@ -683,7 +683,7 @@ async def approve_user(email: str, user_info: dict = Depends(authenticate)):
         approved user information
     """
     email = email.lower()
-    if data_manager.hasPermission(user_info, "add_users"):
+    if data_manager.hasPermission(user_info, "add_user"):
         ## TODO: fix approve user
         return data_manager.approveUser(email)
     else:
@@ -706,7 +706,7 @@ async def add_user(request: Request, email: str, user_info: dict = Depends(authe
     team_lead = req.get("team_lead", False)
     sys_admin = req.get("sys_admin", False)
     email = email.lower().replace(" ", "")
-    if data_manager.hasPermission(user_info, "add_users"):
+    if data_manager.hasPermission(user_info, "add_user"):
         admin_document = data_manager.getDocument(
             "users", {"email": user_info.get("email", "")}
         )
