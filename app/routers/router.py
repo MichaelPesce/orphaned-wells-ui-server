@@ -16,7 +16,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 
-from app.internal.data_manager import data_manager, Roles
+from app.internal.data_manager import data_manager
 from app.internal.image_handling import process_document, process_zip
 import app.internal.util as util
 import app.internal.auth as auth

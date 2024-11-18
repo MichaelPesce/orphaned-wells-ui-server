@@ -25,17 +25,6 @@ import app.internal.util as util
 _log = logging.getLogger(__name__)
 
 
-class Roles(int, Enum):
-    """Roles for user accessibility.
-    Only approved users should be able to access the app.
-    Only special users (admins) should be capable of approving other users.
-    """
-
-    pending = -1
-    base_user = 1
-    admin = 10
-
-
 class DataManager:
     """Manage the active data."""
 
