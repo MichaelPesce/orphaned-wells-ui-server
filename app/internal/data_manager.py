@@ -158,37 +158,38 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return user
 
-    def addUser(self, user_info, default_team, role=Roles.base_user):
-        if default_team is None:
-            _log.error(f"failed to add user {user_info}. default team is required")
+    def addUser(self, user_info, team, team_admin=False, sys_admin=False):
+        if team is None:
+            _log.error(f"failed to add user {user_info}. team is required")
             return False
 
-        ## get team's projects
-        project_list = self.getTeamProjectList(default_team)
-        project_roles = {}
-        for project in project_list:
-            project_roles[str(project)] = role
+        ## assign roles
+        roles = {
+            "teams": {},
+            "projects": {},
+            "system": []
+        }
+        if team_admin:
+            roles["teams"][team] = ["team_admin"]
+        else:
+            roles["teams"][team] = ["team_member"]
+        
+        if sys_admin:
+            roles["system"].append("sys_admin")
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
-            "default_team": default_team,
-            "role": role,
-            "roles": {
-                "teams": {
-                    default_team: role,
-                },
-                "projects": project_roles,
-                "system": 1,
-            },
+            "default_team": team,
+            "role": 1,
+            "roles": roles,
             "time_created": time.time(),
         }
-        user["default_team"] = default_team
         db_response = self.db.users.insert_one(user)
 
         ## add user to team's users
-        team_query = {"name": default_team}
+        team_query = {"name": team}
         team_document = self.getDocument("teams", team_query)
         team_users = team_document.get("users", [])
         team_users.append(user_info.get("email", ""))
@@ -1206,6 +1207,9 @@ class DataManager:
                 "downloadRecords", user=user, notes="downloaded team records"
             )
         return output_file
+
+    def getUserPermissions(self, user):
+        _log.info(f"getting permissions for {user["email"]}")
 
     def checkProjectValidity(self, projectId):
         try:
