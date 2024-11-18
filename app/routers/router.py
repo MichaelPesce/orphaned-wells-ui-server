@@ -672,26 +672,6 @@ async def get_users(user_info: dict = Depends(authenticate)):
 
 
 ## admin functions
-@router.post("/approve_user/{email}")
-async def approve_user(email: str, user_info: dict = Depends(authenticate)):
-    """Approve user for use of application by changing role from 'pending' to 'user'
-
-    Args:
-        email: User email address
-
-    Returns:
-        approved user information
-    """
-    email = email.lower()
-    if data_manager.hasPermission(user_info, "add_user"):
-        ## TODO: fix approve user
-        return data_manager.approveUser(email)
-    else:
-        raise HTTPException(
-            status_code=403, detail=f"User is not authorized to perform this operation"
-        )
-
-
 @router.post("/add_user/{email}")
 async def add_user(request: Request, email: str, user_info: dict = Depends(authenticate)):
     """Add user to application database with role 'pending'

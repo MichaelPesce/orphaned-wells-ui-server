@@ -260,14 +260,6 @@ class DataManager:
         except Exception as e:
             _log.error(f"failed to update user role: {e}")
             return e
-
-    def approveUser(self, user_email):
-        ## TODO: fix approve user
-        user = {"role": Roles.base_user}
-        myquery = {"email": user_email}
-        newvalues = {"$set": user}
-        self.db.users.update_one(myquery, newvalues)
-        return "success"
         
     def hasPermission(self, user_info, permission):
         email = user_info.get("email", "")
