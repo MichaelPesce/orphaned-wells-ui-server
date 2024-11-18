@@ -132,11 +132,12 @@ class DataManager:
     ## user functions
     def getUser(self, email):
         cursor = self.db.users.find({"email": email})
-        user = None
         for document in cursor:
             user = document
             user["_id"] = str(user["_id"])
-        return user
+            user["permissions"] = self.getUserPermissions(user)
+            return user
+        return None
 
     def updateUserObject(self, user_info):
         cursor = self.db.users.find({"email": user_info["email"]})
@@ -253,6 +254,15 @@ class DataManager:
             else:
                 return False
         except:
+            return False
+        
+    def hasPermission(self, user_info, permission):
+        email = user_info.get("email", "")
+        user_doc = self.getUser(email)
+        user_permissions = self.getUserPermissions(user_doc)
+        if permission in user_permissions:
+            return True
+        else:
             return False
 
     def getUserInfo(self, email):
@@ -1188,6 +1198,29 @@ class DataManager:
 
     def getUserPermissions(self, user):
         _log.info(f"getting permissions for {user["email"]}")
+        user_team = user["default_team"]
+        roles = user.get("roles", {})
+        
+        user_roles = []
+        ## get system role
+        for role in roles.get("system", []):
+            user_roles.append(role)
+        ## get team roles
+        for role in roles.get("teams", {}).get(user_team, []):
+            user_roles.append(role)
+
+        _log.info(f"{user["email"]} has roles: {roles}")
+
+        ## compile permissions from each role
+        query = {"id": {"$in": roles}}
+        role_cursor = self.db.roles.find(query)
+        user_permissions = set()
+        for each in role_cursor:
+            for perm in each["permissions"]:
+                user_permissions.add(perm)
+        
+        _log.info(f"{user["email"]} has permissions: {user_permissions}")
+        return list(user_permissions)
 
     def checkProjectValidity(self, projectId):
         try:
