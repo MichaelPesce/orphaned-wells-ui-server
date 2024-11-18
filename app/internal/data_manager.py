@@ -1210,7 +1210,7 @@ class DataManager:
         return output_file
 
     def getUserPermissions(self, user):
-        _log.info(f"getting permissions for {user["email"]}")
+        # _log.info(f"getting permissions for {user["email"]}")
         user_team = user["default_team"]
         roles = user.get("roles", {})
         
@@ -1222,17 +1222,14 @@ class DataManager:
         for role in roles.get("teams", {}).get(user_team, []):
             user_roles.append(role)
 
-        _log.info(f"{user["email"]} has roles: {roles}")
-
         ## compile permissions from each role
-        query = {"id": {"$in": roles}}
+        query = {"id": {"$in": user_roles}}
         role_cursor = self.db.roles.find(query)
         user_permissions = set()
         for each in role_cursor:
             for perm in each["permissions"]:
                 user_permissions.add(perm)
         
-        _log.info(f"{user["email"]} has permissions: {user_permissions}")
         return list(user_permissions)
 
     def checkProjectValidity(self, projectId):

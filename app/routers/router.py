@@ -415,6 +415,7 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
     data = await request.json()
 
     # _log.info(f"adding project with data: {data}")
+    ## TODO: check whether user has permission to create project
     new_id = data_manager.createProject(data, user_info)
     return new_id
 
