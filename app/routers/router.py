@@ -460,7 +460,7 @@ async def upload_document(
         New document record identifier.
     """
     user_email = user_email.lower()
-    if not data_manager.hasPermission(user_email, "upload_record"):
+    if not data_manager.hasPermission(user_email, "upload_document"):
         raise HTTPException(
             403,
             detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
