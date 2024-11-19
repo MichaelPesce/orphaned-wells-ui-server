@@ -214,7 +214,6 @@ async def get_records(
     Returns:
         List of records
     """
-    _log.info(f"inside get records")
     data = await request.json()
     if get_by == "project" or get_by == "record_group":
         sort_by = data.get(
@@ -412,10 +411,12 @@ async def add_project(request: Request, user_info: dict = Depends(authenticate))
     Returns:
         New project id
     """
+    if not data_manager.hasPermission(user_info["email"], "create_project"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to create projects for this team. Please contact a team lead.",
+        )
     data = await request.json()
-
-    # _log.info(f"adding project with data: {data}")
-    ## TODO: check whether user has permission to create project
     new_id = data_manager.createProject(data, user_info)
     return new_id
 
@@ -431,8 +432,14 @@ async def add_record_group(request: Request, user_info: dict = Depends(authentic
     Returns:
         New project id
     """
+    if not data_manager.hasPermission(user_info["email"], "create_record_group"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to create record groups for this team. Please contact a team lead.",
+        )
     data = await request.json()
-    return data_manager.createRecordGroup(data, user_info)
+    new_id = data_manager.createRecordGroup(data, user_info)
+    return new_id
 
 
 @router.post("/upload_document/{rg_id}/{user_email}")
@@ -453,6 +460,11 @@ async def upload_document(
         New document record identifier.
     """
     user_email = user_email.lower()
+    if not data_manager.hasPermission(user_email, "upload_record"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
     user_info = data_manager.getUserInfo(user_email)
     project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
     if not project_is_valid:
@@ -508,6 +520,11 @@ async def update_project(
     Returns:
         Success response
     """
+    if not data_manager.hasPermission(user_info["email"], "manage_project"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to update projects. Please contact a team lead or project manager.",
+        )
     data = await request.json()
     return data_manager.updateProject(project_id, data, user_info)
 
@@ -526,6 +543,11 @@ async def update_record_group(
     Returns:
         Success response
     """
+    if not data_manager.hasPermission(user_info["email"], "manage_project"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to update projects. Please contact a team lead or project manager.",
+        )
     data = await request.json()
     return data_manager.updateRecordGroup(rg_id, data, user_info)
 
@@ -544,6 +566,11 @@ async def update_record(
     Returns:
         Success response
     """
+    if not data_manager.hasPermission(user_info["email"], "review_record"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to review records. Please contact a team lead or project manager.",
+        )
     req = await request.json()
     data = req.get("data", None)
     update_type = req.get("type", None)
@@ -568,6 +595,11 @@ async def delete_project(
     Returns:
         Success response
     """
+    if not data_manager.hasPermission(user_info["email"], "delete"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to delete projects. Please contact a team lead or project manager.",
+        )
     data_manager.deleteProject(project_id, background_tasks, user_info)
 
     return {"response": "success"}
@@ -587,6 +619,11 @@ async def delete_record_group(
     Returns:
         Success response
     """
+    if not data_manager.hasPermission(user_info["email"], "delete"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to delete record groups. Please contact a team lead or project manager.",
+        )
     data_manager.deleteRecordGroup(rg_id, background_tasks, user_info)
     return {"response": "success"}
 
@@ -601,6 +638,11 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     Returns:
         Success response
     """
+    if not data_manager.hasPermission(user_info["email"], "delete"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to delete records. Please contact a team lead or project manager.",
+        )
     data_manager.deleteRecord(record_id, user_info)
 
     return {"response": "success"}
@@ -688,7 +730,7 @@ async def add_user(
     team_lead = req.get("team_lead", False)
     sys_admin = req.get("sys_admin", False)
     email = email.lower().replace(" ", "")
-    if data_manager.hasPermission(user_info, "add_user"):
+    if data_manager.hasPermission(user_info["email"], "add_user"):
         admin_document = data_manager.getDocument(
             "users", {"email": user_info.get("email", "")}
         )
@@ -731,7 +773,7 @@ async def update_user_role(request: Request, user_info: dict = Depends(authentic
     role_type = req.get("role_type", None)
     new_role = req.get("new_role", None)
     email = req.get("email", None)
-    if data_manager.hasPermission(user_info, "manage_team"):
+    if data_manager.hasPermission(user_info["email"], "manage_team"):
         team = data_manager.getUserInfo(user_info["email"])["default_team"]
         if new_role and role_type and email:
             data_manager.updateUserRole(email, team, role_type, new_role)
@@ -759,7 +801,7 @@ async def delete_user(email: str, user_info: dict = Depends(authenticate)):
         result
     """
     email = email.lower()
-    if data_manager.hasPermission(user_info, "manage_team"):
+    if data_manager.hasPermission(user_info["email"], "manage_team"):
         data_manager.deleteUser(email, user_info)
         return {"Deleted", email}
 

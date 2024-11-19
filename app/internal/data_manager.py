@@ -249,8 +249,7 @@ class DataManager:
             _log.error(f"failed to update user role: {e}")
             return e
 
-    def hasPermission(self, user_info, permission):
-        email = user_info.get("email", "")
+    def hasPermission(self, email, permission):
         user_doc = self.getUser(email)
         user_permissions = self.getUserPermissions(user_doc)
         if permission in user_permissions:
