@@ -154,11 +154,11 @@ class DataManager:
             return False
 
         ## assign roles
-        roles = {"teams": {}, "projects": {}, "system": []}
+        roles = {"team": {}, "projects": {}, "system": []}
         if team_lead:
-            roles["teams"][team] = ["team_lead"]
+            roles["team"][team] = ["team_lead"]
         else:
-            roles["teams"][team] = ["team_member"]
+            roles["team"][team] = ["team_member"]
 
         if sys_admin:
             roles["system"].append("sys_admin")
@@ -230,16 +230,16 @@ class DataManager:
                     return None
                 else:
                     user_roles["system"].append(new_role)
-            elif role_type == "teams":
+            elif role_type == "team":
                 ## TODO: if adding user as team_member, make sure to remove team_lead role
                 ## or do this on the frontend. have the admin user select/deselect each role they want for this user
-                team_roles = user_roles["teams"].get(team, [])
+                team_roles = user_roles["team"].get(team, [])
                 if new_role in team_roles:
                     _log.info(f"user already has this role")
                     return None
                 else:
                     team_roles.append(new_role)
-                    user_roles["teams"][team]
+                    user_roles["team"][team]
 
             update = {"$set": {"roles": user_roles}}
             cursor = self.db.users.update_one(myquery, update)
@@ -1198,7 +1198,7 @@ class DataManager:
         for role in roles.get("system", []):
             user_roles.append(role)
         ## get team roles
-        for role in roles.get("teams", {}).get(user_team, []):
+        for role in roles.get("team", {}).get(user_team, []):
             user_roles.append(role)
 
         ## compile permissions from each role
