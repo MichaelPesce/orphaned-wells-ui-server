@@ -759,24 +759,32 @@ async def add_user(
         )
 
 
-@router.post("/update_user_role")
-async def update_user_role(request: Request, user_info: dict = Depends(authenticate)):
-    """Update user object
+@router.post("/update_user_roles")
+async def update_user_roles(request: Request, user_info: dict = Depends(authenticate)):
+    """Update roles for a user
 
     Args:
+        role_category: category of role (team, project, system)
+        new_role: new list of roles
         email: User email address
 
     Returns:
         result
     """
+    if not data_manager.hasPermission(user_info["email"], "manage_team"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+        )
+    
     req = await request.json()
-    role_type = req.get("role_type", None)
-    new_role = req.get("new_role", None)
+    role_category = req.get("role_category", None)
+    new_role = req.get("new_roles", None)
     email = req.get("email", None)
     if data_manager.hasPermission(user_info["email"], "manage_team"):
         team = data_manager.getUserInfo(user_info["email"])["default_team"]
-        if new_role and role_type and email:
-            data_manager.updateUserRole(email, team, role_type, new_role)
+        if new_role and role_category and email:
+            data_manager.updateUserRole(email, team, role_category, new_role)
             return email
         else:
             raise HTTPException(
@@ -788,6 +796,25 @@ async def update_user_role(request: Request, user_info: dict = Depends(authentic
         raise HTTPException(
             status_code=403, detail=f"User is not authorized to perform this operation"
         )
+
+
+@router.get("/fetch_roles/{role_category}", response_model=list)
+async def fetch_roles(role_category: str, user_info: dict = Depends(authenticate)):
+    """Fetch all available roles for a certain category.
+
+    Args:
+        role_category: category of role (team, project, system)
+
+    Returns:
+        List containing record groups and metadata
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_team"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+        )
+    resp = data_manager.fetchRoles(role_category)
+    return resp
 
 
 @router.post("/delete_user/{email}")

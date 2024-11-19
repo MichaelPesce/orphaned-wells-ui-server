@@ -216,30 +216,22 @@ class DataManager:
         cursor = self.db.users.update_one(myquery, newvalues)
         return cursor
 
-    def updateUserRole(self, email, team, role_type, new_role):
+    def updateUserRole(self, email, team, role_category, new_roles):
         try:
             myquery = {"email": email}
             user_doc = self.db.users.find(myquery).next()
             # team = user_doc["default_team"]
 
             user_roles = user_doc.get("roles", {})
-            if role_type == "system":
-                if new_role in user_roles.get("system", []):
+            if role_category == "system":
+                if new_roles in user_roles.get("system", []):
                     ## this shouldn't happen
                     _log.info(f"user already has this role")
                     return None
                 else:
-                    user_roles["system"].append(new_role)
-            elif role_type == "team":
-                ## TODO: if adding user as team_member, make sure to remove team_lead role
-                ## or do this on the frontend. have the admin user select/deselect each role they want for this user
-                team_roles = user_roles["team"].get(team, [])
-                if new_role in team_roles:
-                    _log.info(f"user already has this role")
-                    return None
-                else:
-                    team_roles.append(new_role)
-                    user_roles["team"][team]
+                    user_roles["system"].append(new_roles)
+            elif role_category == "team":
+                user_roles["team"][team] = new_roles
 
             update = {"$set": {"roles": user_roles}}
             cursor = self.db.users.update_one(myquery, update)
@@ -579,6 +571,14 @@ class DataManager:
             document["_id"] = str(document["_id"])
             processors.append(document)
         return processors
+    
+    def fetchRoles(self, role_category):
+        roles = []
+        cursor = self.db.roles.find({"category": role_category})
+        for document in cursor:
+            del document["_id"]
+            roles.append(document)
+        return roles
 
     def fetchProjectData(
         self, project_id, user, page, records_per_page, sort_by, filter_by
