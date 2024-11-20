@@ -806,7 +806,7 @@ async def fetch_roles(role_category: str, user_info: dict = Depends(authenticate
         role_category: category of role (team, project, system)
 
     Returns:
-        List containing record groups and metadata
+        List containing available roles
     """
     if not data_manager.hasPermission(user_info["email"], "manage_team"):
         raise HTTPException(
@@ -814,6 +814,22 @@ async def fetch_roles(role_category: str, user_info: dict = Depends(authenticate
             detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
         )
     resp = data_manager.fetchRoles(role_category)
+    return resp
+
+
+@router.get("/fetch_teams", response_model=list)
+async def fetch_teams(user_info: dict = Depends(authenticate)):
+    """Fetch all teams that a user is on.
+
+    Returns:
+        List containing teams
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_system"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+        )
+    resp = data_manager.fetchTeams(user_info)
     return resp
 
 
@@ -828,7 +844,7 @@ async def delete_user(email: str, user_info: dict = Depends(authenticate)):
         result
     """
     email = email.lower()
-    if data_manager.hasPermission(user_info["email"], "manage_team"):
+    if data_manager.hasPermission(user_info["email"], "delete"):
         data_manager.deleteUser(email, user_info)
         return {"Deleted", email}
 

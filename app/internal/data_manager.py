@@ -384,8 +384,17 @@ class DataManager:
         for i in range(len(team_doc["project_list"])):
             project_object_id = team_doc["project_list"][i]
             team_doc["project_list"][i] = str(project_object_id)
-
         return team_doc
+    
+    def fetchTeams(self, user_info):
+        email = user_info.get("email", None)
+        query = {"users": email}
+        teams = []
+        teams_cursor = self.db.teams.find(query)
+        for document in teams_cursor:
+            team_name = document["name"]
+            teams.append(team_name)
+        return teams
 
     def fetchProject(self, project_id):
         cursor = self.db.projects.find({"_id": ObjectId(project_id)})
