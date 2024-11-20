@@ -147,7 +147,7 @@ class DataManager:
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return user
-    
+
     def updateDefaultTeam(self, email, new_team):
         query = {"email": email}
         update = {"$set": {"default_team": new_team}}
@@ -391,7 +391,7 @@ class DataManager:
             project_object_id = team_doc["project_list"][i]
             team_doc["project_list"][i] = str(project_object_id)
         return team_doc
-    
+
     def fetchTeams(self, user_info):
         email = user_info.get("email", None)
         query = {"users": email}
@@ -586,7 +586,7 @@ class DataManager:
             document["_id"] = str(document["_id"])
             processors.append(document)
         return processors
-    
+
     def fetchRoles(self, role_category):
         roles = []
         cursor = self.db.roles.find({"category": role_category})

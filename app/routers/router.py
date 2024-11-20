@@ -776,7 +776,7 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
             403,
             detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
         )
-    
+
     req = await request.json()
     role_category = req.get("role_category", None)
     new_role = req.get("new_roles", None)
@@ -793,7 +793,9 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
 
 
 @router.post("/update_default_team")
-async def update_default_team(request: Request, user_info: dict = Depends(authenticate)):
+async def update_default_team(
+    request: Request, user_info: dict = Depends(authenticate)
+):
     """Update user's default team
 
     Args:
@@ -807,7 +809,7 @@ async def update_default_team(request: Request, user_info: dict = Depends(authen
             403,
             detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
         )
-    
+
     req = await request.json()
     new_team = req.get("new_team", None)
 
