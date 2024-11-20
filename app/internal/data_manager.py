@@ -147,6 +147,12 @@ class DataManager:
         newvalues = {"$set": user}
         self.db.users.update_one(myquery, newvalues)
         return user
+    
+    def updateDefaultTeam(self, email, new_team):
+        query = {"email": email}
+        update = {"$set": {"default_team": new_team}}
+        # _log.info(f"{query}, {update}")
+        self.db.users.update_one(query, update)
 
     def addUser(self, user_info, team, team_lead=False, sys_admin=False):
         if team is None:

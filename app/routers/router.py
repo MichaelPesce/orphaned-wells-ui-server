@@ -781,20 +781,43 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
     role_category = req.get("role_category", None)
     new_role = req.get("new_roles", None)
     email = req.get("email", None)
-    if data_manager.hasPermission(user_info["email"], "manage_team"):
-        team = data_manager.getUserInfo(user_info["email"])["default_team"]
-        if new_role and role_category and email:
-            data_manager.updateUserRole(email, team, role_category, new_role)
-            return email
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Please provide an update and an email in the request body",
-            )
-
+    team = data_manager.getUserInfo(user_info["email"])["default_team"]
+    if new_role and role_category and email:
+        data_manager.updateUserRole(email, team, role_category, new_role)
+        return email
     else:
         raise HTTPException(
-            status_code=403, detail=f"User is not authorized to perform this operation"
+            status_code=400,
+            detail=f"Please provide an update and an email in the request body",
+        )
+
+
+@router.post("/update_default_team")
+async def update_default_team(request: Request, user_info: dict = Depends(authenticate)):
+    """Update user's default team
+
+    Args:
+        new_team: new default team
+
+    Returns:
+        result
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_system"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
+        )
+    
+    req = await request.json()
+    new_team = req.get("new_team", None)
+
+    if new_team:
+        data_manager.updateDefaultTeam(user_info["email"], new_team)
+        return new_team
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
         )
 
 
@@ -827,7 +850,7 @@ async def fetch_teams(user_info: dict = Depends(authenticate)):
     if not data_manager.hasPermission(user_info["email"], "manage_system"):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to manage system. Please contact a team lead or project manager.",
         )
     resp = data_manager.fetchTeams(user_info)
     return resp
