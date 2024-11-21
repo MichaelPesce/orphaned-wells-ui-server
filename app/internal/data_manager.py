@@ -764,9 +764,7 @@ class DataManager:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
-            processor_id = document.get("processor_id", None)
-            _processor_id = ObjectId(processor_id)
-            processor_cursor = self.db.processors.find({"_id": _processor_id})
+            processor_cursor = self.db.processors.find({"google_id": google_id})
             processor_document = processor_cursor.next()
             processor_attributes = processor_document.get("attributes", None)
             return google_id, processor_attributes
