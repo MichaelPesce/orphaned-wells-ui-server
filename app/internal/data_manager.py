@@ -1202,7 +1202,6 @@ class DataManager:
         return output_file
 
     def getUserPermissions(self, user):
-        # _log.info(f"getting permissions for {user["email"]}")
         user_team = user["default_team"]
         roles = user.get("roles", {})
 
