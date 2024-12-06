@@ -174,7 +174,6 @@ class DataManager:
             "picture": user_info.get("picture", ""),
             "hd": user_info.get("hd", ""),
             "default_team": team,
-            "role": 1,
             "roles": roles,
             "time_created": time.time(),
         }
