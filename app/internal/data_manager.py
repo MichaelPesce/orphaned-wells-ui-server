@@ -922,6 +922,11 @@ class DataManager:
                     ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
                     data_update["review_status"] = "incomplete"
                 elif (
+                    update_type == "verification_status"
+                    and new_data.get("review_status", None)
+                ):
+                    data_update["review_status"] = new_data["review_status"]
+                elif (
                     update_type == "review_status"
                     and new_data.get("review_status", None) == "unreviewed"
                 ):
@@ -988,6 +993,7 @@ class DataManager:
         update = {
             "review_status": "unreviewed",
             "attributesList": record_attributes,
+            "verification_status": None
         }
         # history is recorded in the function that calls this
         return update
