@@ -356,14 +356,21 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
 
     ## lock record if it is awaiting verification and user does not have permission to verify
     verification_status = record.get("verification_status", None)
-    if (verification_status  == "required" or verification_status  == "verified")and not is_locked:
+    if (
+        verification_status == "required" or verification_status == "verified"
+    ) and not is_locked:
         if not data_manager.hasPermission(user_info["email"], "verify_record"):
-            if verification_status  == "required":
+            if verification_status == "required":
                 lockedMessage = "This record is awaiting verification by a team lead."
             else:
-                lockedMessage = f"This record has been verified as {record.get("review_status")}, and can only be edited by a team lead."
+                lockedMessage = f"This record has been verified as {record.get('review_status')}, and can only be edited by a team lead."
             return JSONResponse(
-                status_code=303, content={"direction": "next", "recordData": record, "lockedMessage": lockedMessage}
+                status_code=303,
+                content={
+                    "direction": "next",
+                    "recordData": record,
+                    "lockedMessage": lockedMessage,
+                },
             )
     if record is None:
         raise HTTPException(
@@ -372,7 +379,12 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         )
     elif is_locked:
         return JSONResponse(
-            status_code=303, content={"direction": "next", "recordData": record, "lockedMessage": "This record is currently being reviewed by a team member."}
+            status_code=303,
+            content={
+                "direction": "next",
+                "recordData": record,
+                "lockedMessage": "This record is currently being reviewed by a team member.",
+            },
         )
     return {"recordData": record}
 
