@@ -31,8 +31,18 @@ load_dotenv()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--production", action='store_true', help="Run backend in production mode.")
-    parser.add_argument("-d", "--docker", action='store_true', help="Run backend in mode fit for docker.")
+    parser.add_argument(
+        "-p",
+        "--production",
+        action="store_true",
+        help="Run backend in production mode.",
+    )
+    parser.add_argument(
+        "-d",
+        "--docker",
+        action="store_true",
+        help="Run backend in mode fit for docker.",
+    )
     args = parser.parse_args()
     multiprocessing.freeze_support()
     if args.production:
