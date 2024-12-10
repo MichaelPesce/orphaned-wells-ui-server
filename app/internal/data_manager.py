@@ -931,6 +931,11 @@ class DataManager:
                     data_update = self.resetRecord(record_id, new_data, user)
                 elif (
                     update_type == "review_status"
+                    and new_data.get("review_status", None) == "incomplete"
+                ):
+                    data_update["verification_status"] = None
+                elif (
+                    update_type == "review_status"
                     and new_data.get("review_status", None) == "defective"
                 ):
                     data_update["defective_categories"] = new_data.get(
