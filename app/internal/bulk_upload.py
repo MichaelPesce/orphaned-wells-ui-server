@@ -36,7 +36,7 @@ def upload_documents_from_directory(
     dontAdd = set()
     if preventDuplicates:
         cursor = db["records"].find({"record_group_id": record_group_id})
-        
+
         for document in cursor:
             dontAdd.add(document.get("filename"))
 
@@ -77,9 +77,7 @@ def upload_documents_from_directory(
                         requests.post(post_url, files=upload_files)
                         count += 1
                         if count == amount:
-                            print(
-                                f"reached upload amount, stopping."
-                            )
+                            print(f"reached upload amount, stopping.")
                             return
                     else:
                         print(f"skipping duplicate {file}")
@@ -130,9 +128,7 @@ def upload_documents_from_directory(
                     requests.post(post_url, files=upload_files)
                     count += 1
                     if count == amount:
-                        print(
-                            f"reached upload amount, stopping"
-                        )
+                        print(f"reached upload amount, stopping")
                         return
                 else:
                     print(f"skipping duplicate {file}")
