@@ -159,6 +159,11 @@ def process_document(
             file_name=f"{filepath}",
             folder=f"uploads/{rg_id}/{new_record_id}",
         )
+    
+    ## if original file was pdf, make sure to delete both image and pdf files
+    files_to_delete = output_paths
+    if original_output_path not in output_path:
+        files_to_delete.append(original_output_path)
 
     ## send to google doc AI
     background_tasks.add_task(
@@ -172,15 +177,7 @@ def process_document(
         data_manager=data_manager,
         image_content=content,
         reprocessed=reprocessed,
-    )
-
-    ## remove file after 60 seconds to allow for the operations to finish
-    ## if file was converted to PNG, remove original file as well
-    files_to_delete = output_paths  # [output_path]
-    if original_output_path not in output_path:
-        files_to_delete.append(original_output_path)
-    background_tasks.add_task(
-        util.deleteFiles, filepaths=files_to_delete, sleep_time=60
+        files_to_delete=files_to_delete,
     )
     return {"record_id": new_record_id}
 
@@ -263,6 +260,7 @@ def process_image(
     data_manager,
     image_content,
     reprocessed=False,
+    files_to_delete=[]
 ):
     if processor_id is None:
         _log.info(
@@ -467,6 +465,9 @@ def process_image(
     del sortedAttributesList
     del document_object
     del found_attributes
+
+    ## delete local files
+    util.deleteFiles(filepaths=files_to_delete, sleep_time=0)
 
     _log.info(f"updated record in db: {record_id}")
 
