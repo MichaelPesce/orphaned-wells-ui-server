@@ -159,7 +159,7 @@ def process_document(
             file_name=f"{filepath}",
             folder=f"uploads/{rg_id}/{new_record_id}",
         )
-    
+
     ## if original file was pdf, make sure to delete both image and pdf files
     files_to_delete = output_paths
     if original_output_path not in output_path:
@@ -260,7 +260,7 @@ def process_image(
     data_manager,
     image_content,
     reprocessed=False,
-    files_to_delete=[]
+    files_to_delete=[],
 ):
     if processor_id is None:
         _log.info(
