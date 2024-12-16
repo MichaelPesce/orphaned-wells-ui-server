@@ -495,9 +495,7 @@ async def upload_document(
         if record_exists:
             return JSONResponse(
                 status_code=208,
-                content={
-                    "message": f"{file.filename} exists for {rg_id}, returning"
-                },
+                content={"message": f"{file.filename} exists for {rg_id}, returning"},
             )
 
     user_info = data_manager.getUserInfo(user_email)
