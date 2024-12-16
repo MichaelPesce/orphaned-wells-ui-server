@@ -493,7 +493,9 @@ async def upload_document(
     if preventDuplicates:
         record_exists = data_manager.checkIfRecordExists(file.filename, rg_id)
         if record_exists:
-            raise HTTPException(304, detail=f"{file.filename} exists for {rg_id}, returning")
+            raise HTTPException(
+                304, detail=f"{file.filename} exists for {rg_id}, returning"
+            )
 
     user_info = data_manager.getUserInfo(user_email)
     project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
