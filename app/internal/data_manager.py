@@ -1241,6 +1241,18 @@ class DataManager:
         if project is not None:
             return True
 
+    def checkIfRecordExists(self, filename, rg_id):
+        ## remove file extension
+        filename = filename.split(".")[0]
+
+        ## query database
+        query = {"filename": {"$regex" : filename}, "record_group_id": rg_id}
+        found_document = self.db.records.count_documents(query)
+        if found_document > 0:
+            return True
+        else:
+            return False
+
     def checkRecordGroupValidity(self, rg_id):
         try:
             rg_id = ObjectId(rg_id)

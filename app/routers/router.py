@@ -473,6 +473,7 @@ async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     reprocessed: bool = False,
+    preventDuplicates: bool = False,
 ):
     """Upload document for processing. Documents are processed asynchronously.
 
@@ -489,6 +490,11 @@ async def upload_document(
             403,
             detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
         )
+    if preventDuplicates:
+        record_exists = data_manager.checkIfRecordExists(file.filename, rg_id)
+        if record_exists:
+            raise HTTPException(304, detail=f"{file.filename} exists for {rg_id}, returning")
+
     user_info = data_manager.getUserInfo(user_email)
     project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
     if not project_is_valid:
