@@ -1255,7 +1255,6 @@ class DataManager:
             {"filename": {"$regex": re.escape(filename.split(".")[0]), "$options": "i"}}
             for filename in filenames
         ]
-        print(f"checking with rg id : {rg_id}")
         query = {
             "$and": [
                 {"record_group_id": rg_id},  # Match the given rg_id
