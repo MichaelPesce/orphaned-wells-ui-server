@@ -271,7 +271,6 @@ class DataManager:
                         "name": document.get("name", ""),
                         "hd": document.get("hd", ""),
                         "picture": document.get("picture", ""),
-                        "role": document.get("role", -1),
                         "roles": document.get("roles", {}),
                     }
                 )

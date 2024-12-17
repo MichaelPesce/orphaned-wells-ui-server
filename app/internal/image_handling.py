@@ -135,6 +135,7 @@ def process_document(
         _log.info(f"unable to parse api number")
         api_number = None
     ## add record to DB without attributes
+    print(f"original outputpath: {original_output_path}")
     new_record = {
         "record_group_id": rg_id,
         "name": filename,
@@ -143,6 +144,7 @@ def process_document(
         "contributor": user_info,
         "status": "processing",
         "review_status": "unreviewed",
+        "original_filename": original_output_path.split("/")[-1],
         "image_files": [output_path.split("/")[-1] for output_path in output_paths],
     }
     new_record_id = data_manager.createRecord(new_record, user_info)
