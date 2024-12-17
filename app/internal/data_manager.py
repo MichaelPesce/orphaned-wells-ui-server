@@ -1,15 +1,11 @@
 import logging
-from pathlib import Path
 import time
 import os
 import csv
 import json
-from enum import Enum
-import threading
 import traceback
+import re
 
-from typing import Union, List
-from pydantic import BaseModel
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 
@@ -1252,6 +1248,22 @@ class DataManager:
             return True
         else:
             return False
+        
+    def checkIfRecordsExist(self, filenames, rg_id):
+        # Convert filenames into regex patterns
+        regex_patterns = [{"filename": {"$regex": re.escape(filename.split(".")[0]), "$options": "i"}} for filename in filenames]
+        print(f"checking with rg id : {rg_id}")
+        query = {
+            "$and": [
+                {"record_group_id": rg_id},  # Match the given rg_id
+                {"$or": regex_patterns}  # Match any filename in filenames as regex
+            ]
+        }
+        record_cursor = self.db.records.find(query)
+        duplicate_records = []
+        for document in record_cursor:
+            duplicate_records.append(document["filename"].split(".")[0])
+        return duplicate_records
 
     def checkRecordGroupValidity(self, rg_id):
         try:

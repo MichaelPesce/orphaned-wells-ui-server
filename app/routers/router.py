@@ -353,7 +353,6 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         List containing record data
     """
     record, is_locked = data_manager.fetchRecordData(record_id, user_info)
-
     ## lock record if it is awaiting verification and user does not have permission to verify
     verification_status = record.get("verification_status", None)
     if (
@@ -679,6 +678,22 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
     data_manager.deleteRecord(record_id, user_info)
 
     return {"response": "success"}
+
+
+@router.post("/check_if_records_exist/{rg_id}")
+async def check_if_records_exist(request: Request, rg_id: str, user_info: dict = Depends(authenticate)):
+    """Check if records exist.
+
+    Args:
+        file_list: List of file names
+        rg_id: record group id
+
+    Returns:
+        JSON with duplicate_records
+    """
+    req = await request.json()
+    file_list = req.get("file_list", [])
+    return data_manager.checkIfRecordsExist(file_list, rg_id)
 
 
 @router.post(
