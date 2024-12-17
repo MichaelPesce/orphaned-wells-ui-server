@@ -681,7 +681,9 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
 
 
 @router.post("/check_if_records_exist/{rg_id}")
-async def check_if_records_exist(request: Request, rg_id: str, user_info: dict = Depends(authenticate)):
+async def check_if_records_exist(
+    request: Request, rg_id: str, user_info: dict = Depends(authenticate)
+):
     """Check if records exist.
 
     Args:
