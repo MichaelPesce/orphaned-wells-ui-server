@@ -1260,10 +1260,10 @@ class DataManager:
             ]
         }
         record_cursor = self.db.records.find(query)
-        duplicate_records = []
+        duplicate_records = set()
         for document in record_cursor:
-            duplicate_records.append(document["filename"].split(".")[0])
-        return duplicate_records
+            duplicate_records.add(document["filename"].split(".")[0])
+        return list(duplicate_records)
 
     def checkRecordGroupValidity(self, rg_id):
         try:
