@@ -1,15 +1,11 @@
 import logging
-from pathlib import Path
 import time
 import os
 import csv
 import json
-from enum import Enum
-import threading
 import traceback
+import re
 
-from typing import Union, List
-from pydantic import BaseModel
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 
@@ -275,7 +271,6 @@ class DataManager:
                         "name": document.get("name", ""),
                         "hd": document.get("hd", ""),
                         "picture": document.get("picture", ""),
-                        "role": document.get("role", -1),
                         "roles": document.get("roles", {}),
                     }
                 )
@@ -1240,6 +1235,36 @@ class DataManager:
         project = self.getDocument("projects", {"_id": project_id})
         if project is not None:
             return True
+
+    def checkIfRecordExists(self, filename, rg_id):
+        ## remove file extension
+        filename = filename.split(".")[0]
+
+        ## query database
+        query = {"filename": {"$regex": filename}, "record_group_id": rg_id}
+        found_document = self.db.records.count_documents(query)
+        if found_document > 0:
+            return True
+        else:
+            return False
+
+    def checkIfRecordsExist(self, filenames, rg_id):
+        # Convert filenames into regex patterns
+        regex_patterns = [
+            {"filename": {"$regex": re.escape(filename.split(".")[0]), "$options": "i"}}
+            for filename in filenames
+        ]
+        query = {
+            "$and": [
+                {"record_group_id": rg_id},  # Match the given rg_id
+                {"$or": regex_patterns},  # Match any filename in filenames as regex
+            ]
+        }
+        record_cursor = self.db.records.find(query)
+        duplicate_records = set()
+        for document in record_cursor:
+            duplicate_records.add(document["filename"].split(".")[0])
+        return list(duplicate_records)
 
     def checkRecordGroupValidity(self, rg_id):
         try:
