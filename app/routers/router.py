@@ -732,11 +732,17 @@ async def download_records(
         keep_all_columns = True
 
     if location == "project":
-        records, _ = data_manager.fetchRecordsByProject(user_info, _id, filter_by=filter_by, sort_by=sort_by)
+        records, _ = data_manager.fetchRecordsByProject(
+            user_info, _id, filter_by=filter_by, sort_by=sort_by
+        )
     elif location == "record_group":
-        records, _ = data_manager.fetchRecordsByRecordGroup(user_info, _id, filter_by=filter_by, sort_by=sort_by)
+        records, _ = data_manager.fetchRecordsByRecordGroup(
+            user_info, _id, filter_by=filter_by, sort_by=sort_by
+        )
     elif location == "team":
-        records, _ = data_manager.fetchRecordsByTeam(user_info, filter_by=filter_by, sort_by=sort_by)
+        records, _ = data_manager.fetchRecordsByTeam(
+            user_info, filter_by=filter_by, sort_by=sort_by
+        )
     else:
         raise HTTPException(
             status_code=400, detail=f"Location must be project, record_group, or team"
