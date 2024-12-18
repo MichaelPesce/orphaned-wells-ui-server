@@ -723,16 +723,26 @@ async def download_records(
     req = await request.json()
     # _log.info(req)
     selectedColumns = req.get("columns", [])
+
+    filter_by = req.get("filter", {})
+    sort_by = req.get("sort", ["dateCreated", 1])
+
     keep_all_columns = False
     if len(selectedColumns) == 0:
         keep_all_columns = True
 
     if location == "project":
-        records, _ = data_manager.fetchRecordsByProject(user_info, _id)
+        records, _ = data_manager.fetchRecordsByProject(
+            user_info, _id, filter_by=filter_by, sort_by=sort_by
+        )
     elif location == "record_group":
-        records, _ = data_manager.fetchRecordsByRecordGroup(user_info, _id)
+        records, _ = data_manager.fetchRecordsByRecordGroup(
+            user_info, _id, filter_by=filter_by, sort_by=sort_by
+        )
     elif location == "team":
-        records, _ = data_manager.fetchRecordsByTeam(user_info)
+        records, _ = data_manager.fetchRecordsByTeam(
+            user_info, filter_by=filter_by, sort_by=sort_by
+        )
     else:
         raise HTTPException(
             status_code=400, detail=f"Location must be project, record_group, or team"
