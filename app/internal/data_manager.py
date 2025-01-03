@@ -964,8 +964,10 @@ class DataManager:
             return data_update
         else:
             return False
-        
-    def updateRecordWithoutLock(self, record_id, new_data, update_type=None, user_info=None):
+
+    def updateRecordWithoutLock(
+        self, record_id, new_data, update_type=None, user_info=None
+    ):
         # when updating the notes, we don't worry about the lock
         # _log.info(f"updating {record_id} to be {new_data}")
         if user_info is not None:
@@ -976,9 +978,7 @@ class DataManager:
         update_query = {"$set": data_update}
         ## fetch record's current data so we know what changed in the future
         try:
-            record_doc = self.db.records.find(
-                {"_id": ObjectId(record_id)}
-            ).next()
+            record_doc = self.db.records.find({"_id": ObjectId(record_id)}).next()
             previous_state = {}
             for each in data_update:
                 previous_state[each] = record_doc.get(each, None)

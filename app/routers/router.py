@@ -399,7 +399,7 @@ async def get_record_notes(record_id: str, user_info: dict = Depends(authenticat
         List containing record notes
     """
     record, _ = data_manager.fetchRecordData(record_id, user_info)
-    
+
     if record is None:
         raise HTTPException(
             403,
@@ -627,7 +627,9 @@ async def update_record(
     data = req.get("data", None)
     update_type = req.get("type", None)
     if update_type == "record_notes":
-        update = data_manager.updateRecordWithoutLock(record_id, data, update_type, user_info)
+        update = data_manager.updateRecordWithoutLock(
+            record_id, data, update_type, user_info
+        )
     else:
         update = data_manager.updateRecord(record_id, data, update_type, user_info)
     if not update:
