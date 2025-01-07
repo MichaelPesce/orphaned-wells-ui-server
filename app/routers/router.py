@@ -263,7 +263,7 @@ async def get_records(
 
 @router.get("/get_processors/{state}", response_model=list)
 async def get_processors(state: str, user_info: dict = Depends(authenticate)):
-    """Fetch all projects that a user has access to.
+    """Fetch all processors for a given state/organization.
 
     Returns:
         List containing processors and metadata
@@ -663,10 +663,10 @@ async def delete_record_group(
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
 ):
-    """Delete Document group.
+    """Delete record group.
 
     Args:
-        rg_id: Document group identifier
+        rg_id: record group identifier
 
     Returns:
         Success response
@@ -704,7 +704,7 @@ async def delete_record(record_id: str, user_info: dict = Depends(authenticate))
 async def check_if_records_exist(
     request: Request, rg_id: str, user_info: dict = Depends(authenticate)
 ):
-    """Check if records exist.
+    """Check if records exist for a given list of files.
 
     Args:
         file_list: List of file names
@@ -784,7 +784,7 @@ async def download_records(
 
 @router.get("/get_users")
 async def get_users(user_info: dict = Depends(authenticate)):
-    """Fetch all users from DB with role base_user or lower. Checks if user has proper role (admin)
+    """Fetch all users from DB for a given user's team.
 
     Returns:
         List of users, role types
@@ -798,7 +798,7 @@ async def get_users(user_info: dict = Depends(authenticate)):
 async def add_user(
     request: Request, email: str, user_info: dict = Depends(authenticate)
 ):
-    """Add user to application database with role 'pending'
+    """Add user to application database
 
     Args:
         email: User email address
