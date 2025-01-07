@@ -721,6 +721,13 @@ class DataManager:
             _log.error(traceback.format_exc())
 
         return document, not attained_lock
+    
+    def fetchRecordNotes(self, record_id, user_info):
+        # user = user_info.get("email", "")
+        _id = ObjectId(record_id)
+        cursor = self.db.records.find({"_id": _id})
+        document = cursor.next()
+        return document.get("record_notes",[])
 
     def getNextRecordId(self, dateCreated, rg_id):
         # _log.info(f"fetching next record for {dateCreated} and {rg_id}")

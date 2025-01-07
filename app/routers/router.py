@@ -398,14 +398,9 @@ async def get_record_notes(record_id: str, user_info: dict = Depends(authenticat
     Returns:
         List containing record notes
     """
-    record, _ = data_manager.fetchRecordData(record_id, user_info)
+    record_notes = data_manager.fetchRecordNotes(record_id, user_info)
 
-    if record is None:
-        raise HTTPException(
-            403,
-            detail=f"You do not have access to this record, please contact the project creator to gain access.",
-        )
-    return record.get("record_notes", [])
+    return record_notes
 
 
 @router.get("/get_processor_data/{google_id}", response_model=dict)
