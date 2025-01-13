@@ -1002,6 +1002,104 @@ class DataManager:
         self.db.records.update_one(search_query, update_query)
 
         return data_update
+    
+    def updateRecordNotes(
+        self, record_id, data, user_info=None
+    ):
+        # _log.info(f"updating {record_id} with {data}")
+        if user_info is not None:
+            user = user_info.get("email", None)
+        else:
+            user = None
+        _id = ObjectId(record_id)
+        search_query = {"_id": _id}
+        update_type = data["update_type"]
+        index = data.get("index", None)
+        updates = []
+        if update_type == "add":
+            ##TODO: check if new index is really new (ie, less than length of list). 
+            ## in the case that two users simultaneously add notes, there could be a race here
+            newNoteText = data["text"]
+            isReply = data.get("isReply", False)
+            newNote = {
+                "text": newNoteText,
+                "record_id": record_id,
+                "timestamp": time.time(),
+                "creator": user,
+                "resolved": False,
+                "deleted": False,
+                "lastUpdated": time.time(),
+                "replies": [],
+                "isReply": isReply,
+            }
+            if isReply:
+                ##TODO: break this into two updates
+                replyToIndex = data["replyToIndex"]
+                newNote["repliesTo"] = replyToIndex
+                update1 = {
+                    "$push": {
+                        "record_notes": newNote, ## add new note
+                    }
+                }
+                update2 = {
+                    "$push": {
+                        f"record_notes.{replyToIndex}.replies": index, ## add index to reply list
+                    }
+                }
+                updates.append(update1)
+                updates.append(update2)
+            else:
+                update = {
+                    "$push": {
+                        "record_notes": newNote
+                    }
+                }
+                updates.append(update)
+        elif update_type == "edit":
+            updatedText = data["text"]
+            update = {
+                "$set": {
+                    f"record_notes.{index}.text": updatedText,
+                    f"record_notes.{index}.lastUpdated": time.time(),
+                }
+            }
+            updates.append(update)
+        elif update_type == "delete":
+            _log.info(f"deleting {index}")
+            update = {
+                "$set": {
+                    f"record_notes.{index}.deleted": True,
+                    f"record_notes.{index}.lastUpdated": time.time(),
+                }
+            }
+            updates.append(update)
+        elif update_type == "resolve" or update_type == "unresolve":
+            _log.info(f"resolving {index}")
+            new_resolve_value = False
+            if update_type == "resolve":
+                new_resolve_value = True
+            update = {
+                "$set": {
+                    f"record_notes.{index}.resolved": new_resolve_value,
+                    f"record_notes.{index}.lastUpdated": time.time(),
+                }
+            }
+            updates.append(update)
+        else:
+            _log.info(f"invalid update type: {update_type}")
+            return None
+        
+        for update in updates:
+            self.recordHistory(
+                "updateRecordNotes",
+                user,
+                record_id=record_id,
+                query=update
+            )
+            print(f"update: {update}")
+            print(self.db.records.update_one(search_query, update))
+        record_doc = self.db.records.find(search_query).next()
+        return record_doc["record_notes"]
 
     def resetRecord(self, record_id, record_data, user):
         print(f"resetting record: {record_id}")
