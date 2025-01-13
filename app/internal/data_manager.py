@@ -1087,6 +1087,7 @@ class DataManager:
             return None
         
         for update in updates:
+            self.db.records.update_one(search_query, update)
             self.recordHistory(
                 "updateRecordNotes",
                 user,
@@ -1094,7 +1095,7 @@ class DataManager:
                 query=update
             )
         record_doc = self.db.records.find(search_query).next()
-        return record_doc["record_notes"]
+        return record_doc.get("record_notes", [])
 
     def resetRecord(self, record_id, record_data, user):
         print(f"resetting record: {record_id}")
