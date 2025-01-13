@@ -1033,7 +1033,6 @@ class DataManager:
                 "isReply": isReply,
             }
             if isReply:
-                ##TODO: break this into two updates
                 replyToIndex = data["replyToIndex"]
                 newNote["repliesTo"] = replyToIndex
                 update1 = {
@@ -1065,7 +1064,6 @@ class DataManager:
             }
             updates.append(update)
         elif update_type == "delete":
-            _log.info(f"deleting {index}")
             update = {
                 "$set": {
                     f"record_notes.{index}.deleted": True,
@@ -1074,7 +1072,6 @@ class DataManager:
             }
             updates.append(update)
         elif update_type == "resolve" or update_type == "unresolve":
-            _log.info(f"resolving {index}")
             new_resolve_value = False
             if update_type == "resolve":
                 new_resolve_value = True
@@ -1086,7 +1083,7 @@ class DataManager:
             }
             updates.append(update)
         else:
-            _log.info(f"invalid update type: {update_type}")
+            _log.error(f"invalid update type: {update_type}")
             return None
         
         for update in updates:
@@ -1096,8 +1093,6 @@ class DataManager:
                 record_id=record_id,
                 query=update
             )
-            print(f"update: {update}")
-            print(self.db.records.update_one(search_query, update))
         record_doc = self.db.records.find(search_query).next()
         return record_doc["record_notes"]
 
