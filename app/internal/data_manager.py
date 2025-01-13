@@ -1002,10 +1002,8 @@ class DataManager:
         self.db.records.update_one(search_query, update_query)
 
         return data_update
-    
-    def updateRecordNotes(
-        self, record_id, data, user_info=None
-    ):
+
+    def updateRecordNotes(self, record_id, data, user_info=None):
         # _log.info(f"updating {record_id} with {data}")
         if user_info is not None:
             user = user_info.get("email", None)
@@ -1017,7 +1015,7 @@ class DataManager:
         index = data.get("index", None)
         updates = []
         if update_type == "add":
-            ##TODO: check if new index is really new (ie, less than length of list). 
+            ##TODO: check if new index is really new (ie, less than length of list).
             ## in the case that two users simultaneously add notes, there could be a race here
             newNoteText = data["text"]
             isReply = data.get("isReply", False)
@@ -1037,22 +1035,18 @@ class DataManager:
                 newNote["repliesTo"] = replyToIndex
                 update1 = {
                     "$push": {
-                        "record_notes": newNote, ## add new note
+                        "record_notes": newNote,  ## add new note
                     }
                 }
                 update2 = {
                     "$push": {
-                        f"record_notes.{replyToIndex}.replies": index, ## add index to reply list
+                        f"record_notes.{replyToIndex}.replies": index,  ## add index to reply list
                     }
                 }
                 updates.append(update1)
                 updates.append(update2)
             else:
-                update = {
-                    "$push": {
-                        "record_notes": newNote
-                    }
-                }
+                update = {"$push": {"record_notes": newNote}}
                 updates.append(update)
         elif update_type == "edit":
             updatedText = data["text"]
@@ -1085,14 +1079,11 @@ class DataManager:
         else:
             _log.error(f"invalid update type: {update_type}")
             return None
-        
+
         for update in updates:
             self.db.records.update_one(search_query, update)
             self.recordHistory(
-                "updateRecordNotes",
-                user,
-                record_id=record_id,
-                query=update
+                "updateRecordNotes", user, record_id=record_id, query=update
             )
         record_doc = self.db.records.find(search_query).next()
         return record_doc.get("record_notes", [])
