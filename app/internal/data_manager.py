@@ -651,18 +651,22 @@ class DataManager:
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
-        document = cursor.next()
+        try:
+            document = cursor.next()
+        except:
+            _log.error(f"record with id {record_id} does not exist")
+            return None, None
         document["_id"] = str(document["_id"])
         rg_id = document.get("record_group_id", "")
         # projectId = document.get("project_id", "")
         # project_id = ObjectId(projectId)
 
-        ## try to attain lock
-        attained_lock = self.tryLockingRecord(record_id, user)
-
         user_record_groups = self.getUserRecordGroups(user)
         if not rg_id in user_record_groups:
             return None, None
+
+        ## try to attain lock
+        attained_lock = self.tryLockingRecord(record_id, user)
         image_urls = []
         for image in document.get("image_files", []):
             if util.imageIsValid(image):
@@ -972,36 +976,90 @@ class DataManager:
         else:
             return False
 
-    def updateRecordWithoutLock(
-        self, record_id, new_data, update_type=None, user_info=None
-    ):
-        # when updating the notes, we don't worry about the lock
-        # _log.info(f"updating {record_id} to be {new_data}")
+    def updateRecordNotes(self, record_id, data, user_info=None):
+        # _log.info(f"updating {record_id} with {data}")
         if user_info is not None:
             user = user_info.get("email", None)
+        else:
+            user = None
         _id = ObjectId(record_id)
         search_query = {"_id": _id}
-        data_update = {update_type: new_data.get(update_type, None)}
-        update_query = {"$set": data_update}
-        ## fetch record's current data so we know what changed in the future
-        try:
-            record_doc = self.db.records.find({"_id": ObjectId(record_id)}).next()
-            previous_state = {}
-            for each in data_update:
-                previous_state[each] = record_doc.get(each, None)
-        except Exception as e:
-            _log.info(f"unable to get record's previous state: {e}")
-            previous_state = None
-        self.recordHistory(
-            "updateRecord",
-            user,
-            record_id=record_id,
-            query=data_update,
-            previous_state=previous_state,
-        )
-        self.db.records.update_one(search_query, update_query)
+        update_type = data["update_type"]
+        index = data.get("index", None)
+        updates = []
+        if update_type == "add":
+            ##TODO: check if new index is really new (ie, less than length of list).
+            ## in the case that two users simultaneously add notes, there could be a race here
+            newNoteText = data["text"]
+            isReply = data.get("isReply", False)
+            newNote = {
+                "text": newNoteText,
+                "record_id": record_id,
+                "timestamp": time.time(),
+                "creator": user,
+                "resolved": False,
+                "deleted": False,
+                "lastUpdated": time.time(),
+                "replies": [],
+                "isReply": isReply,
+            }
+            if isReply:
+                replyToIndex = data["replyToIndex"]
+                newNote["repliesTo"] = replyToIndex
+                update1 = {
+                    "$push": {
+                        "record_notes": newNote,  ## add new note
+                    }
+                }
+                update2 = {
+                    "$push": {
+                        f"record_notes.{replyToIndex}.replies": index,  ## add index to reply list
+                    }
+                }
+                updates.append(update1)
+                updates.append(update2)
+            else:
+                update = {"$push": {"record_notes": newNote}}
+                updates.append(update)
+        elif update_type == "edit":
+            updatedText = data["text"]
+            update = {
+                "$set": {
+                    f"record_notes.{index}.text": updatedText,
+                    f"record_notes.{index}.lastUpdated": time.time(),
+                }
+            }
+            updates.append(update)
+        elif update_type == "delete":
+            update = {
+                "$set": {
+                    f"record_notes.{index}.deleted": True,
+                    f"record_notes.{index}.lastUpdated": time.time(),
+                }
+            }
+            updates.append(update)
+        elif update_type == "resolve" or update_type == "unresolve":
+            new_resolve_value = False
+            if update_type == "resolve":
+                new_resolve_value = True
+            update = {
+                "$set": {
+                    f"record_notes.{index}.resolved": new_resolve_value,
+                    f"record_notes.{index}.lastUpdated": time.time(),
+                }
+            }
+            updates.append(update)
+        else:
+            _log.error(f"invalid update type: {update_type}")
+            return None
 
-        return data_update
+        for update in updates:
+            self.db.records.update_one(search_query, update)
+            self.recordHistory(
+                "updateRecordNotes", user, record_id=record_id, query=update
+            )
+        record_doc = self.db.records.find(search_query).next()
+        return record_doc.get("record_notes", [])
 
     def resetRecord(self, record_id, record_data, user):
         print(f"resetting record: {record_id}")
