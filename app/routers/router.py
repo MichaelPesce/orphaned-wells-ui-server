@@ -353,6 +353,11 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         List containing record data
     """
     record, is_locked = data_manager.fetchRecordData(record_id, user_info)
+    if record is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record, please contact the project creator to gain access.",
+        )
     ## lock record if it is awaiting verification and user does not have permission to verify
     verification_status = record.get("verification_status", None)
     if (
@@ -371,12 +376,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
                     "lockedMessage": lockedMessage,
                 },
             )
-    if record is None:
-        raise HTTPException(
-            403,
-            detail=f"You do not have access to this record, please contact the project creator to gain access.",
-        )
-    elif is_locked:
+    if is_locked:
         return JSONResponse(
             status_code=303,
             content={
