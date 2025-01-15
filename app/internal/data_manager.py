@@ -664,7 +664,7 @@ class DataManager:
         user_record_groups = self.getUserRecordGroups(user)
         if not rg_id in user_record_groups:
             return None, None
-        
+
         ## try to attain lock
         attained_lock = self.tryLockingRecord(record_id, user)
         image_urls = []
