@@ -11,10 +11,7 @@ from pymongo import ASCENDING, DESCENDING
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
-from app.internal.image_handling import (
-    generate_download_signed_url_v4,
-    delete_google_storage_directory,
-)
+from app.internal.util import generate_download_signed_url_v4
 import app.internal.util as util
 
 
