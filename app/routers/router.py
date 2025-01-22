@@ -791,11 +791,14 @@ async def download_records(
         filepaths.append(json_file)
 
     ## TODO: add function for streaming images to zip for user
+    if export_images:
+        documents = util.compileDocumentImageList(records)
+    else:
+        documents = None
+    zipped_files = util.zip_files(filepaths, documents)
 
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=30)
-
-    zipped_files = util.zip_files(filepaths)
     return Response(content=zipped_files, media_type="application/zip")
 
 
