@@ -768,8 +768,6 @@ async def download_records(
             status_code=400, detail=f"Location must be project, record_group, or team"
         )
 
-    _log.info(f"inside downloadRecords, export csv: {export_csv}, export json: {export_json}, export images: {export_images}")
-
     filepaths = []
     if export_csv:
         csv_file = data_manager.downloadRecords(
@@ -793,12 +791,13 @@ async def download_records(
             keep_all_columns=keep_all_columns,
         )
         filepaths.append(json_file)
+
     ## TODO: add function for streaming images to zip for user
-    _log.info(f"filepaths: {filepaths}")
+
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=30)
+
     zipped_files = util.zip_files(filepaths)
-    _log.info(type(zipped_files))
     return Response(content=zipped_files, media_type="application/zip")
 
 
