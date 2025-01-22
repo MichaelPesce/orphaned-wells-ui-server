@@ -716,9 +716,7 @@ async def check_if_records_exist(
     return data_manager.checkIfRecordsExist(file_list, rg_id)
 
 
-@router.post(
-    "/download_records/{location}/{_id}", response_class=Response
-)
+@router.post("/download_records/{location}/{_id}", response_class=Response)
 async def download_records(
     location: str,
     _id: str,

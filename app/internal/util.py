@@ -72,7 +72,7 @@ def validateUser(user):
 def zip_files(file_paths):
     zip_buffer = BytesIO()
 
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for file_path in file_paths:
             zip_file.write(file_path, os.path.basename(file_path))
 
