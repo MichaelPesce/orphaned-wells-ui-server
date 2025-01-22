@@ -13,7 +13,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
 )
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import OAuth2PasswordBearer
 
 from app.internal.data_manager import data_manager
@@ -717,14 +717,16 @@ async def check_if_records_exist(
 
 
 @router.post(
-    "/download_records/{location}/{_id}/{export_type}", response_class=FileResponse
+    "/download_records/{location}/{_id}", response_class=Response
 )
 async def download_records(
     location: str,
     _id: str,
-    export_type: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    export_csv: bool = True,
+    export_json: bool = False,
+    export_images: bool = False,
     user_info: dict = Depends(authenticate),
 ):
     """Download records for given project ID.
@@ -766,18 +768,38 @@ async def download_records(
             status_code=400, detail=f"Location must be project, record_group, or team"
         )
 
-    export_file = data_manager.downloadRecords(
-        records,
-        export_type,
-        user_info,
-        _id,
-        location,
-        selectedColumns=selectedColumns,
-        keep_all_columns=keep_all_columns,
-    )
+    _log.info(f"inside downloadRecords, export csv: {export_csv}, export json: {export_json}, export images: {export_images}")
+
+    filepaths = []
+    if export_csv:
+        csv_file = data_manager.downloadRecords(
+            records,
+            "csv",
+            user_info,
+            _id,
+            location,
+            selectedColumns=selectedColumns,
+            keep_all_columns=keep_all_columns,
+        )
+        filepaths.append(csv_file)
+    if export_json:
+        json_file = data_manager.downloadRecords(
+            records,
+            "json",
+            user_info,
+            _id,
+            location,
+            selectedColumns=selectedColumns,
+            keep_all_columns=keep_all_columns,
+        )
+        filepaths.append(json_file)
+    ## TODO: add function for streaming images to zip for user
+    _log.info(f"filepaths: {filepaths}")
     ## remove file after 30 seconds to allow for the user download to finish
-    background_tasks.add_task(util.deleteFiles, filepaths=[export_file], sleep_time=30)
-    return export_file
+    background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=30)
+    zipped_files = util.zip_files(filepaths)
+    _log.info(type(zipped_files))
+    return Response(content=zipped_files, media_type="application/zip")
 
 
 @router.get("/get_users")

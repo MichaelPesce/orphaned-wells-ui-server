@@ -1,6 +1,8 @@
 import time
 import os
 import logging
+import zipfile
+from io import BytesIO
 
 _log = logging.getLogger(__name__)
 
@@ -65,3 +67,16 @@ def validateUser(user):
             return False
     except Exception as e:
         _log.error(f"failed attempting to validate user {user}: {e}")
+
+
+def zip_files(file_paths):
+    zip_buffer = BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_path in file_paths:
+            zip_file.write(file_path, os.path.basename(file_path))
+
+    zip_bytes = zip_buffer.getvalue()
+    zip_buffer.close()
+
+    return zip_bytes
