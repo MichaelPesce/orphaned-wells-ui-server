@@ -13,6 +13,7 @@ DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 
+
 def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
     processor_attributes = processor["attributes"]
 
@@ -90,7 +91,6 @@ def generate_download_signed_url_v4(
     storage_client = storage.Client.from_service_account_json(
         f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
     )
-    
 
     # blob_name: path to file in google cloud bucket
     blob_name = f"uploads/{rg_id}/{record_id}/{filename}"
@@ -121,7 +121,7 @@ def compileDocumentImageList(records):
             "record_id": record_id,
             "record_name": record_name,
         }
-        
+
     return images
 
 
@@ -138,17 +138,23 @@ def zip_files(file_paths, documents=None):
                 image_files = document["files"]
                 record_name = document["record_name"]
                 for image_file in image_files:
-                    signed_url = generate_download_signed_url_v4(rg_id, record_id, image_file)
+                    signed_url = generate_download_signed_url_v4(
+                        rg_id, record_id, image_file
+                    )
                     response = requests.get(signed_url, stream=True)
                     if response.status_code == 200:
                         # Write file content directly into the ZIP archive
                         file_name = os.path.basename(image_file)
-                        zip_file.writestr(f"documents/{record_name}/{file_name}", response.content)
+                        zip_file.writestr(
+                            f"documents/{record_name}/{file_name}", response.content
+                        )
                     else:
                         # Handle error and add a placeholder file in the ZIP archive
                         error_message = f"Failed to fetch {signed_url}"
-                        zip_file.writestr(f"documents/error_{os.path.basename(image_file)}.txt", error_message)
-        
+                        zip_file.writestr(
+                            f"documents/error_{os.path.basename(image_file)}.txt",
+                            error_message,
+                        )
 
     zip_bytes = zip_buffer.getvalue()
     zip_buffer.close()

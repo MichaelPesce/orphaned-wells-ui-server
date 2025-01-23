@@ -1260,15 +1260,15 @@ class DataManager:
                             current_attributes.add(attribute_name)
                             if attribute_name not in attributes:
                                 attributes.append(attribute_name)
-                            record_attribute[attribute_name] = document_attribute["value"]
+                            record_attribute[attribute_name] = document_attribute[
+                                "value"
+                            ]
                             ## add subattributes
                             if document_attribute.get("subattributes", None):
                                 for document_subattribute in document_attribute[
                                     "subattributes"
                                 ]:
-                                    subattribute_name = (
-                                        f"{attribute_name}[{document_subattribute['key']}]"
-                                    )
+                                    subattribute_name = f"{attribute_name}[{document_subattribute['key']}]"
                                     record_attribute[
                                         subattribute_name
                                     ] = document_subattribute["value"]
