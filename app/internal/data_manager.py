@@ -11,10 +11,7 @@ from pymongo import ASCENDING, DESCENDING
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
-from app.internal.image_handling import (
-    generate_download_signed_url_v4,
-    delete_google_storage_directory,
-)
+from app.internal.util import generate_download_signed_url_v4
 import app.internal.util as util
 
 
@@ -1231,48 +1228,56 @@ class DataManager:
         location,
         selectedColumns=[],
         keep_all_columns=False,
+        output_filename=None,
     ):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
         today = time.time()
         output_dir = self.app_settings.export_dir
-        output_file = os.path.join(output_dir, f"{_id}_{today}.{exportType}")
+        if output_filename is None:
+            output_file = os.path.join(output_dir, f"{_id}_{today}.{exportType}")
+        else:
+            output_file = f"{output_filename}.{exportType}"
         attributes = ["file"]
         subattributes = []
         record_attributes = []
         if exportType == "csv":
             for document in records:
-                current_attributes = set()
-                record_attribute = {}
-                for document_attribute in document["attributesList"]:
-                    attribute_name = document_attribute["key"].replace(" ", "")
-                    if attribute_name in selectedColumns or keep_all_columns:
-                        original_attribute_name = attribute_name
-                        i = 2
-                        while attribute_name in current_attributes:
-                            ## add a number to the end of the attribute so it (and its subattributes)
-                            ## is differentiable from other instances of the attribute
-                            attribute_name = f"{original_attribute_name}_{i}"
-                            i += 1
-                        current_attributes.add(attribute_name)
-                        if attribute_name not in attributes:
-                            attributes.append(attribute_name)
-                        record_attribute[attribute_name] = document_attribute["value"]
-                        ## add subattributes
-                        if document_attribute.get("subattributes", None):
-                            for document_subattribute in document_attribute[
-                                "subattributes"
-                            ]:
-                                subattribute_name = (
-                                    f"{attribute_name}[{document_subattribute['key']}]"
-                                )
-                                record_attribute[
-                                    subattribute_name
-                                ] = document_subattribute["value"]
-                                if subattribute_name not in subattributes:
-                                    subattributes.append(subattribute_name)
-                record_attribute["file"] = document.get("filename", "")
-                record_attributes.append(record_attribute)
+                document_id = str(document["_id"])
+                try:
+                    current_attributes = set()
+                    record_attribute = {}
+                    for document_attribute in document["attributesList"]:
+                        attribute_name = document_attribute["key"].replace(" ", "")
+                        if attribute_name in selectedColumns or keep_all_columns:
+                            original_attribute_name = attribute_name
+                            i = 2
+                            while attribute_name in current_attributes:
+                                ## add a number to the end of the attribute so it (and its subattributes)
+                                ## is differentiable from other instances of the attribute
+                                attribute_name = f"{original_attribute_name}_{i}"
+                                i += 1
+                            current_attributes.add(attribute_name)
+                            if attribute_name not in attributes:
+                                attributes.append(attribute_name)
+                            record_attribute[attribute_name] = document_attribute[
+                                "value"
+                            ]
+                            ## add subattributes
+                            if document_attribute.get("subattributes", None):
+                                for document_subattribute in document_attribute[
+                                    "subattributes"
+                                ]:
+                                    subattribute_name = f"{attribute_name}[{document_subattribute['key']}]"
+                                    record_attribute[
+                                        subattribute_name
+                                    ] = document_subattribute["value"]
+                                    if subattribute_name not in subattributes:
+                                        subattributes.append(subattribute_name)
+                    record_attribute["file"] = document.get("filename", "")
+                    record_attributes.append(record_attribute)
+                except Exception as e:
+                    _log.info(f"unable to add {document_id}: {e}")
 
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
@@ -1281,13 +1286,17 @@ class DataManager:
                 writer.writerows(record_attributes)
         else:
             for document in records:
-                record_attribute = {}
-                for document_attribute in document["attributesList"]:
-                    attribute_name = document_attribute["key"]
-                    if attribute_name in selectedColumns or keep_all_columns:
-                        record_attribute[attribute_name] = document_attribute
-                record_attribute["file"] = document.get("filename", "")
-                record_attributes.append(record_attribute)
+                document_id = str(document["_id"])
+                try:
+                    record_attribute = {}
+                    for document_attribute in document["attributesList"]:
+                        attribute_name = document_attribute["key"]
+                        if attribute_name in selectedColumns or keep_all_columns:
+                            record_attribute[attribute_name] = document_attribute
+                    record_attribute["file"] = document.get("filename", "")
+                    record_attributes.append(record_attribute)
+                except Exception as e:
+                    _log.info(f"unable to add {document_id}: {e}")
             with open(output_file, "w", newline="") as jsonfile:
                 json.dump(record_attributes, jsonfile)
 
