@@ -766,40 +766,40 @@ async def download_records(
         raise HTTPException(
             status_code=400, detail=f"Location must be project, record_group, or team"
         )
+    try:
+        filepaths = []
+        if export_csv:
+            csv_file = data_manager.downloadRecords(
+                records,
+                "csv",
+                user_info,
+                _id,
+                location,
+                selectedColumns=selectedColumns,
+                keep_all_columns=keep_all_columns,
+                output_filename=output_name,
+            )
+            filepaths.append(csv_file)
+        if export_json:
+            json_file = data_manager.downloadRecords(
+                records,
+                "json",
+                user_info,
+                _id,
+                location,
+                selectedColumns=selectedColumns,
+                keep_all_columns=keep_all_columns,
+                output_filename=output_name,
+            )
+            filepaths.append(json_file)
 
-    filepaths = []
-    if export_csv:
-        csv_file = data_manager.downloadRecords(
-            records,
-            "csv",
-            user_info,
-            _id,
-            location,
-            selectedColumns=selectedColumns,
-            keep_all_columns=keep_all_columns,
-            output_filename=output_name,
-        )
-        filepaths.append(csv_file)
-    if export_json:
-        json_file = data_manager.downloadRecords(
-            records,
-            "json",
-            user_info,
-            _id,
-            location,
-            selectedColumns=selectedColumns,
-            keep_all_columns=keep_all_columns,
-            output_filename=output_name,
-        )
-        filepaths.append(json_file)
-
-    ## TODO: add function for streaming images to zip for user
-    if export_images:
-        documents = util.compileDocumentImageList(records)
-    else:
-        documents = None
-    zipped_files = util.zip_files(filepaths, documents)
-
+        if export_images:
+            documents = util.compileDocumentImageList(records)
+        else:
+            documents = None
+        zipped_files = util.zip_files(filepaths, documents)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=30)
     return Response(content=zipped_files, media_type="application/zip")
