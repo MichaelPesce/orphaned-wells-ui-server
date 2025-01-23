@@ -725,6 +725,7 @@ async def download_records(
     export_csv: bool = True,
     export_json: bool = False,
     export_images: bool = False,
+    output_name: str = None,
     user_info: dict = Depends(authenticate),
 ):
     """Download records for given project ID.
@@ -776,6 +777,7 @@ async def download_records(
             location,
             selectedColumns=selectedColumns,
             keep_all_columns=keep_all_columns,
+            output_filename=output_name,
         )
         filepaths.append(csv_file)
     if export_json:
@@ -787,6 +789,7 @@ async def download_records(
             location,
             selectedColumns=selectedColumns,
             keep_all_columns=keep_all_columns,
+            output_filename=output_name,
         )
         filepaths.append(json_file)
 

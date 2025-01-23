@@ -1228,12 +1228,16 @@ class DataManager:
         location,
         selectedColumns=[],
         keep_all_columns=False,
+        output_filename=None,
     ):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
         today = time.time()
         output_dir = self.app_settings.export_dir
-        output_file = os.path.join(output_dir, f"{_id}_{today}.{exportType}")
+        if output_filename is None:
+            output_file = os.path.join(output_dir, f"{_id}_{today}.{exportType}")
+        else:
+            output_file = f"{output_filename}.{exportType}"
         attributes = ["file"]
         subattributes = []
         record_attributes = []
