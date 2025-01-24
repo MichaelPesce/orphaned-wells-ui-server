@@ -999,7 +999,7 @@ class DataManager:
                 "lastUpdated": time.time(),
                 "replies": [],
                 "isReply": isReply,
-                "lastUpdatedUser": user
+                "lastUpdatedUser": user,
             }
             if isReply:
                 replyToIndex = data["replyToIndex"]
