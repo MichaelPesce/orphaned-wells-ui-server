@@ -999,6 +999,7 @@ class DataManager:
                 "lastUpdated": time.time(),
                 "replies": [],
                 "isReply": isReply,
+                "lastUpdatedUser": user,
             }
             if isReply:
                 replyToIndex = data["replyToIndex"]
@@ -1024,6 +1025,7 @@ class DataManager:
                 "$set": {
                     f"record_notes.{index}.text": updatedText,
                     f"record_notes.{index}.lastUpdated": time.time(),
+                    f"record_notes.{index}.lastUpdatedUser": user,
                 }
             }
             updates.append(update)
@@ -1032,6 +1034,7 @@ class DataManager:
                 "$set": {
                     f"record_notes.{index}.deleted": True,
                     f"record_notes.{index}.lastUpdated": time.time(),
+                    f"record_notes.{index}.lastUpdatedUser": user,
                 }
             }
             updates.append(update)
@@ -1043,6 +1046,7 @@ class DataManager:
                 "$set": {
                     f"record_notes.{index}.resolved": new_resolve_value,
                     f"record_notes.{index}.lastUpdated": time.time(),
+                    f"record_notes.{index}.lastUpdatedUser": user,
                 }
             }
             updates.append(update)
