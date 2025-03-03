@@ -897,7 +897,7 @@ class DataManager:
         self.updateRecord(record_id, new_data, "record", user_info)
 
     def updateRecord(
-        self, record_id, new_data, update_type=None, user_info=None, forceUpdate=False
+        self, record_id, new_data, update_type=None, field_to_clean = None, user_info=None, forceUpdate=False
     ):
         # _log.info(f"updating {record_id} to be {new_data}")
         attained_lock = False
@@ -917,6 +917,19 @@ class DataManager:
                 update_query = {"$set": data_update}
             else:
                 data_update = {update_type: new_data.get(update_type, None)}
+
+                ## call cleaning functions
+                if field_to_clean:
+                    topLevelIndex = field_to_clean["topLevelIndex"]
+                    isSubattribute = field_to_clean.get("isSubattribute", False)
+                    if isSubattribute:
+                        subIndex = field_to_clean["subIndex"]
+                        attributeToClean = new_data["attributesList"][topLevelIndex]["subattributes"][subIndex]
+                    else:
+                        attributeToClean = new_data["attributesList"][topLevelIndex]
+                    # print(attributeToClean)
+                    ##TODO: call proper cleaning function here
+
                 if (
                     update_type == "attributesList"
                     and new_data.get("review_status", None) == "unreviewed"
