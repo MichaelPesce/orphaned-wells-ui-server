@@ -160,3 +160,10 @@ def zip_files(file_paths, documents=None):
     zip_buffer.close()
 
     return zip_bytes
+
+def searchRecordForAttributeErrors(document):
+    attributes = document.get("attributesList", [])
+    for attribute in attributes:
+        if attribute.get("cleaning_error", False):
+            return True
+    return False

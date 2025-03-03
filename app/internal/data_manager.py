@@ -431,7 +431,7 @@ class DataManager:
         return record_groups_list
 
     def fetchRecords(
-        self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None
+        self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None, search_for_errors=True
     ):
         records = []
         record_index = 1
@@ -453,6 +453,8 @@ class DataManager:
         for document in cursor:
             document["_id"] = str(document["_id"])
             document["recordIndex"] = record_index
+            if search_for_errors:
+                document["has_errors"] = util.searchRecordForAttributeErrors(document)
             record_index += 1
             records.append(document)
         record_count = self.db.records.count_documents(filter_by)
@@ -897,7 +899,13 @@ class DataManager:
         self.updateRecord(record_id, new_data, "record", user_info)
 
     def updateRecord(
-        self, record_id, new_data, update_type=None, field_to_clean = None, user_info=None, forceUpdate=False
+        self,
+        record_id,
+        new_data,
+        update_type=None,
+        field_to_clean=None,
+        user_info=None,
+        forceUpdate=False,
     ):
         # _log.info(f"updating {record_id} to be {new_data}")
         attained_lock = False
@@ -924,7 +932,9 @@ class DataManager:
                     isSubattribute = field_to_clean.get("isSubattribute", False)
                     if isSubattribute:
                         subIndex = field_to_clean["subIndex"]
-                        attributeToClean = new_data["attributesList"][topLevelIndex]["subattributes"][subIndex]
+                        attributeToClean = new_data["attributesList"][topLevelIndex][
+                            "subattributes"
+                        ][subIndex]
                     else:
                         attributeToClean = new_data["attributesList"][topLevelIndex]
                     # print(attributeToClean)
