@@ -173,6 +173,7 @@ def zip_files(file_paths, documents=None):
 
     return zip_bytes
 
+
 def searchRecordForAttributeErrors(document):
     attributes = document.get("attributesList", [])
     for attribute in attributes:
@@ -180,12 +181,14 @@ def searchRecordForAttributeErrors(document):
             return True
     return False
 
+
 def convert_processor_attributes_to_dict(attributes):
     attributes_dict = {}
     for attr in attributes:
         key = attr["name"]
         attributes_dict[key] = attr
     return attributes_dict
+
 
 def cleanRecordAttribute(processor_attributes, attribute):
     attribute_key = attribute["key"]

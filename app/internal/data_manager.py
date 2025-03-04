@@ -431,7 +431,12 @@ class DataManager:
         return record_groups_list
 
     def fetchRecords(
-        self, sort_by=["dateCreated", 1], filter_by={}, page=None, records_per_page=None, search_for_errors=True
+        self,
+        sort_by=["dateCreated", 1],
+        filter_by={},
+        page=None,
+        records_per_page=None,
+        search_for_errors=True,
     ):
         records = []
         record_index = 1
@@ -775,7 +780,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None
-        
+
     def getProcessorByRecordID(self, record_id):
         _id = ObjectId(record_id)
         try:
@@ -1444,7 +1449,7 @@ class DataManager:
             self.db.history.insert_one(history_item)
         except Exception as e:
             _log.error(f"unable to record history item: {e}")
-    
+
     def cleanAttribute(self, attribute, record_id=None, rg_id=None):
         if record_id is None and rg_id is None:
             return None
@@ -1452,12 +1457,14 @@ class DataManager:
             _, processor_attributes = self.getProcessorByRecordGroupID(record_id)
         else:
             _, processor_attributes = self.getProcessorByRecordID(record_id)
-        
+
         ## convert processor attributes to dict
-        processor_attributes = util.convert_processor_attributes_to_dict(processor_attributes)
-        util.cleanRecordAttribute(processor_attributes=processor_attributes, attribute=attribute)
-
-
+        processor_attributes = util.convert_processor_attributes_to_dict(
+            processor_attributes
+        )
+        util.cleanRecordAttribute(
+            processor_attributes=processor_attributes, attribute=attribute
+        )
 
 
 data_manager = DataManager()
