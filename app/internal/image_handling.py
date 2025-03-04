@@ -79,6 +79,7 @@ async def process_single_file(
     file_ext,
     filename,
     data_manager,
+
 ):
     mime_type = file.content_type
     ## read document file
@@ -113,6 +114,7 @@ def process_document(
     mime_type,
     content,
     reprocessed=False,
+    run_cleaning_functions=True,
 ):
     if file_ext == ".tif" or file_ext == ".tiff":
         output_paths = convert_tiff(
@@ -180,6 +182,7 @@ def process_document(
         image_content=content,
         reprocessed=reprocessed,
         files_to_delete=files_to_delete,
+        run_cleaning_functions=run_cleaning_functions,
     )
     return {"record_id": new_record_id}
 
@@ -263,7 +266,10 @@ def process_image(
     image_content,
     reprocessed=False,
     files_to_delete=[],
+    run_cleaning_functions=True,
 ):
+    if run_cleaning_functions:
+        prcoessor_attributes_dictionary = util.convert_processor_attributes_to_dict(processor_attributes)
     if processor_id is None:
         _log.info(
             f"processor id is none, rolling with default processor: {PROCESSOR_ID}"
@@ -393,8 +399,7 @@ def process_image(
         found_attributes[original_attribute] = this_attributes_indexes
         # found_attributes[original_attribute] = found_attributes.get(original_attribute, []).append(len(attributesList))
 
-        attributesList.append(
-            {
+        new_attribute = {
                 "key": original_attribute,
                 "ai_confidence": confidence,
                 "confidence": confidence,
@@ -408,7 +413,11 @@ def process_image(
                 "edited": False,
                 "page": page,
             }
-        )
+        if run_cleaning_functions:
+            _log.info(f"running cleaning functions")
+            util.cleanRecordAttribute(processor_attributes=prcoessor_attributes_dictionary, attribute=new_attribute)
+        
+        attributesList.append(new_attribute)
 
     ## sort attributes and add attributes that weren't found:
     sortedAttributesList = []

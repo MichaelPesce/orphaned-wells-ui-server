@@ -517,6 +517,10 @@ async def upload_document(
     if not project_is_valid:
         raise HTTPException(404, detail=f"Project not found")
     filename, file_ext = os.path.splitext(file.filename)
+
+    ##TODO: provide boolean for run_cleaning_functions for frontend. for now, make this true
+    run_cleaning_functions = True
+    
     if file_ext.lower() == ".zip":
         output_dir = f"{data_manager.app_settings.img_dir}"
         return process_zip(
@@ -547,6 +551,7 @@ async def upload_document(
                 mime_type,
                 content,
                 reprocessed=reprocessed,
+                run_cleaning_functions=run_cleaning_functions,
             )
         except Exception as e:
             _log.error(f"unable to read image file: {e}")
