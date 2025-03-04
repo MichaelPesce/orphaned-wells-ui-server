@@ -775,6 +775,17 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None
+        
+    def getProcessorByRecordID(self, record_id):
+        _id = ObjectId(record_id)
+        try:
+            cursor = self.db.records.find({"_id": _id})
+            document = cursor.next()
+            rg_id = document["record_group_id"]
+            return self.getProcessorByRecordGroupID(rg_id)
+        except Exception as e:
+            _log.error(f"unable to find processor id: {e}")
+            return None
 
     ## create/add functions
     def createProject(self, project_info, user_info):
@@ -938,7 +949,7 @@ class DataManager:
                     else:
                         attributeToClean = new_data["attributesList"][topLevelIndex]
                     # print(attributeToClean)
-                    ##TODO: call proper cleaning function here
+                    self.cleanAttribute(attributeToClean, record_id=record_id)
 
                 if (
                     update_type == "attributesList"
@@ -1433,6 +1444,20 @@ class DataManager:
             self.db.history.insert_one(history_item)
         except Exception as e:
             _log.error(f"unable to record history item: {e}")
+    
+    def cleanAttribute(self, attribute, record_id=None, rg_id=None):
+        if record_id is None and rg_id is None:
+            return None
+        if rg_id is not None:
+            _, processor_attributes = self.getProcessorByRecordGroupID(record_id)
+        else:
+            _, processor_attributes = self.getProcessorByRecordID(record_id)
+        
+        ## convert processor attributes to dict
+        processor_attributes = util.convert_processor_attributes_to_dict(processor_attributes)
+        util.cleanRecordAttribute(processor_attributes=processor_attributes, attribute=attribute)
+
+
 
 
 data_manager = DataManager()

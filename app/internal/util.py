@@ -8,6 +8,18 @@ import datetime
 import sys
 import requests
 
+import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
+
+CLEANING_FUNCTIONS = {
+    "clean_bool": OGRRE_cleaning_functions.clean_bool,
+    "string_to_int": OGRRE_cleaning_functions.string_to_int,
+    "string_to_float": OGRRE_cleaning_functions.string_to_float,
+    "string_to_date": OGRRE_cleaning_functions.string_to_date,
+    "clean_date": OGRRE_cleaning_functions.clean_date,
+    "convert_hole_size_to_decimal": OGRRE_cleaning_functions.convert_hole_size_to_decimal,
+    "llm_clean": OGRRE_cleaning_functions.llm_clean,
+}
+
 _log = logging.getLogger(__name__)
 DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
@@ -166,4 +178,45 @@ def searchRecordForAttributeErrors(document):
     for attribute in attributes:
         if attribute.get("cleaning_error", False):
             return True
+    return False
+
+def convert_processor_attributes_to_dict(attributes):
+    attributes_dict = {}
+    for attr in attributes:
+        key = attr["name"]
+        attributes_dict[key] = attr
+    return attributes_dict
+
+def cleanRecordAttribute(processor_attributes, attribute):
+    attribute_key = attribute["key"]
+    unclean_val = attribute["value"]
+
+    attribute_schema = processor_attributes.get(attribute_key)
+    if attribute_schema:
+        cleaning_function_name = attribute_schema.get("cleaning_function")
+        if cleaning_function_name == "" or cleaning_function_name is None:
+            print(f"cleaning_function for {attribute_key} is empty string or none")
+            attribute["cleaned"] = False
+            return False
+        cleaning_function = CLEANING_FUNCTIONS.get(cleaning_function_name)
+        if cleaning_function:
+            try:
+                cleaned_val = cleaning_function(unclean_val)
+                print(f"CLEANED: {unclean_val} : {cleaned_val}")
+                ##TODO: we lose the unclean_val. this may not matter
+                attribute["value"] = cleaned_val
+                attribute["normalized_value"] = cleaned_val
+                attribute["uncleaned_value"] = unclean_val
+                attribute["cleaned"] = True
+                attribute["cleaning_error"] = False
+                attribute["last_cleaned"] = time.time()
+                return True
+            except Exception as e:
+                print(f"unable to clean {attribute_key}: {e}")
+                attribute["cleaning_error"] = f"{e}"
+                attribute["cleaned"] = False
+        else:
+            print(f"no cleaning function with name: {cleaning_function_name}")
+    else:
+        print(f"no schema found for {attribute_key}")
     return False
