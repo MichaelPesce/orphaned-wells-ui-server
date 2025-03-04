@@ -223,9 +223,12 @@ def cleanRecordAttribute(processor_attributes, attribute):
         _log.info(f"no schema found for {attribute_key}")
     return False
 
+
 def cleanRecords(processor_attributes, documents):
     for doc in documents:
         attributes_list = doc["attributesList"]
         for attr in attributes_list:
-            cleanRecordAttribute(processor_attributes=processor_attributes, attribute=attr)
+            cleanRecordAttribute(
+                processor_attributes=processor_attributes, attribute=attr
+            )
     return documents

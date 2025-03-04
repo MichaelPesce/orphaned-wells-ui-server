@@ -825,7 +825,9 @@ async def get_users(user_info: dict = Depends(authenticate)):
 
 
 @router.post("/run_cleaning_functions/{location}/{_id}")
-async def run_cleaning_functions(location: str, _id: str, user_info: dict = Depends(authenticate)):
+async def run_cleaning_functions(
+    location: str, _id: str, user_info: dict = Depends(authenticate)
+):
     """Run cleaning functions on project (not supported yet), record group, or recorde.
 
     Args:
@@ -838,9 +840,9 @@ async def run_cleaning_functions(location: str, _id: str, user_info: dict = Depe
             403,
             detail=f"You are not authorized to run cleaning functions. Please contact a team lead or project manager.",
         )
-    
+
     data_manager.cleanCollection(location, _id)
-    
+
     return _id
 
 

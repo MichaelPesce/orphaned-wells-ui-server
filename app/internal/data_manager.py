@@ -1507,15 +1507,19 @@ class DataManager:
             else:
                 _log.error(f"clean {location} is not supported")
                 return False
-            
+
             ## convert processor attributes to dict
             processor_attributes = util.convert_processor_attributes_to_dict(
                 processor_attributes
             )
-            util.cleanRecords(processor_attributes=processor_attributes, documents=documents)
+            util.cleanRecords(
+                processor_attributes=processor_attributes, documents=documents
+            )
             update_ops = []
             for document in documents:
-                update_ops.append(UpdateOne({"_id": document["_id"]}, {"$set": document}))
+                update_ops.append(
+                    UpdateOne({"_id": document["_id"]}, {"$set": document})
+                )
             _log.info(f"updateOps length {len(update_ops)}")
             self.db.records.bulk_write(update_ops)
         except Exception as e:
