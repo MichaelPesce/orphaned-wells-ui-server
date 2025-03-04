@@ -357,7 +357,7 @@ class DataManager:
             record_groups += project.get("record_groups", [])
         return record_groups
 
-    def getRecordGroupProgress(self, rg_id, check_for_errors = True):
+    def getRecordGroupProgress(self, rg_id, check_for_errors=True):
         ## get total records count
         query = {"record_group_id": rg_id}
         total_amt = self.db.records.count_documents(query)
@@ -376,12 +376,12 @@ class DataManager:
                     "record_group_id": rg_id,
                     "attributesList": {
                         "$elemMatch": {
-                        "$and": [
-                            { "cleaning_error": { "$ne": False } },
-                            { "cleaning_error": { "$exists": True } }
-                        ]
+                            "$and": [
+                                {"cleaning_error": {"$ne": False}},
+                                {"cleaning_error": {"$exists": True}},
+                            ]
                         }
-                    }
+                    },
                 }
                 error_amt = self.db.records.count_documents(query)
             except Exception as e:
@@ -543,7 +543,7 @@ class DataManager:
             (
                 document["total_amt"],
                 document["reviewed_amt"],
-                document["error_amt"]
+                document["error_amt"],
             ) = self.getRecordGroupProgress(document["_id"])
             record_groups.append(document)
         return {"project": project, "record_groups": record_groups}
