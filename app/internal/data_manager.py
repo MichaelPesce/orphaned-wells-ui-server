@@ -7,7 +7,7 @@ import traceback
 import re
 
 from bson import ObjectId
-from pymongo import ASCENDING, DESCENDING
+from pymongo import ASCENDING, DESCENDING, UpdateOne
 
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
@@ -1477,7 +1477,7 @@ class DataManager:
         if record_id is None and rg_id is None:
             return None
         if rg_id is not None:
-            _, processor_attributes = self.getProcessorByRecordGroupID(record_id)
+            _, processor_attributes = self.getProcessorByRecordGroupID(rg_id)
         else:
             _, processor_attributes = self.getProcessorByRecordID(record_id)
 
@@ -1488,6 +1488,38 @@ class DataManager:
         util.cleanRecordAttribute(
             processor_attributes=processor_attributes, attribute=attribute
         )
+
+    def cleanCollection(self, location, _id):
+        documents = []
+        try:
+            if location == "record":
+                _log.info(f"cleaning record {_id}")
+                _, processor_attributes = self.getProcessorByRecordID(_id)
+                object_id = ObjectId(_id)
+                query = {"_id": object_id}
+                documents.append(self.db.records.find(query).next())
+            elif location == "record_group":
+                _log.info(f"cleaning record group {_id}")
+                _, processor_attributes = self.getProcessorByRecordGroupID(_id)
+                cursor = self.db.records.find({"record_group_id": _id})
+                for each in cursor:
+                    documents.append(each)
+            else:
+                _log.error(f"clean {location} is not supported")
+                return False
+            
+            ## convert processor attributes to dict
+            processor_attributes = util.convert_processor_attributes_to_dict(
+                processor_attributes
+            )
+            util.cleanRecords(processor_attributes=processor_attributes, documents=documents)
+            update_ops = []
+            for document in documents:
+                update_ops.append(UpdateOne({"_id": document["_id"]}, {"$set": document}))
+            _log.info(f"updateOps length {len(update_ops)}")
+            self.db.records.bulk_write(update_ops)
+        except Exception as e:
+            _log.error(f"error on cleaning {location}: {e}")
 
 
 data_manager = DataManager()

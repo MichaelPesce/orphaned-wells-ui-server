@@ -824,6 +824,26 @@ async def get_users(user_info: dict = Depends(authenticate)):
     return users
 
 
+@router.post("/run_cleaning_functions/{location}/{_id}")
+async def run_cleaning_functions(location: str, _id: str, user_info: dict = Depends(authenticate)):
+    """Run cleaning functions on project (not supported yet), record group, or recorde.
+
+    Args:
+        location: project (not supported yet), record_group, or record
+        _id: the _id of the collection to run the cleaning functions on
+
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_system"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to run cleaning functions. Please contact a team lead or project manager.",
+        )
+    
+    data_manager.cleanCollection(location, _id)
+    
+    return _id
+
+
 ## admin functions
 @router.post("/add_user/{email}")
 async def add_user(
