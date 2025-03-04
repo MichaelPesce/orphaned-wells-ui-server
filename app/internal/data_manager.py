@@ -357,7 +357,7 @@ class DataManager:
             record_groups += project.get("record_groups", [])
         return record_groups
 
-    def getRecordGroupProgress(self, rg_id):
+    def getRecordGroupProgress(self, rg_id, check_for_errors = True):
         ## get total records count
         query = {"record_group_id": rg_id}
         total_amt = self.db.records.count_documents(query)
@@ -368,7 +368,29 @@ class DataManager:
             "review_status": {"$in": ["defective", "reviewed"]},
         }
         reviewed_amt = self.db.records.count_documents(query)
-        return total_amt, reviewed_amt
+
+        if check_for_errors:
+            try:
+                ##TODO: check if any of the records in this record group has errors
+                query = {
+                    "record_group_id": rg_id,
+                    "attributesList": {
+                        "$elemMatch": {
+                        "$and": [
+                            { "cleaning_error": { "$ne": False } },
+                            { "cleaning_error": { "$exists": True } }
+                        ]
+                        }
+                    }
+                }
+                error_amt = self.db.records.count_documents(query)
+            except Exception as e:
+                _log.info(f"unable to check for errors: {e}")
+                error_amt = 0
+        else:
+            error_amt = 0
+
+        return total_amt, reviewed_amt, error_amt
 
     def fetchTeamInfo(self, email):
         user_doc = self.db.users.find({"email": email}).next()
@@ -521,6 +543,7 @@ class DataManager:
             (
                 document["total_amt"],
                 document["reviewed_amt"],
+                document["error_amt"]
             ) = self.getRecordGroupProgress(document["_id"])
             record_groups.append(document)
         return {"project": project, "record_groups": record_groups}
