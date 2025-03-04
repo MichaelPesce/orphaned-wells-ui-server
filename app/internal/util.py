@@ -198,15 +198,14 @@ def cleanRecordAttribute(processor_attributes, attribute):
     if attribute_schema:
         cleaning_function_name = attribute_schema.get("cleaning_function")
         if cleaning_function_name == "" or cleaning_function_name is None:
-            print(f"cleaning_function for {attribute_key} is empty string or none")
+            _log.info(f"cleaning_function for {attribute_key} is empty string or none")
             attribute["cleaned"] = False
             return False
         cleaning_function = CLEANING_FUNCTIONS.get(cleaning_function_name)
         if cleaning_function:
             try:
                 cleaned_val = cleaning_function(unclean_val)
-                print(f"CLEANED: {unclean_val} : {cleaned_val}")
-                ##TODO: we lose the unclean_val. this may not matter
+                _log.info(f"CLEANED: {unclean_val} : {cleaned_val}")
                 attribute["value"] = cleaned_val
                 attribute["normalized_value"] = cleaned_val
                 attribute["uncleaned_value"] = unclean_val
@@ -215,11 +214,11 @@ def cleanRecordAttribute(processor_attributes, attribute):
                 attribute["last_cleaned"] = time.time()
                 return True
             except Exception as e:
-                print(f"unable to clean {attribute_key}: {e}")
+                _log.error(f"unable to clean {attribute_key}: {e}")
                 attribute["cleaning_error"] = f"{e}"
                 attribute["cleaned"] = False
         else:
-            print(f"no cleaning function with name: {cleaning_function_name}")
+            _log.info(f"no cleaning function with name: {cleaning_function_name}")
     else:
-        print(f"no schema found for {attribute_key}")
+        _log.info(f"no schema found for {attribute_key}")
     return False
