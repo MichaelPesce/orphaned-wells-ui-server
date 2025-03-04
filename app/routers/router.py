@@ -520,7 +520,7 @@ async def upload_document(
 
     ##TODO: provide boolean for run_cleaning_functions for frontend. for now, make this true
     run_cleaning_functions = True
-    
+
     if file_ext.lower() == ".zip":
         output_dir = f"{data_manager.app_settings.img_dir}"
         return process_zip(

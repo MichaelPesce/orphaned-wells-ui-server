@@ -79,7 +79,6 @@ async def process_single_file(
     file_ext,
     filename,
     data_manager,
-
 ):
     mime_type = file.content_type
     ## read document file
@@ -269,7 +268,9 @@ def process_image(
     run_cleaning_functions=True,
 ):
     if run_cleaning_functions:
-        prcoessor_attributes_dictionary = util.convert_processor_attributes_to_dict(processor_attributes)
+        prcoessor_attributes_dictionary = util.convert_processor_attributes_to_dict(
+            processor_attributes
+        )
     if processor_id is None:
         _log.info(
             f"processor id is none, rolling with default processor: {PROCESSOR_ID}"
@@ -400,23 +401,26 @@ def process_image(
         # found_attributes[original_attribute] = found_attributes.get(original_attribute, []).append(len(attributesList))
 
         new_attribute = {
-                "key": original_attribute,
-                "ai_confidence": confidence,
-                "confidence": confidence,
-                "raw_text": raw_text,
-                "text_value": text_value,
-                "value": value,
-                "normalized_vertices": coordinates,
-                "normalized_value": normalized_value,
-                "subattributes": subattributesList,
-                "isSubattribute": False,
-                "edited": False,
-                "page": page,
-            }
+            "key": original_attribute,
+            "ai_confidence": confidence,
+            "confidence": confidence,
+            "raw_text": raw_text,
+            "text_value": text_value,
+            "value": value,
+            "normalized_vertices": coordinates,
+            "normalized_value": normalized_value,
+            "subattributes": subattributesList,
+            "isSubattribute": False,
+            "edited": False,
+            "page": page,
+        }
         if run_cleaning_functions:
             _log.info(f"running cleaning functions")
-            util.cleanRecordAttribute(processor_attributes=prcoessor_attributes_dictionary, attribute=new_attribute)
-        
+            util.cleanRecordAttribute(
+                processor_attributes=prcoessor_attributes_dictionary,
+                attribute=new_attribute,
+            )
+
         attributesList.append(new_attribute)
 
     ## sort attributes and add attributes that weren't found:
