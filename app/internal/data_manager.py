@@ -1129,24 +1129,26 @@ class DataManager:
         record_attributes = record_data["attributesList"]
         for attribute in record_attributes:
             attribute_name = attribute["key"]
-            if attribute["normalized_value"] != "":
-                original_value = attribute["normalized_value"]
-            else:
-                original_value = attribute["raw_text"]
+            original_value = attribute["raw_text"]
             attribute["value"] = original_value
             attribute["confidence"] = attribute["ai_confidence"]
             attribute["edited"] = False
+            attribute["cleaning_error"] = False
+            attribute["uncleaned_value"] = None
+            attribute["cleaned"] = False
+            attribute["last_cleaned"] = None
             ## check for subattributes and reset those
             if attribute["subattributes"] is not None:
                 record_subattributes = attribute["subattributes"]
                 for subattribute in record_subattributes:
-                    if subattribute["normalized_value"] != "":
-                        original_value = subattribute["normalized_value"]
-                    else:
-                        original_value = subattribute["raw_text"]
+                    original_value = subattribute["raw_text"]
                     subattribute["value"] = original_value
                     subattribute["confidence"] = subattribute.get("ai_confidence", None)
                     subattribute["edited"] = False
+                    subattribute["cleaning_error"] = False
+                    subattribute["uncleaned_value"] = None
+                    subattribute["cleaned"] = False
+                    subattribute["last_cleaned"] = None
         update = {
             "review_status": "unreviewed",
             "attributesList": record_attributes,
