@@ -16,7 +16,7 @@ env:
 jobs:
 
   docker_build_and_push:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Push docker image to Docker Hub
     runs-on: ubuntu-latest
     steps:
@@ -61,7 +61,7 @@ jobs:
             labels: ${{ steps.meta.outputs.labels }}
 
   deploy_staging:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to Staging Compute Engine
     runs-on: ubuntu-latest
     needs: [ docker_build_and_push ]
