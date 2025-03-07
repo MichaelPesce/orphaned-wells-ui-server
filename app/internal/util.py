@@ -133,6 +133,7 @@ def compileDocumentImageList(records):
             "record_id": record_id,
             "record_name": record_name,
         }
+    _log.info(images)
 
     return images
 
@@ -187,25 +188,33 @@ def convert_processor_attributes_to_dict(attributes):
     for attr in attributes:
         key = attr["name"]
         attributes_dict[key] = attr
+        subattributes = attr.get("subattributes", None)
+        if subattributes:
+            for subattribute in subattributes:
+                sub_key = subattribute["name"]
+                attributes_dict[f"{key}::{sub_key}"] = subattribute
     return attributes_dict
 
 
-def cleanRecordAttribute(processor_attributes, attribute):
-    attribute_key = attribute["key"]
+def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
+    if subattributeKey:
+        attribute_key = subattributeKey
+    else:
+        attribute_key = attribute["key"]
     unclean_val = attribute["value"]
 
     attribute_schema = processor_attributes.get(attribute_key)
     if attribute_schema:
         cleaning_function_name = attribute_schema.get("cleaning_function")
         if cleaning_function_name == "" or cleaning_function_name is None:
-            _log.info(f"cleaning_function for {attribute_key} is empty string or none")
+            # _log.info(f"cleaning_function for {attribute_key} is empty string or none")
             attribute["cleaned"] = False
             return False
         cleaning_function = CLEANING_FUNCTIONS.get(cleaning_function_name)
         if cleaning_function:
             try:
                 cleaned_val = cleaning_function(unclean_val)
-                _log.debug(f"CLEANED: {unclean_val} : {cleaned_val}")
+                # _log.debug(f"CLEANED: {unclean_val} : {cleaned_val}")
                 attribute["value"] = cleaned_val
                 attribute["normalized_value"] = cleaned_val
                 attribute["uncleaned_value"] = unclean_val
@@ -219,6 +228,13 @@ def cleanRecordAttribute(processor_attributes, attribute):
                 attribute["cleaned"] = False
         else:
             _log.info(f"no cleaning function with name: {cleaning_function_name}")
+    
+    subattributes = attribute.get("subattributes", None)
+    if subattributes:
+        for subattribute in subattributes:
+            subattribute_key = f"{attribute_key}::{subattribute["key"]}"
+            cleanRecordAttribute(processor_attributes, subattribute, subattributeKey=subattribute_key)
+
     else:
         _log.info(f"no schema found for {attribute_key}")
     return False

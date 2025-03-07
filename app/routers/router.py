@@ -800,11 +800,11 @@ async def download_records(
                 output_filename=output_name,
             )
             filepaths.append(json_file)
-
         if export_images:
             documents = util.compileDocumentImageList(records)
         else:
             documents = None
+        
         zipped_files = util.zip_files(filepaths, documents)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")

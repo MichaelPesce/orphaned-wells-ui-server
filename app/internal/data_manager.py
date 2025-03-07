@@ -1487,9 +1487,18 @@ class DataManager:
         processor_attributes = util.convert_processor_attributes_to_dict(
             processor_attributes
         )
-        util.cleanRecordAttribute(
-            processor_attributes=processor_attributes, attribute=attribute
-        )
+
+        if attribute.get("isSubattribute", False):
+            parentAttribute = attribute.get("topLevelAttribute", "")
+            subattributeKey = attribute["key"]
+            subattribute_identifier = f"{parentAttribute}::{subattributeKey}"
+            util.cleanRecordAttribute(
+                processor_attributes=processor_attributes, attribute=attribute, subattributeKey=subattribute_identifier
+            )
+        else:
+            util.cleanRecordAttribute(
+                processor_attributes=processor_attributes, attribute=attribute
+            )
 
     def cleanCollection(self, location, _id):
         documents = []
