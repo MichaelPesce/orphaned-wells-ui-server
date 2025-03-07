@@ -3,7 +3,7 @@ name: Deploy Docker Image, Staging Server
 
 on:
   push:
-    branches: [main]
+    branches: [previous-merge]
 
 defaults:
   run:
