@@ -394,8 +394,8 @@ class DataManager:
                                     ]
                                 }
                             }
-                        }
-                    ]
+                        },
+                    ],
                 }
                 error_amt = self.db.records.count_documents(query)
             except Exception as e:
@@ -1507,7 +1507,9 @@ class DataManager:
             subattributeKey = attribute["key"]
             subattribute_identifier = f"{parentAttribute}::{subattributeKey}"
             util.cleanRecordAttribute(
-                processor_attributes=processor_attributes, attribute=attribute, subattributeKey=subattribute_identifier
+                processor_attributes=processor_attributes,
+                attribute=attribute,
+                subattributeKey=subattribute_identifier,
             )
         else:
             util.cleanRecordAttribute(
