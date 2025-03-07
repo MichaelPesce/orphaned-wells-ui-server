@@ -371,7 +371,6 @@ class DataManager:
 
         if check_for_errors:
             try:
-                ##TODO: check if any of the records in this record group has errors
                 query = {
                     "record_group_id": rg_id,
                     "$or": [
