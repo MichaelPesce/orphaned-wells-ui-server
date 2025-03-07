@@ -180,6 +180,11 @@ def searchRecordForAttributeErrors(document):
     for attribute in attributes:
         if attribute.get("cleaning_error", False):
             return True
+        subattributes = attribute.get("subattributes", None)
+        if subattributes:
+            for subattribute in subattributes:
+                if subattribute.get("cleaning_error", False):
+                    return True
     return False
 
 
@@ -207,14 +212,14 @@ def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
     if attribute_schema:
         cleaning_function_name = attribute_schema.get("cleaning_function")
         if cleaning_function_name == "" or cleaning_function_name is None:
-            # _log.info(f"cleaning_function for {attribute_key} is empty string or none")
+            _log.debug(f"cleaning_function for {attribute_key} is empty string or none")
             attribute["cleaned"] = False
             return False
         cleaning_function = CLEANING_FUNCTIONS.get(cleaning_function_name)
         if cleaning_function:
             try:
                 cleaned_val = cleaning_function(unclean_val)
-                # _log.debug(f"CLEANED: {unclean_val} : {cleaned_val}")
+                _log.debug(f"CLEANED: {unclean_val} : {cleaned_val}")
                 attribute["value"] = cleaned_val
                 attribute["normalized_value"] = cleaned_val
                 attribute["uncleaned_value"] = unclean_val
