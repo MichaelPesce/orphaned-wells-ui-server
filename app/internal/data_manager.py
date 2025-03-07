@@ -374,14 +374,28 @@ class DataManager:
                 ##TODO: check if any of the records in this record group has errors
                 query = {
                     "record_group_id": rg_id,
-                    "attributesList": {
-                        "$elemMatch": {
-                            "$and": [
-                                {"cleaning_error": {"$ne": False}},
-                                {"cleaning_error": {"$exists": True}},
-                            ]
+                    "$or": [
+                        {
+                            "attributesList": {
+                                "$elemMatch": {
+                                    "$and": [
+                                        {"cleaning_error": {"$ne": False}},
+                                        {"cleaning_error": {"$exists": True}},
+                                    ]
+                                }
+                            }
+                        },
+                        {
+                            "attributesList.subattributes": {
+                                "$elemMatch": {
+                                    "$and": [
+                                        {"cleaning_error": {"$ne": False}},
+                                        {"cleaning_error": {"$exists": True}},
+                                    ]
+                                }
+                            }
                         }
-                    },
+                    ]
                 }
                 error_amt = self.db.records.count_documents(query)
             except Exception as e:
