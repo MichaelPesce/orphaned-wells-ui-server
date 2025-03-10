@@ -358,6 +358,10 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
             403,
             detail=f"You do not have access to this record, please contact the project creator to gain access.",
         )
+    
+    ## get record schema
+    _, processor_attributes = data_manager.getProcessorByRecordGroupID(record["rg_id"])
+
     ## lock record if it is awaiting verification and user does not have permission to verify
     verification_status = record.get("verification_status", None)
     if (
@@ -374,8 +378,9 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
                     "direction": "next",
                     "recordData": record,
                     "lockedMessage": lockedMessage,
+                    "processor_attributes": processor_attributes
                 },
-            )
+            ) 
     if is_locked:
         return JSONResponse(
             status_code=303,
@@ -383,9 +388,10 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
                 "direction": "next",
                 "recordData": record,
                 "lockedMessage": "This record is currently being reviewed by a team member.",
+                "processor_attributes": processor_attributes
             },
         )
-    return {"recordData": record}
+    return {"recordData": record, "processor_attributes": processor_attributes}
 
 
 @router.get("/get_record_notes/{record_id}")
