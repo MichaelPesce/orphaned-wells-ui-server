@@ -361,6 +361,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
     
     ## get record schema
     _, processor_attributes = data_manager.getProcessorByRecordGroupID(record["rg_id"])
+    processor_attributes = util.convert_processor_attributes_to_dict(processor_attributes)
 
     ## lock record if it is awaiting verification and user does not have permission to verify
     verification_status = record.get("verification_status", None)
@@ -378,7 +379,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
                     "direction": "next",
                     "recordData": record,
                     "lockedMessage": lockedMessage,
-                    "processor_attributes": processor_attributes
+                    "recordSchema": processor_attributes
                 },
             ) 
     if is_locked:
@@ -388,10 +389,10 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
                 "direction": "next",
                 "recordData": record,
                 "lockedMessage": "This record is currently being reviewed by a team member.",
-                "processor_attributes": processor_attributes
+                "recordSchema": processor_attributes
             },
         )
-    return {"recordData": record, "processor_attributes": processor_attributes}
+    return {"recordData": record, "recordSchema": processor_attributes}
 
 
 @router.get("/get_record_notes/{record_id}")
