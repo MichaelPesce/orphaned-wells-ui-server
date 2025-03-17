@@ -42,7 +42,7 @@ jobs:
         id: create-service-key-json
         uses: jsdaniell/create-json@v1.2.3
         with:
-            name: "app/internal/tidy-outlet-service-key.json"
+            name: "app/internal/michael2-service-key.json"
             json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
     
       - name: Extract metadata (labels, tags, etc.) for Docker
