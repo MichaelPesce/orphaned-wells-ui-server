@@ -201,6 +201,14 @@ def convert_processor_attributes_to_dict(attributes):
     return attributes_dict
 
 
+def convert_processor_list_to_dict(processor_list):
+    processor_dict = {}
+    for each in processor_list:
+        key = each["Processor ID"]
+        processor_dict[key] = each
+    return processor_dict
+
+
 def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
     if subattributeKey:
         attribute_key = subattributeKey

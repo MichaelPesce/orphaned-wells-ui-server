@@ -26,12 +26,16 @@ class DataManager:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
         self.environment = os.getenv("ENVIRONMENT")
+        self.collaborator = os.getenv("ENVIRONMENT")
+        if self.collaborator == "dev":
+            self.collaborator = "isgs"
         _log.info(f"working in environment: {self.environment}")
 
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
-        self.processors = self.createProcessorsList()
+        self.processor_list = self.createProcessorsList()
+        self.processor_dict = util.convert_processor_list_to_dict(self.processor_list)
 
     def createProcessorsList(self):
         _log.info(f"creating processors list")
@@ -207,7 +211,6 @@ class DataManager:
         return "success"
 
     def updateUser(self, user_info):
-        # _log.info(f"updating user {user_info}")
         email = user_info.get("email", "")
         user = {
             "name": user_info.get("name", ""),
@@ -223,7 +226,6 @@ class DataManager:
         try:
             myquery = {"email": email}
             user_doc = self.db.users.find(myquery).next()
-            # team = user_doc["default_team"]
 
             user_roles = user_doc.get("roles", {})
             if role_category == "system":
@@ -281,7 +283,7 @@ class DataManager:
     def deleteUser(self, email, user_info):
         admin_email = user_info.get("email", None)
         query = {"email": email}
-        delete_response = self.db.users.delete_one(query)
+        self.db.users.delete_one(query)
         ## remove user form all teams that include him/her
         query = {"users": email}
         teams_cursor = self.db.teams.find(query)
@@ -562,7 +564,7 @@ class DataManager:
         return {"project": project, "record_groups": record_groups}
 
     def fetchColumnData(self, location, _id):
-        ##TODO: update to new processor schema
+        ##TEST: update to new processor schema
         if location == "project" or location == "team":
             columns = set()
             if location == "project":
@@ -601,20 +603,8 @@ class DataManager:
         return None
 
     def getProcessorByGoogleId(self, google_id):
-        ##TODO: update to new processor schema
-        cursor = self.db.processors.find({"processor_id": google_id})
-        for document in cursor:
-            document["_id"] = str(document["_id"])
-            return document
-        return None
-
-    def fetchProcessor(self, google_id):
-        ##TODO: update to new processor schema
-        cursor = self.db.processors.find({"id": google_id})
-        for document in cursor:
-            document["_id"] = str(document["_id"])
-            return document
-        return None
+        processor = processor_data_functions.get_processor_by_id(self.collaborator, google_id)
+        return processor
 
     def fetchProcessors(self, user, state):
         processors = []
