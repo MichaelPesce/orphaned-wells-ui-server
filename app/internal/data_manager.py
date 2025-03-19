@@ -678,7 +678,6 @@ class DataManager:
         return project_document, record_group
 
     def fetchRecordData(self, record_id, user_info):
-        ##TODO: update to new processor schema
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -746,14 +745,13 @@ class DataManager:
         ## sort record attributes
         try:
             google_id = rg["processorId"]
-            processor_doc = self.db.processors.find({"google_id": google_id}).next()
+            processor_doc = processor_data_functions.get_processor_by_id(self.collaborator, google_id)
             sorted_attributes = util.sortRecordAttributes(
                 document["attributesList"], processor_doc
             )
             document["attributesList"] = sorted_attributes
         except Exception as e:
             _log.error(f"unable to sort attributes: {e}")
-            # _log.error(traceback.format_exc())
 
         return document, not attained_lock
 
@@ -795,14 +793,12 @@ class DataManager:
         return record_id
 
     def getProcessorByRecordGroupID(self, rg_id):
-        ##TODO: update to new processor schema
         _id = ObjectId(rg_id)
         try:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
-            processor_cursor = self.db.processors.find({"google_id": google_id})
-            processor_document = processor_cursor.next()
+            processor_document = processor_data_functions.get_processor_by_id(self.collaborator, google_id)
             processor_attributes = processor_document.get("attributes", None)
             return google_id, processor_attributes
         except Exception as e:
@@ -856,7 +852,6 @@ class DataManager:
         return str(new_project_id)
 
     def createRecordGroup(self, rg_info, user_info):
-        ##TODO: update to new processor schema
         ## get user's default team
         user_email = user_info.get("email", "")
         user_document = self.getDocument("users", ({"email": user_email}))
@@ -870,10 +865,6 @@ class DataManager:
         rg_info["team"] = default_team
         rg_info["dateCreated"] = time.time()
         rg_info["settings"] = {}
-
-        ## get processor id
-        processor_document = self.getProcessorByGoogleId(rg_info["processorId"])
-        rg_info["processor_id"] = str(processor_document["_id"])
 
         ## add record group to db collection
         db_response = self.db.record_groups.insert_one(rg_info)
