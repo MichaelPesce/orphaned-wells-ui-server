@@ -133,7 +133,6 @@ def compileDocumentImageList(records):
             "record_id": record_id,
             "record_name": record_name,
         }
-    _log.info(images)
 
     return images
 
