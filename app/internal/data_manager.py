@@ -603,9 +603,7 @@ class DataManager:
         return None
 
     def getProcessorByGoogleId(self, google_id):
-        processor = processor_api.get_processor_by_id(
-            self.collaborator, google_id
-        )
+        processor = processor_api.get_processor_by_id(self.collaborator, google_id)
         return processor
 
     def fetchProcessors(self, user, state):
