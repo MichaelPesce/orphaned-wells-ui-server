@@ -3,17 +3,16 @@ import time
 import os
 import csv
 import json
-import traceback
 import re
 
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, UpdateOne
 
+import ogrre_data_cleaning.processor_schemas.processor_data as processor_data_functions
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
 from app.internal.util import generate_download_signed_url_v4
 import app.internal.util as util
-
 
 _log = logging.getLogger(__name__)
 
@@ -32,6 +31,12 @@ class DataManager:
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
+        self.processors = self.createProcessorsList()
+
+    def createProcessorsList(self):
+        _log.info(f"creating processors list")
+        processor_list = processor_data_functions.get_processor_list("isgs")
+        return processor_list
 
     ## lock functions
     def fetchLock(self, user):
@@ -272,11 +277,6 @@ class DataManager:
                     }
                 )
         return users
-
-    def removeUserFromTeam(self, user, team):
-        query = {"email": user}
-        # delete_response = self.db.users.delete_one(query)
-        return user
 
     def deleteUser(self, email, user_info):
         admin_email = user_info.get("email", None)
@@ -562,6 +562,7 @@ class DataManager:
         return {"project": project, "record_groups": record_groups}
 
     def fetchColumnData(self, location, _id):
+        ##TODO: update to new processor schema
         if location == "project" or location == "team":
             columns = set()
             if location == "project":
@@ -600,6 +601,7 @@ class DataManager:
         return None
 
     def getProcessorByGoogleId(self, google_id):
+        ##TODO: update to new processor schema
         cursor = self.db.processors.find({"processor_id": google_id})
         for document in cursor:
             document["_id"] = str(document["_id"])
@@ -607,6 +609,7 @@ class DataManager:
         return None
 
     def fetchProcessor(self, google_id):
+        ##TODO: update to new processor schema
         cursor = self.db.processors.find({"id": google_id})
         for document in cursor:
             document["_id"] = str(document["_id"])
@@ -688,6 +691,7 @@ class DataManager:
         return project_document, record_group
 
     def fetchRecordData(self, record_id, user_info):
+        ##TODO: update to new processor schema
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -804,6 +808,7 @@ class DataManager:
         return record_id
 
     def getProcessorByRecordGroupID(self, rg_id):
+        ##TODO: update to new processor schema
         _id = ObjectId(rg_id)
         try:
             cursor = self.db.record_groups.find({"_id": _id})
@@ -864,6 +869,7 @@ class DataManager:
         return str(new_project_id)
 
     def createRecordGroup(self, rg_info, user_info):
+        ##TODO: update to new processor schema
         ## get user's default team
         user_email = user_info.get("email", "")
         user_document = self.getDocument("users", ({"email": user_email}))
