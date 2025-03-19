@@ -8,7 +8,7 @@ import re
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, UpdateOne
 
-import ogrre_data_cleaning.processor_schemas.processor_data as processor_data_functions
+import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from app.internal.mongodb_connection import connectToDatabase
 from app.internal.settings import AppSettings
 from app.internal.util import generate_download_signed_url_v4
@@ -39,7 +39,7 @@ class DataManager:
 
     def createProcessorsList(self):
         _log.info(f"creating processors list")
-        processor_list = processor_data_functions.get_processor_list("isgs")
+        processor_list = processor_api.get_processor_list("isgs")
         return processor_list
 
     ## lock functions
@@ -603,7 +603,7 @@ class DataManager:
         return None
 
     def getProcessorByGoogleId(self, google_id):
-        processor = processor_data_functions.get_processor_by_id(
+        processor = processor_api.get_processor_by_id(
             self.collaborator, google_id
         )
         return processor
@@ -745,7 +745,7 @@ class DataManager:
         ## sort record attributes
         try:
             google_id = rg["processorId"]
-            processor_doc = processor_data_functions.get_processor_by_id(
+            processor_doc = processor_api.get_processor_by_id(
                 self.collaborator, google_id
             )
             sorted_attributes = util.sortRecordAttributes(
@@ -800,7 +800,7 @@ class DataManager:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
-            processor_document = processor_data_functions.get_processor_by_id(
+            processor_document = processor_api.get_processor_by_id(
                 self.collaborator, google_id
             )
             processor_attributes = processor_document.get("attributes", None)
