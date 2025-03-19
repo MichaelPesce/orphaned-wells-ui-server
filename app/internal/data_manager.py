@@ -745,7 +745,9 @@ class DataManager:
         ## sort record attributes
         try:
             google_id = rg["processorId"]
-            processor_doc = processor_data_functions.get_processor_by_id(self.collaborator, google_id)
+            processor_doc = processor_data_functions.get_processor_by_id(
+                self.collaborator, google_id
+            )
             sorted_attributes = util.sortRecordAttributes(
                 document["attributesList"], processor_doc
             )
@@ -798,7 +800,9 @@ class DataManager:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
-            processor_document = processor_data_functions.get_processor_by_id(self.collaborator, google_id)
+            processor_document = processor_data_functions.get_processor_by_id(
+                self.collaborator, google_id
+            )
             processor_attributes = processor_document.get("attributes", None)
             return google_id, processor_attributes
         except Exception as e:
