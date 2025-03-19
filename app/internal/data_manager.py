@@ -607,12 +607,7 @@ class DataManager:
         return processor
 
     def fetchProcessors(self, user, state):
-        processors = []
-        cursor = self.db.processors.find({"state": state})
-        for document in cursor:
-            document["_id"] = str(document["_id"])
-            processors.append(document)
-        return processors
+        return self.processor_list
 
     def fetchRoles(self, role_category):
         roles = []
