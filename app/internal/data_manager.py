@@ -18,6 +18,7 @@ _log = logging.getLogger(__name__)
 
 COLLABORATORS = ["isgs", "calgem"]
 
+
 class DataManager:
     """Manage the active data."""
 
