@@ -16,6 +16,7 @@ import app.internal.util as util
 
 _log = logging.getLogger(__name__)
 
+COLLABORATORS = ["isgs", "calgem"]
 
 class DataManager:
     """Manage the active data."""
@@ -27,7 +28,7 @@ class DataManager:
         self.db = connectToDatabase()
         self.environment = os.getenv("ENVIRONMENT")
         self.collaborator = os.getenv("ENVIRONMENT")
-        if self.collaborator == "dev":
+        if self.collaborator.lower() not in COLLABORATORS:
             self.collaborator = "isgs"
         _log.info(f"working in environment: {self.environment}")
 
