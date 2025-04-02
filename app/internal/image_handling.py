@@ -430,7 +430,9 @@ def process_image(
             indexes = found_attributes[attr]
             for idx in indexes:
                 sortedAttributesList.append(attributesList[idx])
-        elif "::" not in attr: ## :: indicates it is a subattribute. these are handled by parent attribut
+        elif (
+            "::" not in attr
+        ):  ## :: indicates it is a subattribute. these are handled by parent attribut
             sortedAttributesList.append(
                 {
                     "key": attr,
