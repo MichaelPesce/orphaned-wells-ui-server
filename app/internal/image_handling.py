@@ -428,11 +428,11 @@ def process_image(
         processor_attributes_list.append(attr)
         if attr in found_attributes:
             indexes = found_attributes[attr]
-            # if len(indexes) > 1:
-            #     print(f"found multiple for {attr}")
             for idx in indexes:
                 sortedAttributesList.append(attributesList[idx])
-        else:
+        elif (
+            "::" not in attr
+        ):  ## :: indicates it is a subattribute. these are handled by parent attribut
             sortedAttributesList.append(
                 {
                     "key": attr,
