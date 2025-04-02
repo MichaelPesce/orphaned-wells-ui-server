@@ -241,13 +241,13 @@ def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
         else:
             _log.info(f"no cleaning function with name: {cleaning_function_name}")
 
-    subattributes = attribute.get("subattributes", None)
-    if subattributes:
-        for subattribute in subattributes:
-            subattribute_key = f"{attribute_key}::{subattribute['key']}"
-            cleanRecordAttribute(
-                processor_attributes, subattribute, subattributeKey=subattribute_key
-            )
+        subattributes = attribute.get("subattributes", None)
+        if subattributes:
+            for subattribute in subattributes:
+                subattribute_key = f"{attribute_key}::{subattribute['key']}"
+                cleanRecordAttribute(
+                    processor_attributes, subattribute, subattributeKey=subattribute_key
+                )
 
     else:
         _log.info(f"no schema found for {attribute_key}")
