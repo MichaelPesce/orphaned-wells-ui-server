@@ -515,7 +515,7 @@ def deployProcessor(rg_id, data_manager):
         PROJECT_ID, LOCATION, processor_id, model_id
     )
 
-    _log.info(f"attempting to deploy processor model: {model_id}")
+    _log.debug(f"attempting to deploy processor model: {model_id}")
     start_time = time.time()
     deployment = deploy_processor_version(RESOURCE_NAME)
     if deployment != "DEPLOYED":
@@ -525,12 +525,12 @@ def deployProcessor(rg_id, data_manager):
         )
         return False
     finish_time = time.time()
-    _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
+    _log.debug(f"took {finish_time-start_time} seconds to DEPLOY")
     return True
 
 
 def undeployProcessor(rg_id, data_manager):
-    _log.info(f"attempting to deploy processor for record group {rg_id}")
+    _log.debug(f"attempting to deploy processor for record group {rg_id}")
     ## fetch processor id
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
 
@@ -540,7 +540,7 @@ def undeployProcessor(rg_id, data_manager):
     start_time = time.time()
     undeploy_processor_version(RESOURCE_NAME)
     finish_time = time.time()
-    _log.info(f"took {finish_time-start_time} seconds to undeploy")
+    _log.debug(f"took {finish_time-start_time} seconds to undeploy")
     return True
 
 
