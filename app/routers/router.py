@@ -17,7 +17,13 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import OAuth2PasswordBearer
 
 from app.internal.data_manager import data_manager
-from app.internal.image_handling import process_document, process_zip, deployProcessor, undeployProcessor, check_if_processor_is_deployed
+from app.internal.image_handling import (
+    process_document,
+    process_zip,
+    deployProcessor,
+    undeployProcessor,
+    check_if_processor_is_deployed,
+)
 import app.internal.util as util
 import app.internal.auth as auth
 
@@ -360,7 +366,9 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         )
 
     ## get record schema
-    _, _, processor_attributes = data_manager.getProcessorByRecordGroupID(record["rg_id"])
+    _, _, processor_attributes = data_manager.getProcessorByRecordGroupID(
+        record["rg_id"]
+    )
     processor_attributes = util.convert_processor_attributes_to_dict(
         processor_attributes
     )
@@ -498,7 +506,7 @@ async def upload_document(
     reprocessed: bool = False,
     preventDuplicates: bool = False,
     run_cleaning_functions: bool = True,
-    undeployProcessor: bool = True
+    undeployProcessor: bool = True,
 ):
     """Upload document for processing. Documents are processed asynchronously.
 
@@ -560,7 +568,7 @@ async def upload_document(
                 content,
                 reprocessed=reprocessed,
                 run_cleaning_functions=run_cleaning_functions,
-                undeployProcessor=undeployProcessor
+                undeployProcessor=undeployProcessor,
             )
         except Exception as e:
             _log.error(f"unable to read image file: {e}")
@@ -569,7 +577,9 @@ async def upload_document(
 
 @router.post("/deploy_processor/{rg_id}")
 async def deploy_processor(
-    rg_id: str, background_tasks: BackgroundTasks, user_info: dict = Depends(authenticate),
+    rg_id: str,
+    background_tasks: BackgroundTasks,
+    user_info: dict = Depends(authenticate),
 ):
     """Deploy processor model.
 
@@ -586,17 +596,17 @@ async def deploy_processor(
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        background_tasks.add_task(deployProcessor, rg_id=rg_id, data_manager=data_manager)
+        background_tasks.add_task(
+            deployProcessor, rg_id=rg_id, data_manager=data_manager
+        )
         return 2
     except Exception as e:
         _log.error(f"unable to deploy processor: {e}")
         return 3
-    
+
 
 @router.post("/undeploy_processor/{rg_id}")
-async def undeploy_processor(
-    rg_id: str, user_info: dict = Depends(authenticate)
-):
+async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)):
     """Undeploy processor model.
 
     Args:
@@ -620,7 +630,7 @@ async def undeploy_processor(
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
         return 10
-    
+
 
 @router.get("/check_processor_status/{rg_id}")
 async def check_processor_status(rg_id: str):

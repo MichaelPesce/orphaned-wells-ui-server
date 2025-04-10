@@ -17,7 +17,10 @@ import mimetypes
 
 from app.internal.bulk_upload import upload_documents_from_directory
 import app.internal.util as util
-from app.internal.google_processor_manager import deploy_processor_version, undeploy_processor_version
+from app.internal.google_processor_manager import (
+    deploy_processor_version,
+    undeploy_processor_version,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -154,7 +157,11 @@ def process_document(
     new_record_id = data_manager.createRecord(new_record, user_info)
 
     ## fetch processor id
-    processor_id, model_id, processor_attributes = data_manager.getProcessorByRecordGroupID(rg_id)
+    (
+        processor_id,
+        model_id,
+        processor_attributes,
+    ) = data_manager.getProcessorByRecordGroupID(rg_id)
 
     ## upload to cloud storage
     for output_path in output_paths:
@@ -282,7 +289,6 @@ def process_image(
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
-    
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
     try:
@@ -504,7 +510,7 @@ def process_image(
 def deployProcessor(rg_id, data_manager):
     ## fetch processor id
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
-    
+
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
@@ -514,7 +520,9 @@ def deployProcessor(rg_id, data_manager):
     deployment = deploy_processor_version(RESOURCE_NAME)
     if deployment != "DEPLOYED":
         finish_time = time.time()
-        _log.error(f"we have an issue, deployment failed. took {finish_time-start_time} seconds to fail deploy")
+        _log.error(
+            f"we have an issue, deployment failed. took {finish_time-start_time} seconds to fail deploy"
+        )
         return False
     finish_time = time.time()
     _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
@@ -525,7 +533,7 @@ def undeployProcessor(rg_id, data_manager):
     _log.info(f"attempting to deploy processor for record group {rg_id}")
     ## fetch processor id
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
-    
+
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
@@ -539,7 +547,7 @@ def undeployProcessor(rg_id, data_manager):
 def check_if_processor_is_deployed(rg_id, data_manager):
     try:
         processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
-        
+
         opts = ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
         client = documentai.DocumentProcessorServiceClient(client_options=opts)
         parent = client.processor_path(PROJECT_ID, LOCATION, processor_id)
@@ -551,7 +559,9 @@ def check_if_processor_is_deployed(rg_id, data_manager):
             processor_version_id = client.parse_processor_version_path(
                 processor_version.name
             )["processor_version"]
-            if processor_version_id == model_id: ## processor states: 1=deployed, 2=deploying, 3=undeployed
+            if (
+                processor_version_id == model_id
+            ):  ## processor states: 1=deployed, 2=deploying, 3=undeployed
                 _log.debug(f"processor state == {processor_version.state}")
                 return processor_version.state
         _log.error(f"unable to find model id: {model_id}")
@@ -559,7 +569,6 @@ def check_if_processor_is_deployed(rg_id, data_manager):
     except Exception as e:
         print(f"unable to check processor status: {e}")
         return 10
-
 
 
 ## Google Cloud Storage Functions
