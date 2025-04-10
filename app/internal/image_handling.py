@@ -116,6 +116,7 @@ def process_document(
     content,
     reprocessed=False,
     run_cleaning_functions=True,
+    undeployProcessor=True,
 ):
     if file_ext == ".tif" or file_ext == ".tiff":
         output_paths = convert_tiff(
@@ -138,7 +139,6 @@ def process_document(
         _log.info(f"unable to parse api number")
         api_number = None
     ## add record to DB without attributes
-    print(f"original outputpath: {original_output_path}")
     new_record = {
         "record_group_id": rg_id,
         "name": filename,
@@ -153,7 +153,7 @@ def process_document(
     new_record_id = data_manager.createRecord(new_record, user_info)
 
     ## fetch processor id
-    processor_id, processor_attributes = data_manager.getProcessorByRecordGroupID(rg_id)
+    processor_id, model_id, processor_attributes = data_manager.getProcessorByRecordGroupID(rg_id)
 
     ## upload to cloud storage
     for output_path in output_paths:
@@ -184,6 +184,7 @@ def process_document(
         reprocessed=reprocessed,
         files_to_delete=files_to_delete,
         run_cleaning_functions=run_cleaning_functions,
+        undeployProcessor=undeployProcessor,
     )
     return {"record_id": new_record_id}
 
@@ -268,11 +269,14 @@ def process_image(
     reprocessed=False,
     files_to_delete=[],
     run_cleaning_functions=True,
+    undeployProcessor=True,
 ):
     if run_cleaning_functions:
         prcoessor_attributes_dictionary = util.convert_processor_attributes_to_dict(
             processor_attributes
         )
+
+    ##TODO: make sure processor is deployed
 
     RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, processor_id)
 

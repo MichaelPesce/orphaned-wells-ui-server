@@ -360,7 +360,7 @@ async def get_record_data(record_id: str, user_info: dict = Depends(authenticate
         )
 
     ## get record schema
-    _, processor_attributes = data_manager.getProcessorByRecordGroupID(record["rg_id"])
+    _, _, processor_attributes = data_manager.getProcessorByRecordGroupID(record["rg_id"])
     processor_attributes = util.convert_processor_attributes_to_dict(
         processor_attributes
     )
@@ -498,6 +498,7 @@ async def upload_document(
     reprocessed: bool = False,
     preventDuplicates: bool = False,
     run_cleaning_functions: bool = True,
+    undeployProcessor: bool = True
 ):
     """Upload document for processing. Documents are processed asynchronously.
 
@@ -508,7 +509,6 @@ async def upload_document(
     Returns:
         New document record identifier.
     """
-    _log.info(f"run_cleaning_functions is: {run_cleaning_functions}")
     user_email = user_email.lower()
     if not data_manager.hasPermission(user_email, "upload_document"):
         raise HTTPException(
@@ -560,6 +560,7 @@ async def upload_document(
                 content,
                 reprocessed=reprocessed,
                 run_cleaning_functions=run_cleaning_functions,
+                undeployProcessor=undeployProcessor
             )
         except Exception as e:
             _log.error(f"unable to read image file: {e}")
