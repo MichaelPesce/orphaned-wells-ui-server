@@ -279,20 +279,19 @@ def process_image(
             processor_attributes
         )
 
-    ## TODO: we might not want to do this here. it probably makes sense to deploy separately before attempting to process images
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
 
-    _log.info(f"attempting to deploy processor model")
-    start_time = time.time()
-    deployment = deploy_processor_version(RESOURCE_NAME)
-    if deployment != "DEPLOYED":
-        finish_time = time.time()
-        _log.error(f"we have an issued, deployment failed. took {finish_time-start_time} seconds to fail deploy")
-        return
-    finish_time = time.time()
-    _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
+    # _log.info(f"attempting to deploy processor model")
+    # start_time = time.time()
+    # deployment = deploy_processor_version(RESOURCE_NAME)
+    # if deployment != "DEPLOYED":
+    #     finish_time = time.time()
+    #     _log.error(f"we have an issued, deployment failed. took {finish_time-start_time} seconds to fail deploy")
+    #     return
+    # finish_time = time.time()
+    # _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
     
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
