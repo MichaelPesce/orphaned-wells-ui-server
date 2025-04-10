@@ -24,12 +24,10 @@ PROCESSOR_ID = os.getenv("PROCESSOR_ID")
 PROCESSOR_VERSION_ID = os.getenv("PROCESSOR_VERSION_ID")
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
-os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
 
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com"),
-    # credentials=f"{DIRNAME}/creds.json"
 )
 
 

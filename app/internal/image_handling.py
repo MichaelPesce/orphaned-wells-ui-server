@@ -1,7 +1,7 @@
 import os
 import sys
 import logging
-import datetime
+import time
 import json
 import aiofiles
 import aiohttp
@@ -17,6 +17,7 @@ import mimetypes
 
 from app.internal.bulk_upload import upload_documents_from_directory
 import app.internal.util as util
+from app.internal.google_processor_manager import deploy_processor_version, undeploy_processor_version
 
 _log = logging.getLogger(__name__)
 
@@ -178,6 +179,7 @@ def process_document(
         rg_id=rg_id,
         record_id=new_record_id,
         processor_id=processor_id,
+        model_id=model_id,
         processor_attributes=processor_attributes,
         data_manager=data_manager,
         image_content=content,
@@ -263,6 +265,7 @@ def process_image(
     rg_id,
     record_id,
     processor_id,
+    model_id,
     processor_attributes,
     data_manager,
     image_content,
@@ -276,9 +279,25 @@ def process_image(
             processor_attributes
         )
 
-    ##TODO: make sure processor is deployed
 
-    RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, processor_id)
+
+    # RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, processor_id)
+
+    ##TODO: make sure processor is deployed
+    RESOURCE_NAME = docai_client.processor_version_path(
+        PROJECT_ID, LOCATION, processor_id, model_id
+    )
+
+    _log.info(f"attempting to deploy processor model")
+    start_time = time.time()
+    deployment = deploy_processor_version(RESOURCE_NAME)
+    if deployment != "DEPLOYED":
+        finish_time = time.time()
+        _log.error(f"we have an issued, deployment failed. took {finish_time-start_time} seconds to fail deploy")
+        return
+    finish_time = time.time()
+    _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
+    
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
     try:
@@ -484,6 +503,13 @@ def process_image(
 
     ## delete local files
     util.deleteFiles(filepaths=files_to_delete, sleep_time=0)
+
+    if undeployProcessor:
+        _log.info(f"attempting to undeploy")
+        start_time = time.time()
+        undeploy_processor_version(RESOURCE_NAME)
+        finish_time = time.time()
+        _log.info(f"took {finish_time-start_time} seconds to undeploy")
 
     _log.info(f"updated record in db: {record_id}")
 
