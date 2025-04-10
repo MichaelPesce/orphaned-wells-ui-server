@@ -513,7 +513,6 @@ def process_image(
 
 
 def deploy_processor(rg_id, data_manager):
-    _log.info(f"attempting to deploy processor for record group {rg_id}")
     ## fetch processor id
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
     
@@ -541,13 +540,41 @@ def undeploy_processor(rg_id, data_manager):
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
-
-    _log.info(f"attempting to undeploy")
     start_time = time.time()
     undeploy_processor_version(RESOURCE_NAME)
     finish_time = time.time()
     _log.info(f"took {finish_time-start_time} seconds to undeploy")
     return True
+
+
+def check_if_processor_is_deployed(rg_id, data_manager):
+    try:
+        processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
+        
+        opts = ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
+        client = documentai.DocumentProcessorServiceClient(client_options=opts)
+        parent = client.processor_path(PROJECT_ID, LOCATION, processor_id)
+
+        processor_versions = client.list_processor_versions(parent=parent)
+
+        # _log.info(f"processor_versions={processor_versions}")
+        for processor_version in processor_versions:
+            processor_version_id = client.parse_processor_version_path(
+                processor_version.name
+            )["processor_version"]
+            if processor_version_id == model_id: ## if deployed, processor_version.state == 1
+                if processor_version.state == 1:
+                    _log.debug(f"processor state == {processor_version.state}, it is deployed")
+                    return True
+                else:
+                    _log.debug(f"processor state == {processor_version.state}, it is not deployed")
+                    return False
+        _log.error(f"unable to find model id: {model_id}")
+        return False
+    except Exception as e:
+        print(f"unable to check processor status: {e}")
+        return False
+
 
 
 ## Google Cloud Storage Functions
