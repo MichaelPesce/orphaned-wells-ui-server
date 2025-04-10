@@ -569,7 +569,7 @@ async def upload_document(
 
 @router.post("/deploy_processor/{rg_id}")
 async def deploy_processor(
-    rg_id: str, user_info: dict = Depends(authenticate)
+    rg_id: str, background_tasks: BackgroundTasks, user_info: dict = Depends(authenticate),
 ):
     """Deploy processor model.
 
@@ -586,10 +586,11 @@ async def deploy_processor(
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        return deployProcessor(rg_id, data_manager)
+        background_tasks.add_task(deployProcessor, rg_id=rg_id, data_manager=data_manager)
+        return 2
     except Exception as e:
         _log.error(f"unable to deploy processor: {e}")
-        return False
+        return 3
     
 
 @router.post("/undeploy_processor/{rg_id}")
@@ -611,10 +612,14 @@ async def undeploy_processor(
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        return undeployProcessor(rg_id, data_manager)
+        undeployed = undeployProcessor(rg_id, data_manager)
+        if undeployed:
+            return 3
+        else:
+            return 10
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
-        return False
+        return 10
     
 
 @router.get("/check_processor_status/{rg_id}")
@@ -631,7 +636,7 @@ async def check_processor_status(rg_id: str):
         return check_if_processor_is_deployed(rg_id, data_manager)
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
-        return False
+        return 10
 
 
 @router.post("/update_project/{project_id}")

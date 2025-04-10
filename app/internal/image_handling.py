@@ -282,16 +282,6 @@ def process_image(
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
-
-    # _log.info(f"attempting to deploy processor model")
-    # start_time = time.time()
-    # deployment = deploy_processor_version(RESOURCE_NAME)
-    # if deployment != "DEPLOYED":
-    #     finish_time = time.time()
-    #     _log.error(f"we have an issued, deployment failed. took {finish_time-start_time} seconds to fail deploy")
-    #     return
-    # finish_time = time.time()
-    # _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
     
 
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
@@ -561,18 +551,14 @@ def check_if_processor_is_deployed(rg_id, data_manager):
             processor_version_id = client.parse_processor_version_path(
                 processor_version.name
             )["processor_version"]
-            if processor_version_id == model_id: ## if deployed, processor_version.state == 1
-                if processor_version.state == 1:
-                    _log.debug(f"processor state == {processor_version.state}, it is deployed")
-                    return True
-                else:
-                    _log.debug(f"processor state == {processor_version.state}, it is not deployed")
-                    return False
+            if processor_version_id == model_id: ## processor states: 1=deployed, 2=deploying, 3=undeployed
+                _log.debug(f"processor state == {processor_version.state}")
+                return processor_version.state
         _log.error(f"unable to find model id: {model_id}")
-        return False
+        return 10
     except Exception as e:
         print(f"unable to check processor status: {e}")
-        return False
+        return 10
 
 
 
