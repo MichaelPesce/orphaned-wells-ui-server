@@ -497,6 +497,7 @@ async def upload_document(
     file: UploadFile = File(...),
     reprocessed: bool = False,
     preventDuplicates: bool = False,
+    run_cleaning_functions: bool = True,
 ):
     """Upload document for processing. Documents are processed asynchronously.
 
@@ -507,6 +508,7 @@ async def upload_document(
     Returns:
         New document record identifier.
     """
+    _log.info(f"run_cleaning_functions is: {run_cleaning_functions}")
     user_email = user_email.lower()
     if not data_manager.hasPermission(user_email, "upload_document"):
         raise HTTPException(
@@ -526,9 +528,6 @@ async def upload_document(
     if not project_is_valid:
         raise HTTPException(404, detail=f"Project not found")
     filename, file_ext = os.path.splitext(file.filename)
-
-    ##TODO: provide boolean for run_cleaning_functions for frontend. for now, make this true
-    run_cleaning_functions = True
 
     if file_ext.lower() == ".zip":
         output_dir = f"{data_manager.app_settings.img_dir}"
