@@ -233,7 +233,7 @@ def convert_tiff(filename, file_ext, output_directory, convert_to=".png"):
             im = Image.open(filepath)
             im.thumbnail(im.size)
             im.save(outfile, "PNG", quality=100)
-            return outfile
+            return [outfile]
         except Exception as e:
             print(f"unable to save {filename}: {e}")
             return [filepath]
