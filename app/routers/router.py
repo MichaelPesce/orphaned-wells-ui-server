@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import OAuth2PasswordBearer
 
 from app.internal.data_manager import data_manager
-from app.internal.image_handling import process_document, process_zip, deploy_processor, undeploy_processor, check_if_processor_is_deployed
+from app.internal.image_handling import process_document, process_zip, deployProcessor, undeployProcessor, check_if_processor_is_deployed
 import app.internal.util as util
 import app.internal.auth as auth
 
@@ -586,7 +586,7 @@ async def deploy_processor(
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        return deploy_processor(rg_id, data_manager)
+        return deployProcessor(rg_id, data_manager)
     except Exception as e:
         _log.error(f"unable to deploy processor: {e}")
         return False
@@ -611,7 +611,7 @@ async def undeploy_processor(
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        return undeploy_processor(rg_id, data_manager)
+        return undeployProcessor(rg_id, data_manager)
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
         return False

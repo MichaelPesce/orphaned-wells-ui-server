@@ -511,7 +511,7 @@ def process_image(
     return record_id
 
 
-def deploy_processor(rg_id, data_manager):
+def deployProcessor(rg_id, data_manager):
     ## fetch processor id
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
     
@@ -531,7 +531,7 @@ def deploy_processor(rg_id, data_manager):
     return True
 
 
-def undeploy_processor(rg_id, data_manager):
+def undeployProcessor(rg_id, data_manager):
     _log.info(f"attempting to deploy processor for record group {rg_id}")
     ## fetch processor id
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
