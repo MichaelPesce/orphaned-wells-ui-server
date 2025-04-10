@@ -279,11 +279,7 @@ def process_image(
             processor_attributes
         )
 
-
-
-    # RESOURCE_NAME = docai_client.processor_path(PROJECT_ID, LOCATION, processor_id)
-
-    ##TODO: make sure processor is deployed
+    ## TODO: we might not want to do this here. it probably makes sense to deploy separately before attempting to process images
     RESOURCE_NAME = docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
@@ -514,6 +510,44 @@ def process_image(
     _log.info(f"updated record in db: {record_id}")
 
     return record_id
+
+
+def deploy_processor(rg_id, data_manager):
+    _log.info(f"attempting to deploy processor for record group {rg_id}")
+    ## fetch processor id
+    processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
+    
+    RESOURCE_NAME = docai_client.processor_version_path(
+        PROJECT_ID, LOCATION, processor_id, model_id
+    )
+
+    _log.info(f"attempting to deploy processor model: {model_id}")
+    start_time = time.time()
+    deployment = deploy_processor_version(RESOURCE_NAME)
+    if deployment != "DEPLOYED":
+        finish_time = time.time()
+        _log.error(f"we have an issue, deployment failed. took {finish_time-start_time} seconds to fail deploy")
+        return False
+    finish_time = time.time()
+    _log.info(f"took {finish_time-start_time} seconds to DEPLOY")
+    return True
+
+
+def undeploy_processor(rg_id, data_manager):
+    _log.info(f"attempting to deploy processor for record group {rg_id}")
+    ## fetch processor id
+    processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
+    
+    RESOURCE_NAME = docai_client.processor_version_path(
+        PROJECT_ID, LOCATION, processor_id, model_id
+    )
+
+    _log.info(f"attempting to undeploy")
+    start_time = time.time()
+    undeploy_processor_version(RESOURCE_NAME)
+    finish_time = time.time()
+    _log.info(f"took {finish_time-start_time} seconds to undeploy")
+    return True
 
 
 ## Google Cloud Storage Functions

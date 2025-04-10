@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import OAuth2PasswordBearer
 
 from app.internal.data_manager import data_manager
-from app.internal.image_handling import process_document, process_zip
+from app.internal.image_handling import process_document, process_zip, deploy_processor, undeploy_processor
 import app.internal.util as util
 import app.internal.auth as auth
 
@@ -565,6 +565,56 @@ async def upload_document(
         except Exception as e:
             _log.error(f"unable to read image file: {e}")
             raise HTTPException(400, detail=f"Unable to process image file: {e}")
+
+
+@router.post("/deploy_processor/{rg_id}")
+async def deploy_processor(
+    rg_id: str, user_info: dict = Depends(authenticate)
+):
+    """Deploy processor model.
+
+    Args:
+        rg_id: Record group identifier
+
+    Returns:
+        Boolean indicating success or not
+    """
+    user_email = user_info["email"]
+    if not data_manager.hasPermission(user_email, "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
+        )
+    try:
+        return deploy_processor(rg_id, data_manager)
+    except Exception as e:
+        _log.error(f"unable to deploy processor: {e}")
+        return False
+    
+
+@router.post("/undeploy_processor/{rg_id}")
+async def undeploy_processor(
+    rg_id: str, user_info: dict = Depends(authenticate)
+):
+    """Undeploy processor model.
+
+    Args:
+        rg_id: Record group identifier
+
+    Returns:
+        Boolean indicating success or not
+    """
+    user_email = user_info["email"]
+    if not data_manager.hasPermission(user_email, "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
+        )
+    try:
+        return undeploy_processor(rg_id, data_manager)
+    except Exception as e:
+        _log.error(f"unable to undeploy processor: {e}")
+        return False
 
 
 @router.post("/update_project/{project_id}")
