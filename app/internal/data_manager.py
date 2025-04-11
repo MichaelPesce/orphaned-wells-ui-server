@@ -729,7 +729,6 @@ class DataManager:
         document["project_name"] = project_name
         document["project_id"] = project_id
 
-
         ##TODO: use filters to get index, previous recordid, next record id
         ## get record index
         _log.info(f"using filters: {filters}")
