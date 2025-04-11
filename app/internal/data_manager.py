@@ -732,17 +732,17 @@ class DataManager:
         ##TODO: use filters to get index, previous recordid, next record id
         ## get record index
         self.getRecordIndex(document, filters)
-        dateCreated = document.get("dateCreated", 0)
-        record_index_query = {
-            "dateCreated": {"$lte": dateCreated},
-            "record_group_id": rg_id,
-        }
-        record_index = self.db.records.count_documents(record_index_query)
-        document["recordIndex"] = record_index
+        # dateCreated = document.get("dateCreated", 0)
+        # record_index_query = {
+        #     "dateCreated": {"$lte": dateCreated},
+        #     "record_group_id": rg_id,
+        # }
+        # record_index = self.db.records.count_documents(record_index_query)
+        # document["recordIndex"] = record_index
 
         ## get previous and next IDs
-        document["previous_id"] = self.getPreviousRecordId(dateCreated, rg_id)
-        document["next_id"] = self.getNextRecordId(dateCreated, rg_id)
+        # document["previous_id"] = self.getPreviousRecordId(dateCreated, rg_id)
+        # document["next_id"] = self.getNextRecordId(dateCreated, rg_id)
 
         ## sort record attributes
         try:
@@ -767,18 +767,21 @@ class DataManager:
         return document.get("record_notes", [])
 
     def getRecordIndex(self, document, filters):
-        _log.info(f"using filters: {filters}")
+        ##TODO: explain what's going on in this function
+        # _log.info(f"using filters: {filters}")
 
         query = filters.get("filter", {})
-
-        ##TODO: check filter level
-        ## if record_group, just set record_group id to id
-        ## if team, create list of rg_ids
-        ## if project, create list of rg_ids
+        
         filterLevel = filters.get("level", None)
         filterId = filters.get("id", None)
         if filterLevel == "record_group" or filterLevel is None or filterId is None:
             query["record_group_id"] = document["record_group_id"]
+        elif filterLevel == "team":
+            rg_list = self.getTeamRecordGroupsList(filterId)
+            query["record_group_id"] = {"$in": rg_list}
+        elif filterLevel == "project":
+            rg_list = self.getProjectRecordGroupsList(filterId)
+            query["record_group_id"] = {"$in": rg_list}
         else:
             _log.info(f"havent created functionality for filter by {filterLevel} yet")
             return
@@ -786,14 +789,9 @@ class DataManager:
         sort = filters.get("sort", ["dateCreated", 1])
         sortBy = sort[0]
         sortDirection = sort[1]
-
-        # _log.info(f"sortBy: {sortBy}")
-        # _log.info(f"sort direction: {sortDirection}")
-        # _log.info(f"query: {query}")
-
         currentSortingValue = document.get(sortBy, 0)
 
-        _log.info(f"current sorting value: {currentSortingValue}")
+        # _log.info(f"query: {query}")
 
         ## for this record, we want less than sort By
         if sortDirection == 1:
@@ -801,16 +799,13 @@ class DataManager:
         else:
             query[sortBy] = {"$gte": currentSortingValue}
         record_index = self.db.records.count_documents(query)
-        _log.info(f"record_index: {record_index}")
-        # document["recordIndex"] = record_index
+        document["recordIndex"] = record_index
 
-        ## get previous and next IDs
         if sortDirection == 1:
             query[sortBy] = {"$gt": currentSortingValue}
         else:
             query[sortBy] = {"$lt": currentSortingValue}
-        # query[sortBy] = {"$gt": currentSortingValue}
-        # _log.info(f"next id query: {query}")
+            
         next_id = None
         previous_id = None
         cursor = self.db.records.find(query).sort(sortBy, sortDirection)
@@ -822,16 +817,14 @@ class DataManager:
             cursor = self.db.records.find(query).sort(sortBy, sortDirection)
             doc = cursor.next()
             next_id = str(doc.get("_id", ""))
-        _log.info(f"next_id: {next_id}")
-        # document["next_id"] = next_id
+        document["next_id"] = next_id
 
-        # query[sortBy] = {"$lt": currentSortingValue}
         if sortDirection == 1:
             query[sortBy] = {"$lt": currentSortingValue}
         else:
             query[sortBy] = {"$gt": currentSortingValue}
         cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
-        # _log.info(f"previous id query: {query}")
+        
         for doc in cursor:
             previous_id = str(doc.get("_id", ""))
             break
@@ -840,8 +833,7 @@ class DataManager:
             cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
             doc = cursor.next()
             previous_id = str(doc.get("_id", ""))
-        _log.info(f"previous_id: {previous_id}")
-        # document["previous_id"] = previous_id
+        document["previous_id"] = previous_id
 
     def getNextRecordId(self, dateCreated, rg_id):
         # _log.info(f"fetching next record for {dateCreated} and {rg_id}")
