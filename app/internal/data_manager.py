@@ -777,8 +777,8 @@ class DataManager:
         ## if project, create list of rg_ids
         filterLevel = filters.get("level", None)
         filterId = filters.get("id", None)
-        if filterLevel == "record_group":
-            query["record_group_id"] = filterId
+        if filterLevel == "record_group" or filterLevel is None or filterId is None:
+            query["record_group_id"] = document["record_group_id"]
         else:
             _log.info(f"havent created functionality for filter by {filterLevel} yet")
         
