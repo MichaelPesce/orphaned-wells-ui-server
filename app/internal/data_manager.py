@@ -677,7 +677,7 @@ class DataManager:
 
         return project_document, record_group
 
-    def fetchRecordData(self, record_id, user_info):
+    def fetchRecordData(self, record_id, user_info, filters={}):
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -729,7 +729,10 @@ class DataManager:
         document["project_name"] = project_name
         document["project_id"] = project_id
 
+
+        ##TODO: use filters to get index, previous recordid, next record id
         ## get record index
+        _log.info(f"using filters: {filters}")
         dateCreated = document.get("dateCreated", 0)
         record_index_query = {
             "dateCreated": {"$lte": dateCreated},
