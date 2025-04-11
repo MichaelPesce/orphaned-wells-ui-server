@@ -781,6 +781,7 @@ class DataManager:
             query["record_group_id"] = document["record_group_id"]
         else:
             _log.info(f"havent created functionality for filter by {filterLevel} yet")
+            return
         
         sort = filters.get("sort", ["dateCreated", 1])
         sortBy = sort[0]
