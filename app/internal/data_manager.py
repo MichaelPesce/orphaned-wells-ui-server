@@ -731,7 +731,7 @@ class DataManager:
 
         ##TODO: use filters to get index, previous recordid, next record id
         ## get record index
-        _log.info(f"using filters: {filters}")
+        self.getRecordIndex(document, filters)
         dateCreated = document.get("dateCreated", 0)
         record_index_query = {
             "dateCreated": {"$lte": dateCreated},
@@ -766,34 +766,113 @@ class DataManager:
         document = cursor.next()
         return document.get("record_notes", [])
 
+    def getRecordIndex(self, document, filters):
+        _log.info(f"using filters: {filters}")
+
+        query = filters.get("filter", {})
+
+        ##TODO: check filter level
+        ## if record_group, just set record_group id to id
+        ## if team, create list of rg_ids
+        ## if project, create list of rg_ids
+        filterLevel = filters.get("level", None)
+        filterId = filters.get("id", None)
+        if filterLevel == "record_group":
+            query["record_group_id"] = filterId
+        else:
+            _log.info(f"havent created functionality for filter by {filterLevel} yet")
+        
+        sort = filters.get("sort", ["dateCreated", 1])
+        sortBy = sort[0]
+        sortDirection = sort[1]
+
+        # _log.info(f"sortBy: {sortBy}")
+        # _log.info(f"sort direction: {sortDirection}")
+        # _log.info(f"query: {query}")
+
+        currentSortingValue = document.get(sortBy, 0)
+
+        _log.info(f"current sorting value: {currentSortingValue}")
+
+        ## for this record, we want less than sort By
+        if sortDirection == 1:
+            query[sortBy] = {"$lte": currentSortingValue}
+        else:
+            query[sortBy] = {"$gte": currentSortingValue}
+        record_index = self.db.records.count_documents(query)
+        _log.info(f"record_index: {record_index}")
+        # document["recordIndex"] = record_index
+
+        ## get previous and next IDs
+        if sortDirection == 1:
+            query[sortBy] = {"$gt": currentSortingValue}
+        else:
+            query[sortBy] = {"$lt": currentSortingValue}
+        # query[sortBy] = {"$gt": currentSortingValue}
+        # _log.info(f"next id query: {query}")
+        next_id = None
+        previous_id = None
+        cursor = self.db.records.find(query).sort(sortBy, sortDirection)
+        for doc in cursor:
+            next_id = str(doc.get("_id", ""))
+            break
+        if not next_id:
+            del query[sortBy]
+            cursor = self.db.records.find(query).sort(sortBy, sortDirection)
+            doc = cursor.next()
+            next_id = str(doc.get("_id", ""))
+        _log.info(f"next_id: {next_id}")
+        # document["next_id"] = next_id
+
+        # query[sortBy] = {"$lt": currentSortingValue}
+        if sortDirection == 1:
+            query[sortBy] = {"$lt": currentSortingValue}
+        else:
+            query[sortBy] = {"$gt": currentSortingValue}
+        cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
+        # _log.info(f"previous id query: {query}")
+        for doc in cursor:
+            previous_id = str(doc.get("_id", ""))
+            break
+        if not previous_id:
+            del query[sortBy]
+            cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
+            doc = cursor.next()
+            previous_id = str(doc.get("_id", ""))
+        _log.info(f"previous_id: {previous_id}")
+        # document["previous_id"] = previous_id
+
     def getNextRecordId(self, dateCreated, rg_id):
         # _log.info(f"fetching next record for {dateCreated} and {rg_id}")
-        cursor = self.db.records.find(
-            {"dateCreated": {"$gt": dateCreated}, "record_group_id": rg_id}
-        ).sort("dateCreated", ASCENDING)
+        query = {"dateCreated": {"$gt": dateCreated}, "record_group_id": rg_id}
+        cursor = self.db.records.find(query).sort("dateCreated", ASCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
+            _log.info(f"old next id: {record_id}")
             return record_id
         cursor = self.db.records.find({"record_group_id": rg_id}).sort(
             "dateCreated", ASCENDING
         )
         document = cursor.next()
         record_id = str(document.get("_id", ""))
+        _log.info(f"old next id: {record_id}")
         return record_id
 
     def getPreviousRecordId(self, dateCreated, rg_id):
         # _log.info(f"fetching previous record for {dateCreated} and {rg_id}")
-        cursor = self.db.records.find(
-            {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
-        ).sort("dateCreated", DESCENDING)
+        query =  {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
+        # _log.info(f"old previous id query: {query}")
+        cursor = self.db.records.find(query).sort("dateCreated", DESCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
+            _log.info(f"old previous id: {record_id}")
             return record_id
         cursor = self.db.records.find({"record_group_id": rg_id}).sort(
             "dateCreated", DESCENDING
         )
         document = cursor.next()
         record_id = str(document.get("_id", ""))
+        _log.info(f"old previous id: {record_id}")
         return record_id
 
     def getProcessorByRecordGroupID(self, rg_id):
