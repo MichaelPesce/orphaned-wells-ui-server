@@ -771,7 +771,7 @@ class DataManager:
         # _log.info(f"using filters: {filters}")
 
         query = filters.get("filter", {})
-        
+
         filterLevel = filters.get("level", None)
         filterId = filters.get("id", None)
         if filterLevel == "record_group" or filterLevel is None or filterId is None:
@@ -785,7 +785,7 @@ class DataManager:
         else:
             _log.info(f"havent created functionality for filter by {filterLevel} yet")
             return
-        
+
         sort = filters.get("sort", ["dateCreated", 1])
         sortBy = sort[0]
         sortDirection = sort[1]
@@ -805,7 +805,7 @@ class DataManager:
             query[sortBy] = {"$gt": currentSortingValue}
         else:
             query[sortBy] = {"$lt": currentSortingValue}
-            
+
         next_id = None
         previous_id = None
         cursor = self.db.records.find(query).sort(sortBy, sortDirection)
@@ -824,7 +824,7 @@ class DataManager:
         else:
             query[sortBy] = {"$gt": currentSortingValue}
         cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
-        
+
         for doc in cursor:
             previous_id = str(doc.get("_id", ""))
             break
@@ -853,7 +853,7 @@ class DataManager:
 
     def getPreviousRecordId(self, dateCreated, rg_id):
         # _log.info(f"fetching previous record for {dateCreated} and {rg_id}")
-        query =  {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
+        query = {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
         # _log.info(f"old previous id query: {query}")
         cursor = self.db.records.find(query).sort("dateCreated", DESCENDING)
         for document in cursor:
