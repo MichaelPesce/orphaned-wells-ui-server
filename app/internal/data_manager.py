@@ -688,8 +688,6 @@ class DataManager:
             return None, None
         document["_id"] = str(document["_id"])
         rg_id = document.get("record_group_id", "")
-        # projectId = document.get("project_id", "")
-        # project_id = ObjectId(projectId)
 
         user_record_groups = self.getUserRecordGroups(user)
         if not rg_id in user_record_groups:
@@ -789,6 +787,10 @@ class DataManager:
         sort = filters.get("sort", ["dateCreated", 1])
         sortBy = sort[0]
         sortDirection = sort[1]
+        mongoSort = {sortBy: sortDirection}
+        if sortBy == "api_number":
+            _log.info(f"sorting by: {sortBy}")
+            mongoSort["dateCreated"] = 1
         currentSortingValue = document.get(sortBy, 0)
 
         # _log.info(f"query: {query}")
@@ -808,13 +810,13 @@ class DataManager:
 
         next_id = None
         previous_id = None
-        cursor = self.db.records.find(query).sort(sortBy, sortDirection)
+        cursor = self.db.records.find(query).sort(mongoSort)
         for doc in cursor:
             next_id = str(doc.get("_id", ""))
             break
         if not next_id:
             del query[sortBy]
-            cursor = self.db.records.find(query).sort(sortBy, sortDirection)
+            cursor = self.db.records.find(query).sort(mongoSort)
             doc = cursor.next()
             next_id = str(doc.get("_id", ""))
         document["next_id"] = next_id
@@ -823,14 +825,14 @@ class DataManager:
             query[sortBy] = {"$lt": currentSortingValue}
         else:
             query[sortBy] = {"$gt": currentSortingValue}
-        cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
+        cursor = self.db.records.find(query).sort(mongoSort)
 
         for doc in cursor:
             previous_id = str(doc.get("_id", ""))
             break
         if not previous_id:
             del query[sortBy]
-            cursor = self.db.records.find(query).sort(sortBy, sortDirection * -1)
+            cursor = self.db.records.find(query).sort(mongoSort)
             doc = cursor.next()
             previous_id = str(doc.get("_id", ""))
         document["previous_id"] = previous_id
