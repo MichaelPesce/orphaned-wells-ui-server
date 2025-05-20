@@ -972,12 +972,14 @@ class DataManager:
                     topLevelIndex = field_to_clean["topLevelIndex"]
                     isSubattribute = field_to_clean.get("isSubattribute", False)
                     if isSubattribute:
+                        ## TODO: fix this
                         subIndex = field_to_clean["subIndex"]
                         attributeToClean = new_data["attributesList"][topLevelIndex][
                             "subattributes"
                         ][subIndex]
                     else:
-                        attributeToClean = new_data["attributesList"][topLevelIndex]
+                        # attributeToClean = new_data["attributesList"][topLevelIndex]
+                        attributeToClean = new_data["v"]
                     # print(attributeToClean)
                     self.cleanAttribute(attributeToClean, record_id=record_id)
 
@@ -987,6 +989,24 @@ class DataManager:
                 ):
                     ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
                     data_update["review_status"] = "incomplete"
+                elif update_type == "attribute":
+                    ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
+                    ## { key: k, idx: idx, v: v}
+                    is_subattribute = new_data.get("isSubattribute", False)
+                    k = new_data.get("key", False)
+                    idx = new_data.get("idx", None)
+                    v = new_data.get("v", None)
+                    subindex = new_data.get("subindex", None)
+                    _log.info(f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subindex: {subindex}")
+                    if not is_subattribute:
+                        data_update = {
+                            f"attributesList.{idx}": v,
+                        }
+                    else:
+                        ## TODO: handle subattribute
+                        _log.info(f"We have to handle subattributes")
+                        return
+                    
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
                 ):
