@@ -969,18 +969,7 @@ class DataManager:
 
                 ## call cleaning functions
                 if field_to_clean:
-                    topLevelIndex = field_to_clean["topLevelIndex"]
-                    isSubattribute = field_to_clean.get("isSubattribute", False)
-                    if isSubattribute:
-                        ## TODO: fix this
-                        subIndex = field_to_clean["subIndex"]
-                        attributeToClean = new_data["attributesList"][topLevelIndex][
-                            "subattributes"
-                        ][subIndex]
-                    else:
-                        # attributeToClean = new_data["attributesList"][topLevelIndex]
-                        attributeToClean = new_data["v"]
-                    # print(attributeToClean)
+                    attributeToClean = new_data["v"]
                     self.cleanAttribute(attributeToClean, record_id=record_id)
 
                 if (
@@ -996,8 +985,8 @@ class DataManager:
                     k = new_data.get("key", False)
                     idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
-                    subindex = new_data.get("subindex", None)
-                    _log.info(f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subindex: {subindex}")
+                    subIndex = new_data.get("subIndex", None)
+                    _log.info(f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subIndex: {subIndex}")
                     if not is_subattribute:
                         data_update = {
                             f"attributesList.{idx}": v,
@@ -1005,7 +994,9 @@ class DataManager:
                     else:
                         ## TODO: handle subattribute
                         _log.info(f"We have to handle subattributes")
-                        return
+                        data_update = {
+                            f"attributesList.{idx}.subattributes.{subIndex}": v,
+                        }
                     
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
