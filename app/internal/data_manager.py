@@ -986,7 +986,9 @@ class DataManager:
                     idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
                     subIndex = new_data.get("subIndex", None)
-                    _log.info(f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subIndex: {subIndex}")
+                    _log.info(
+                        f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subIndex: {subIndex}"
+                    )
                     if not is_subattribute:
                         data_update = {
                             f"attributesList.{idx}": v,
@@ -997,7 +999,7 @@ class DataManager:
                         data_update = {
                             f"attributesList.{idx}.subattributes.{subIndex}": v,
                         }
-                    
+
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
                 ):
