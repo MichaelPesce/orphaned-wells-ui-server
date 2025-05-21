@@ -979,16 +979,10 @@ class DataManager:
                     ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
                     data_update["review_status"] = "incomplete"
                 elif update_type == "attribute":
-                    ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
-                    ## { key: k, idx: idx, v: v}
                     is_subattribute = new_data.get("isSubattribute", False)
-                    k = new_data.get("key", False)
                     idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
                     subIndex = new_data.get("subIndex", None)
-                    # _log.info(
-                    #     f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subIndex: {subIndex}"
-                    # )
                     if not is_subattribute:
                         data_update = {
                             f"attributesList.{idx}": v,
