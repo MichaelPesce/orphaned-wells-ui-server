@@ -986,16 +986,14 @@ class DataManager:
                     idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
                     subIndex = new_data.get("subIndex", None)
-                    _log.info(
-                        f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subIndex: {subIndex}"
-                    )
+                    # _log.info(
+                    #     f"update type attribute. is_subattribute: {is_subattribute}, k: {k}, v: {v}, idx: {idx}, subIndex: {subIndex}"
+                    # )
                     if not is_subattribute:
                         data_update = {
                             f"attributesList.{idx}": v,
                         }
                     else:
-                        ## TODO: handle subattribute
-                        _log.info(f"We have to handle subattributes")
                         data_update = {
                             f"attributesList.{idx}.subattributes.{subIndex}": v,
                         }
