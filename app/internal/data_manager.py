@@ -966,9 +966,6 @@ class DataManager:
                 update_query = {"$set": data_update}
             else:
                 data_update = {update_type: new_data.get(update_type, None)}
-                print(f"data update: {data_update}")
-                
-
                 ## call cleaning functions
                 if field_to_clean:
                     attributeToClean = new_data["v"]
@@ -1137,7 +1134,7 @@ class DataManager:
         return record_doc.get("record_notes", [])
 
     def resetRecord(self, record_id, record_data, user):
-        print(f"resetting record: {record_id}")
+        # print(f"resetting record: {record_id}")
         record_attributes = record_data["attributesList"]
         for attribute in record_attributes:
             attribute_name = attribute["key"]
