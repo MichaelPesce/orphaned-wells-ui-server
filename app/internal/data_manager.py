@@ -966,6 +966,8 @@ class DataManager:
                 update_query = {"$set": data_update}
             else:
                 data_update = {update_type: new_data.get(update_type, None)}
+                print(f"data update: {data_update}")
+                
 
                 ## call cleaning functions
                 if field_to_clean:
@@ -982,6 +984,7 @@ class DataManager:
                     is_subattribute = new_data.get("isSubattribute", False)
                     idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
+                    reviewStatus = new_data.get("review_status", None)
                     subIndex = new_data.get("subIndex", None)
                     if not is_subattribute:
                         data_update = {
@@ -991,6 +994,8 @@ class DataManager:
                         data_update = {
                             f"attributesList.{idx}.subattributes.{subIndex}": v,
                         }
+                    if reviewStatus == "unreviewed":
+                        data_update["review_status"] = "incomplete"
 
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
