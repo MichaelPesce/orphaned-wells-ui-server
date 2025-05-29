@@ -948,7 +948,6 @@ class DataManager:
         user_info=None,
         forceUpdate=False,
     ):
-        # _log.info(f"updating {record_id} to be {new_data}")
         attained_lock = False
         user = None
         if user_info is None and not forceUpdate:
@@ -971,12 +970,13 @@ class DataManager:
                     attributeToClean = new_data["v"]
                     self.cleanAttribute(attributeToClean, record_id=record_id)
 
-                if (
-                    update_type == "attributesList"
-                    and new_data.get("review_status", None) == "unreviewed"
-                ):
+                if update_type == "attributesList":
                     ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
-                    data_update["review_status"] = "incomplete"
+                    new_review_status = new_data.get("review_status", None)
+                    if new_review_status == "unreviewed":
+                        data_update["review_status"] = "incomplete"
+                    elif new_review_status:
+                        data_update["review_status"] = new_review_status
                 elif update_type == "attribute":
                     is_subattribute = new_data.get("isSubattribute", False)
                     idx = new_data.get("idx", None)
