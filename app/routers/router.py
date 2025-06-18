@@ -542,13 +542,7 @@ async def upload_document(
         backend_url = str(request.base_url)
         output_dir = f"{data_manager.app_settings.img_dir}"
         return process_zip(
-            rg_id,
-            user_info,
-            background_tasks,
-            file,
-            output_dir,
-            filename,
-            backend_url
+            rg_id, user_info, background_tasks, file, output_dir, filename, backend_url
         )
 
     else:
