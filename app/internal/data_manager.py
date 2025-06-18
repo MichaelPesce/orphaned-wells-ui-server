@@ -608,7 +608,7 @@ class DataManager:
         processor = processor_api.get_processor_by_id(self.collaborator, google_id)
         return processor
 
-    def fetchProcessors(self, user, state):
+    def fetchProcessors(self, user):
         return self.processor_list
 
     def fetchRoles(self, role_category):
