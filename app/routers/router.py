@@ -501,6 +501,7 @@ async def add_record_group(request: Request, user_info: dict = Depends(authentic
 async def upload_document(
     rg_id: str,
     user_email: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     reprocessed: bool = False,
@@ -538,6 +539,7 @@ async def upload_document(
     filename, file_ext = os.path.splitext(file.filename)
 
     if file_ext.lower() == ".zip":
+        backend_url = str(request.base_url)
         output_dir = f"{data_manager.app_settings.img_dir}"
         return process_zip(
             rg_id,
@@ -546,6 +548,7 @@ async def upload_document(
             file,
             output_dir,
             filename,
+            backend_url
         )
 
     else:
