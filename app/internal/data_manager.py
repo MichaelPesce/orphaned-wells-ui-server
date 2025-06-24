@@ -27,6 +27,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
+
 class DataManager:
     """Manage the active data."""
 
