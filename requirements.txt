@@ -35,7 +35,7 @@ grpcio==1.60.0
 grpcio-status==1.60.0
 h11==0.14.0
 idna==3.6
-multidict==6.0.4
+multidict
 mypy-extensions==1.0.0
 passlib==1.7.4
 pathspec==0.12.1
