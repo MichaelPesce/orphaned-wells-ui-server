@@ -28,29 +28,47 @@ BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 
 def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
     processor_attributes = processor["attributes"]
+    # print(f"processor attributes: {processor_attributes}")
 
     ## match record attribute to each processor attribute
     sorted_attributes = []
-    processor_attributes_list = []
+    processor_attributes_dict = convert_processor_attributes_to_dict(processor_attributes)
+    found_attributes = set()
     for each in processor_attributes:
         attribute_name = each["name"]
-        processor_attributes_list.append(attribute_name)
 
         found_ = [item for item in attributes if item["key"] == attribute_name]
         for attribute in found_:
             if attribute is None:
                 _log.info(f"{attribute_name} is None")
             else:
+                found_attributes.add(attribute_name)
                 sorted_attributes.append(attribute)
 
     if keep_all_attributes:
         for attr in attributes:
             attribute_name = attr["key"]
-            if attribute_name not in processor_attributes_list:
-                _log.debug(
+            if attribute_name not in processor_attributes_dict:
+                _log.info(
                     f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
                 )
+                found_attributes.add(attribute_name)
                 sorted_attributes.append(attr)
+
+        for attr in processor_attributes:
+            attribute_name = attr["name"]
+            if attribute_name not in found_attributes and "::" not in attribute_name:
+                _log.info(
+                    f"{attribute_name} was not in record's attributes. gotta add this to the sorted attributes"
+                )
+                ## TODO: 
+                # 1. create attribute objects for each of these missing guys.
+                # 2. add them to sorted_attributes.
+                # 3. (optional): update database. this might happen automatically if a user makes 
+                #                an update on the frontend, so not necessarily necessary. TEST WHAT HAPPENS
+
+                # sorted_attributes.append(attr)
+
 
     return sorted_attributes
 
