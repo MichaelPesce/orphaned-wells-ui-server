@@ -36,7 +36,6 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
     ## match record attribute to each processor attribute
     sorted_attributes = []
     processor_attributes_dict = convert_processor_attributes_to_dict(processor_attributes)
-    found_attributes = set()
     for each in processor_attributes:
         attribute_name = each["name"]
 
@@ -45,7 +44,6 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
             if attribute is None:
                 _log.info(f"{attribute_name} is None")
             else:
-                found_attributes.add(attribute_name)
                 sorted_attributes.append(attribute)
         if len(found_) == 0 and "::" not in attribute_name:
             _log.info(f"{attribute_name} was not in record's attributes. adding this to the sorted attributes")
@@ -60,7 +58,6 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
                 _log.info(
                     f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
                 )
-                found_attributes.add(attribute_name)
                 sorted_attributes.append(attr)
 
 
