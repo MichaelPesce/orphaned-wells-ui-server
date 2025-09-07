@@ -31,11 +31,13 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
 
     ## we want to make sure that the frontend and backend are always in sync.
     ## for now, update the db with this sorted list every time before returning
-    requires_db_update = True 
+    requires_db_update = True
 
     ## match record attribute to each processor attribute
     sorted_attributes = []
-    processor_attributes_dict = convert_processor_attributes_to_dict(processor_attributes)
+    processor_attributes_dict = convert_processor_attributes_to_dict(
+        processor_attributes
+    )
     for each in processor_attributes:
         attribute_name = each["name"]
 
@@ -46,10 +48,12 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
             else:
                 sorted_attributes.append(attribute)
         if len(found_) == 0 and "::" not in attribute_name:
-            _log.info(f"{attribute_name} was not in record's attributes. adding this to the sorted attributes")
+            _log.info(
+                f"{attribute_name} was not in record's attributes. adding this to the sorted attributes"
+            )
             new_attr = createNewAttribute(key=attribute_name)
             sorted_attributes.append(new_attr)
-            requires_db_update = True 
+            requires_db_update = True
 
     if keep_all_attributes:
         for attr in attributes:
@@ -59,7 +63,6 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
                     f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
                 )
                 sorted_attributes.append(attr)
-
 
     return sorted_attributes, requires_db_update
 
@@ -194,14 +197,20 @@ def searchRecordForAttributeErrors(document):
                 subattributes = attribute.get("subattributes", None)
                 if subattributes:
                     for subattribute in subattributes:
-                        if subattribute is not None and subattribute.get("cleaning_error", False):
+                        if subattribute is not None and subattribute.get(
+                            "cleaning_error", False
+                        ):
                             return True
             else:
-                _log.info(f"found none attribute for document {document.get('_id')} at index {i}")
+                _log.info(
+                    f"found none attribute for document {document.get('_id')} at index {i}"
+                )
                 ##TODO: clean this document of null fields. need to write a function for this
             i += 1
     except Exception as e:
-        _log.info(f"unable to searchRecordForAttributeErrors for document: {document.get('_id')}")
+        _log.info(
+            f"unable to searchRecordForAttributeErrors for document: {document.get('_id')}"
+        )
         _log.info(f"e: {e}")
     return False
 
@@ -285,7 +294,17 @@ def cleanRecords(processor_attributes, documents):
     return documents
 
 
-def createNewAttribute(key, value=None, confidence=None, subattributes=None, page=None, coordinates=None, normalized_value=None, raw_text=None, text_value=None):
+def createNewAttribute(
+    key,
+    value=None,
+    confidence=None,
+    subattributes=None,
+    page=None,
+    coordinates=None,
+    normalized_value=None,
+    raw_text=None,
+    text_value=None,
+):
     new_attribute = {
         "key": key,
         "ai_confidence": confidence,

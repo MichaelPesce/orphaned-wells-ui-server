@@ -768,16 +768,16 @@ class DataManager:
             )
             document["attributesList"] = sorted_attributes
 
-            if update_db: 
+            if update_db:
                 ## after sorting, update the record list so frontend and backend are in sync
                 ## this shouldnt always be necessary, but for now do it every time
                 self.updateRecord(
-                    record_id = document["_id"],
-                    new_data = {"attributesList": document["attributesList"]},
-                    update_type = "attributesList",
-                    user_info = user_info
+                    record_id=document["_id"],
+                    new_data={"attributesList": document["attributesList"]},
+                    update_type="attributesList",
+                    user_info=user_info,
                 )
-                
+
         except Exception as e:
             _log.error(f"unable to sort attributes: {e}")
 
