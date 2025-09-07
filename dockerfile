@@ -6,6 +6,7 @@ WORKDIR /code
 
 COPY ./requirements.txt /code/requirements.txt
 COPY ./setup.py /code/setup.py
+COPY ./README.md /code/README.md
 COPY ./app /code/app
 
 RUN pip install --no-cache-dir --upgrade .
