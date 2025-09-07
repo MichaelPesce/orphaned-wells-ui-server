@@ -763,10 +763,21 @@ class DataManager:
             processor_doc = processor_api.get_processor_by_id(
                 self.collaborator, google_id
             )
-            sorted_attributes = util.sortRecordAttributes(
+            sorted_attributes, update_db = util.sortRecordAttributes(
                 document["attributesList"], processor_doc
             )
             document["attributesList"] = sorted_attributes
+
+            if update_db: 
+                ## after sorting, update the record list so frontend and backend are in sync
+                ## this shouldnt always be necessary, but for now do it every time
+                self.updateRecord(
+                    record_id = document["_id"],
+                    new_data = {"attributesList": document["attributesList"]},
+                    update_type = "attributesList",
+                    user_info = user_info
+                )
+                
         except Exception as e:
             _log.error(f"unable to sort attributes: {e}")
 
@@ -981,7 +992,10 @@ class DataManager:
                 data_update = new_data
                 update_query = {"$set": data_update}
             else:
+                # this is a little outdated. sometimes we provide update type as its own parameter,
+                # sometimes (when updating review status?) we pass it as part of the new data. TODO: clean this up
                 data_update = {update_type: new_data.get(update_type, None)}
+                # print(f"initially making data_update: {data_update}")
                 ## call cleaning functions
                 if field_to_clean:
                     attributeToClean = new_data["v"]
@@ -994,6 +1008,7 @@ class DataManager:
                         data_update["review_status"] = "incomplete"
                     elif new_review_status:
                         data_update["review_status"] = new_review_status
+                    data_update["attributesList"] = new_data.get("attributesList")
                 elif update_type == "attribute":
                     is_subattribute = new_data.get("isSubattribute", False)
                     idx = new_data.get("idx", None)

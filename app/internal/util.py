@@ -28,7 +28,10 @@ BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 
 def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
     processor_attributes = processor["attributes"]
-    # print(f"processor attributes: {processor_attributes}")
+
+    ## we want to make sure that the frontend and backend are always in sync.
+    ## for now, update the db with this sorted list every time before returning
+    requires_db_update = True 
 
     ## match record attribute to each processor attribute
     sorted_attributes = []
@@ -45,14 +48,10 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
                 found_attributes.add(attribute_name)
                 sorted_attributes.append(attribute)
         if len(found_) == 0 and "::" not in attribute_name:
-            print(f"{attribute_name} was not in record's attributes. adding this to the sorted attributes")
+            _log.info(f"{attribute_name} was not in record's attributes. adding this to the sorted attributes")
             new_attr = createNewAttribute(key=attribute_name)
             sorted_attributes.append(new_attr)
-            ## TODO:
-            # update database?
-            # if we don't, there is a mismatch with the frontnend. 
-            # a mismatch can cause issues when we update a field, because we update by index.
-            # we should ensure NO mismatch, and ALSO fix the updating process to make sure keys align as well.
+            requires_db_update = True 
 
     if keep_all_attributes:
         for attr in attributes:
@@ -65,7 +64,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
                 sorted_attributes.append(attr)
 
 
-    return sorted_attributes
+    return sorted_attributes, requires_db_update
 
 
 def imageIsValid(image):
