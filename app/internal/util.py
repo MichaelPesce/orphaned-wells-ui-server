@@ -44,6 +44,15 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
             else:
                 found_attributes.add(attribute_name)
                 sorted_attributes.append(attribute)
+        if len(found_) == 0 and "::" not in attribute_name:
+            print(f"{attribute_name} was not in record's attributes. adding this to the sorted attributes")
+            new_attr = createNewAttribute(key=attribute_name)
+            sorted_attributes.append(new_attr)
+            ## TODO:
+            # update database?
+            # if we don't, there is a mismatch with the frontnend. 
+            # a mismatch can cause issues when we update a field, because we update by index.
+            # we should ensure NO mismatch, and ALSO fix the updating process to make sure keys align as well.
 
     if keep_all_attributes:
         for attr in attributes:
@@ -54,20 +63,6 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=True):
                 )
                 found_attributes.add(attribute_name)
                 sorted_attributes.append(attr)
-
-        for attr in processor_attributes:
-            attribute_name = attr["name"]
-            if attribute_name not in found_attributes and "::" not in attribute_name:
-                _log.info(
-                    f"{attribute_name} was not in record's attributes. gotta add this to the sorted attributes"
-                )
-                ## TODO: 
-                # 1. create attribute objects for each of these missing guys.
-                # 2. add them to sorted_attributes.
-                # 3. (optional): update database. this might happen automatically if a user makes 
-                #                an update on the frontend, so not necessarily necessary. TEST WHAT HAPPENS
-
-                # sorted_attributes.append(attr)
 
 
     return sorted_attributes
@@ -193,15 +188,25 @@ def zip_files(file_paths, documents=None):
 
 
 def searchRecordForAttributeErrors(document):
-    attributes = document.get("attributesList", [])
-    for attribute in attributes:
-        if attribute.get("cleaning_error", False):
-            return True
-        subattributes = attribute.get("subattributes", None)
-        if subattributes:
-            for subattribute in subattributes:
-                if subattribute.get("cleaning_error", False):
+    try:
+        attributes = document.get("attributesList", [])
+        i = 0
+        for attribute in attributes:
+            if attribute is not None:
+                if attribute.get("cleaning_error", False):
                     return True
+                subattributes = attribute.get("subattributes", None)
+                if subattributes:
+                    for subattribute in subattributes:
+                        if subattribute is not None and subattribute.get("cleaning_error", False):
+                            return True
+            else:
+                _log.info(f"found none attribute for document {document.get('_id')} at index {i}")
+                ##TODO: clean this document of null fields. need to write a function for this
+            i += 1
+    except Exception as e:
+        _log.info(f"unable to searchRecordForAttributeErrors for document: {document.get('_id')}")
+        _log.info(f"e: {e}")
     return False
 
 
@@ -282,3 +287,21 @@ def cleanRecords(processor_attributes, documents):
                 processor_attributes=processor_attributes, attribute=attr
             )
     return documents
+
+
+def createNewAttribute(key, value=None, confidence=None, subattributes=None, page=None, coordinates=None, normalized_value=None, raw_text=None, text_value=None):
+    new_attribute = {
+        "key": key,
+        "ai_confidence": confidence,
+        "confidence": confidence,
+        "raw_text": raw_text,
+        "text_value": text_value,
+        "value": value,
+        "normalized_vertices": coordinates,
+        "normalized_value": normalized_value,
+        "subattributes": subattributes,
+        "isSubattribute": False,
+        "edited": False,
+        "page": page,
+    }
+    return new_attribute
