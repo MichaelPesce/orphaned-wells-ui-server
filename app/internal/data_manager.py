@@ -37,10 +37,12 @@ class DataManager:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
         self.environment = os.getenv("ENVIRONMENT")
-        self.collaborator = os.getenv("ENVIRONMENT")
-        # if self.collaborator.lower() not in COLLABORATORS:
-        #     self.collaborator = "isgs"
+        self.collaborator = os.getenv("COLLABORATOR")
+        if not self.collaborator or self.collaborator.lower() not in COLLABORATORS:
+            # fallback to to using isgs
+            self.collaborator = "isgs"
         _log.info(f"working in environment: {self.environment}")
+        _log.info(f"collaborator is: {self.collaborator}")
 
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
@@ -49,7 +51,6 @@ class DataManager:
         self.processor_dict = util.convert_processor_list_to_dict(self.processor_list)
 
     def createProcessorsList(self):
-        _log.info(f"creating processors list")
         processor_list = processor_api.get_processor_list(self.collaborator)
         if not processor_list:
             _log.info(f"no processors found, using default extractor")
