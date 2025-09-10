@@ -57,7 +57,7 @@ class DataManager:
             processor_list = DEFAULT_PROCESSORS
             self.using_default_processor = True
         else:
-            self.using_default_processor = True
+            self.using_default_processor = False
         return processor_list
 
     ## lock functions
