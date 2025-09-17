@@ -391,41 +391,26 @@ def process_image(
             original_sub_attribute = sub_attribute
 
             new_subattribute = {
-                    "key": original_sub_attribute,
-                    "ai_confidence": confidence,
-                    "confidence": sub_confidence,
-                    "raw_text": sub_raw_text,
-                    "text_value": sub_text_value,
-                    "value": sub_value,
-                    "normalized_vertices": sub_coordinates,
-                    "normalized_value": sub_normalized_value,
-                    "isSubattribute": True,
-                    "topLevelAttribute": attribute,
-                    "edited": False,
-                    "page": sub_page,
-                }
+                "key": original_sub_attribute,
+                "ai_confidence": confidence,
+                "confidence": sub_confidence,
+                "raw_text": sub_raw_text,
+                "text_value": sub_text_value,
+                "value": sub_value,
+                "normalized_vertices": sub_coordinates,
+                "normalized_value": sub_normalized_value,
+                "isSubattribute": True,
+                "topLevelAttribute": attribute,
+                "edited": False,
+                "page": sub_page,
+            }
             if run_cleaning_functions:
                 util.cleanRecordAttribute(
                     processor_attributes=prcoessor_attributes_dictionary,
                     attribute=new_subattribute,
                     subattributeKey=f"{attribute}::{original_sub_attribute}",
                 )
-            subattributesList.append(
-                {
-                    "key": original_sub_attribute,
-                    "ai_confidence": confidence,
-                    "confidence": sub_confidence,
-                    "raw_text": sub_raw_text,
-                    "text_value": sub_text_value,
-                    "value": sub_value,
-                    "normalized_vertices": sub_coordinates,
-                    "normalized_value": sub_normalized_value,
-                    "isSubattribute": True,
-                    "topLevelAttribute": attribute,
-                    "edited": False,
-                    "page": sub_page,
-                }
-            )
+            subattributesList.append(new_subattribute)
 
         if len(subattributesList) == 0:
             subattributesList = None
