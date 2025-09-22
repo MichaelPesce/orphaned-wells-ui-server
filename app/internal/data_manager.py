@@ -1373,7 +1373,9 @@ class DataManager:
         attributes = ["file"]
         subattributes = []
         record_attributes = []
-        if exportType == "csv":
+        if exportType == "csv": 
+            ## TODO: should we use util.sortAttributes function?
+            ## we're keeping obsolete fields here when we probably dont want to
             for document in records:
                 document_id = str(document["_id"])
                 try:
