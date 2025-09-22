@@ -55,7 +55,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
             sorted_attributes.append(new_attr)
             requires_db_update = True
 
-    if keep_all_attributes: 
+    if keep_all_attributes:
         ## obsolete fields will get removed automatically.
         for attr in attributes:
             attribute_name = attr["key"]
