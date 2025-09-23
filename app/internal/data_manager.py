@@ -496,6 +496,13 @@ class DataManager:
         records = []
         record_index = 1
         if page is not None and records_per_page is not None and records_per_page != -1:
+            # pipeline = [
+            #     {"$match": filter_by},
+            #     {"$sort": {sort_by[0]: sort_by[1]}},
+            #     {"$skip": records_per_page * page},
+            #     {"$limit": records_per_page}
+            # ]
+            # cursor = self.db.records.aggregate(pipeline, allowDiskUse=True)
             cursor = (
                 self.db.records.find(filter_by)
                 .sort(
@@ -508,6 +515,12 @@ class DataManager:
             )
             record_index += page * records_per_page
         else:
+            # print(f"aggregating with match, sort")
+            # pipeline = [
+            #     {"$match": filter_by},  # same as find(filter_by)
+            #     {"$sort": {sort_by[0]: sort_by[1]}}  # same as sort(field, direction)
+            # ]
+            # cursor = self.db.records.aggregate(pipeline, allowDiskUse=True)
             cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
 
         for document in cursor:
@@ -582,7 +595,6 @@ class DataManager:
         return {"project": project, "record_groups": record_groups}
 
     def fetchColumnData(self, location, _id):
-        ##TEST: update to new processor schema
         if location == "project" or location == "team":
             columns = set()
             if location == "project":
@@ -607,6 +619,8 @@ class DataManager:
                 for attr in processor["attributes"]:
                     columns.add(attr["name"])
             columns = list(columns)
+            if "projects" in document:
+                del document["projects"]
             return {"columns": columns, "obj": document}
 
         elif location == "record_group":
