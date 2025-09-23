@@ -582,7 +582,6 @@ class DataManager:
         return {"project": project, "record_groups": record_groups}
 
     def fetchColumnData(self, location, _id):
-        ##TEST: update to new processor schema
         if location == "project" or location == "team":
             columns = set()
             if location == "project":
@@ -607,6 +606,8 @@ class DataManager:
                 for attr in processor["attributes"]:
                     columns.add(attr["name"])
             columns = list(columns)
+            if "projects" in document:
+                del document["projects"]
             return {"columns": columns, "obj": document}
 
         elif location == "record_group":
