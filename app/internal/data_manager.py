@@ -247,12 +247,7 @@ class DataManager:
 
             user_roles = user_doc.get("roles", {})
             if role_category == "system":
-                if new_roles in user_roles.get("system", []):
-                    ## this shouldn't happen
-                    _log.info(f"user already has this role")
-                    return None
-                else:
-                    user_roles["system"].append(new_roles)
+                user_roles["system"] = new_roles
             elif role_category == "team":
                 user_roles["team"][team] = new_roles
 
@@ -641,9 +636,9 @@ class DataManager:
     def fetchProcessors(self, user):
         return self.processor_list
 
-    def fetchRoles(self, role_category):
+    def fetchRoles(self, role_categories):
         roles = []
-        cursor = self.db.roles.find({"category": role_category})
+        cursor = self.db.roles.find({"category": {"$in": role_categories}})
         for document in cursor:
             del document["_id"]
             roles.append(document)
