@@ -1393,7 +1393,7 @@ class DataManager:
                 try:
                     current_attributes = set()
                     record_attribute = {}
-                    for document_attribute in document["attributesList"]:
+                    for document_attribute in document.get("attributesList", []):
                         attribute_name = document_attribute["key"].replace(" ", "")
                         if attribute_name in selectedColumns or keep_all_columns:
                             original_attribute_name = attribute_name
@@ -1435,7 +1435,7 @@ class DataManager:
                 document_id = str(document["_id"])
                 try:
                     record_attribute = {}
-                    for document_attribute in document["attributesList"]:
+                    for document_attribute in document.get("attributesList", []):
                         attribute_name = document_attribute["key"]
                         if attribute_name in selectedColumns or keep_all_columns:
                             record_attribute[attribute_name] = document_attribute
@@ -1444,7 +1444,7 @@ class DataManager:
                 except Exception as e:
                     _log.info(f"unable to add {document_id}: {e}")
             with open(output_file, "w", newline="") as jsonfile:
-                json.dump(record_attributes, jsonfile)
+                json.dump(record_attributes, jsonfile, default=util.defaultJSONDumpHandler)
 
         if location == "project":
             self.recordHistory("downloadRecords", user=user, project_id=_id)
