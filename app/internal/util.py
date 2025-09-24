@@ -322,10 +322,13 @@ def createNewAttribute(
     }
     return new_attribute
 
+
 def defaultJSONDumpHandler(obj):
     if isinstance(obj, datetime.datetime):
         date_string = obj.date().isoformat()
-        _log.info(f"JSON Dump found datetime object, returning iso format: {date_string}")
+        _log.info(
+            f"JSON Dump found datetime object, returning iso format: {date_string}"
+        )
         return date_string
     else:
         _log.info(f"JSON Dump found Type {type(obj)}. returning string")

@@ -1444,7 +1444,9 @@ class DataManager:
                 except Exception as e:
                     _log.info(f"unable to add {document_id}: {e}")
             with open(output_file, "w", newline="") as jsonfile:
-                json.dump(record_attributes, jsonfile, default=util.defaultJSONDumpHandler)
+                json.dump(
+                    record_attributes, jsonfile, default=util.defaultJSONDumpHandler
+                )
 
         if location == "project":
             self.recordHistory("downloadRecords", user=user, project_id=_id)
