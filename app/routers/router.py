@@ -1044,8 +1044,8 @@ async def update_default_team(
         )
 
 
-@router.get("/fetch_roles/{role_category}", response_model=list)
-async def fetch_roles(role_category: str, user_info: dict = Depends(authenticate)):
+@router.post("/fetch_roles", response_model=list)
+async def fetch_roles(request: Request, user_info: dict = Depends(authenticate)):
     """Fetch all available roles for a certain category.
 
     Args:
@@ -1059,7 +1059,8 @@ async def fetch_roles(role_category: str, user_info: dict = Depends(authenticate
             403,
             detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
         )
-    resp = data_manager.fetchRoles(role_category)
+    role_categories = await request.json()
+    resp = data_manager.fetchRoles(role_categories)
     return resp
 
 
