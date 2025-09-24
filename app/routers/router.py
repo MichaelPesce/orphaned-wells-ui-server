@@ -1000,11 +1000,11 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
 
     req = await request.json()
     role_category = req.get("role_category", None)
-    new_role = req.get("new_roles", None)
+    new_roles = req.get("new_roles", None)
     email = req.get("email", None)
     team = data_manager.getUserInfo(user_info["email"])["default_team"]
-    if new_role and role_category and email:
-        data_manager.updateUserRole(email, team, role_category, new_role)
+    if new_roles is not None and role_category and email:
+        data_manager.updateUserRole(email, team, role_category, new_roles)
         return email
     else:
         raise HTTPException(
