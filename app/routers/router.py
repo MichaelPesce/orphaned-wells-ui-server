@@ -360,7 +360,6 @@ async def get_record_data(request: Request, record_id: str, user_info: dict = De
     """
     try:
         data = await request.json()
-        print(f"request data: {data}")
         location = data.get("location")
         group_id = data.get("group_id")
         filterBy = data.get("filterBy")

@@ -754,7 +754,14 @@ class DataManager:
         document["project_name"] = project_name
         document["project_id"] = project_id
 
-        ## TODO: update filterBy to include record_id in list of record ids
+        ## For the frontend, we want to know the record index, the next record id, and the previous record id
+        ## This^ helps for navigation between records.
+        ## Users typically arrive at a record by clicking on one in a table.
+        ## This table can be a record group, a project, or a table of all the records a team owns.
+        ## We want to allow for the location of the record in the table to persist when navigating to the record.
+        ## This means that we must incldue the filters and sorting that that table had when 
+        ## checking the index, next, and previous IDs
+
         ## need to get that list depending on location and group id
         if page_state:
             location = page_state.get("location")
@@ -765,25 +772,26 @@ class DataManager:
                 filterBy = {}
             if not sortBy:
                 sortBy = ["dateCreated", 1]
-            group_record_group_ids = self.getRecordIdsByGroup(location, group_id)
+            group_record_group_ids = self.getRecordGroupIdsByGroup(location, group_id)
             filterBy["record_group_id"] = {"$in": group_record_group_ids}
         else:
             filterBy = {"record_group_id": rg_id}
             sortBy = ["dateCreated", 1]
 
         ## get record index
-        ## TODO: send page state to get the proper index
-        dateCreated = document.get("dateCreated", 0)
         record_index_query = {**filterBy}
-        record_index_query["dateCreated"] = {"$lte": dateCreated}
-        _log.info(f"record_index_query:\n{record_index_query}")
+        sort_val = document.get(sortBy[0])
+        if sortBy[1] == ASCENDING:
+            operator = "$lte"
+        else: ## if sortBy[1] == DESCENDING
+            operator = "$gte"
+        record_index_query[sortBy[0]] = {operator: sort_val}
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
 
         ## get previous and next IDs
-        ## TODO: send page state to get the proper next / previous
-        document["previous_id"] = self.getPreviousRecordId(dateCreated, rg_id, filterBy=filterBy, sortBy=sortBy, record_data=document)
-        document["next_id"] = self.getNextRecordId(dateCreated, rg_id, filterBy=filterBy, sortBy=sortBy, record_data=document)
+        document["previous_id"] = self.getPreviousRecordId(filterBy=filterBy, sortBy=sortBy, sort_val=sort_val)
+        document["next_id"] = self.getNextRecordId(filterBy=filterBy, sortBy=sortBy, sort_val=sort_val)
 
         ## sort record attributes
         try:
@@ -827,74 +835,44 @@ class DataManager:
         document = cursor.next()
         return document.get("record_notes", [])
 
-    def getNextRecordId(self, dateCreated, rg_id, filterBy, sortBy, record_data):
-        ## TODO: make this work with default filter by, sort by
-        ## there are 2 possibilities here
-        ## 1) we are ascending
-        ## 2) we are descending
-        ## in the case of ascending, this is oldest first by date.
-        ## - we want to use $gt for sort by key. basically what we were already doing
-        ## in the case of descending, this is newest first by date.
-        ## - we want to use $lt for sort by key. 
-        # cursor = self.db.records.find(filterBy).sort(sortBy[0], sortBy[1])
+    def getNextRecordId(self, filterBy, sortBy, sort_val):
         sort_key = sortBy[0]
         sort_direction = sortBy[1]
-        sort_val = record_data[sort_key]
         if sort_direction == ASCENDING:
             operator = "$gt"
         else: ## if sort_direction == DESCENDING
             operator = "$lt"
         filterBy[sort_key] = {operator: sort_val}
-        # _log.info(f"fetching next record for {dateCreated} and {rg_id}")
-        cursor = self.db.records.find(filterBy).sort(sort_key, ASCENDING)
-
-        # cursor = self.db.records.find(
-        #     {"dateCreated": {"$gt": dateCreated}, "record_group_id": rg_id}
-        # ).sort("dateCreated", ASCENDING)
+        cursor = self.db.records.find(filterBy).sort(sort_key, sort_direction)
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
         
         ## in this case, we likely hit the last document, so now we need to fetch the first
         del filterBy[sort_key]
-        cursor = self.db.records.find(filterBy).sort(sort_key, ASCENDING)
-        # cursor = self.db.records.find({"record_group_id": rg_id}).sort(
-        #     "dateCreated", ASCENDING
-        # )
+        cursor = self.db.records.find(filterBy).sort(sort_key, sort_direction)
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
 
-    def getPreviousRecordId(self, dateCreated, rg_id, filterBy, sortBy, record_data):
-        ## TODO: make this work with default filter by, sort by
-        ## there are 2 possibilities here
-        ## 1) we are ascending
-        ## 2) we are descending
-        ## in the case of ascending, this is oldest first by date.
-        ## - we want to use $lt for sort by key. basically what we were already doing
-        ## in the case of descending, this is newest first by date.
-        ## - we want to use $gt for sort by key.
-        # _log.info(f"fetching previous record for {dateCreated} and {rg_id}")
+    def getPreviousRecordId(self, filterBy, sortBy, sort_val):
         sort_key = sortBy[0]
         sort_direction = sortBy[1]
-        sort_val = record_data[sort_key]
+        opposite_direction = DESCENDING if sort_direction == ASCENDING else ASCENDING
         if sort_direction == ASCENDING:
             operator = "$lt"
         else: ## if sort_direction == DESCENDING
             operator = "$gt"
         filterBy[sort_key] = {operator: sort_val}
-        cursor = self.db.records.find(filterBy).sort(sort_key, DESCENDING)
+        cursor = self.db.records.find(filterBy).sort(sort_key, opposite_direction)
         
-        # cursor = self.db.records.find(
-        #     {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
-        # ).sort("dateCreated", DESCENDING)
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
         
         ## in this case, we likely hit the first document, so now we need to fetch the last
         del filterBy[sort_key]
-        cursor = self.db.records.find(filterBy).sort(sort_key, DESCENDING)
+        cursor = self.db.records.find(filterBy).sort(sort_key, opposite_direction)
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
