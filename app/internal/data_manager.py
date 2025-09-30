@@ -702,7 +702,7 @@ class DataManager:
 
         return project_document, record_group
 
-    def fetchRecordData(self, record_id, user_info, page_state = None):
+    def fetchRecordData(self, record_id, user_info, page_state=None):
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -759,7 +759,7 @@ class DataManager:
         ## Users typically arrive at a record by clicking on one in a table.
         ## This table can be a record group, a project, or a table of all the records a team owns.
         ## We want to allow for the location of the record in the table to persist when navigating to the record.
-        ## This means that we must incldue the filters and sorting that that table had when 
+        ## This means that we must incldue the filters and sorting that that table had when
         ## checking the index, next, and previous IDs
 
         ## need to get that list depending on location and group id
@@ -783,15 +783,19 @@ class DataManager:
         sort_val = document.get(sortBy[0])
         if sortBy[1] == ASCENDING:
             operator = "$lte"
-        else: ## if sortBy[1] == DESCENDING
+        else:  ## if sortBy[1] == DESCENDING
             operator = "$gte"
         record_index_query[sortBy[0]] = {operator: sort_val}
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
 
         ## get previous and next IDs
-        document["previous_id"] = self.getPreviousRecordId(filterBy=filterBy, sortBy=sortBy, sort_val=sort_val)
-        document["next_id"] = self.getNextRecordId(filterBy=filterBy, sortBy=sortBy, sort_val=sort_val)
+        document["previous_id"] = self.getPreviousRecordId(
+            filterBy=filterBy, sortBy=sortBy, sort_val=sort_val
+        )
+        document["next_id"] = self.getNextRecordId(
+            filterBy=filterBy, sortBy=sortBy, sort_val=sort_val
+        )
 
         ## sort record attributes
         try:
@@ -818,7 +822,7 @@ class DataManager:
             _log.error(f"unable to sort attributes: {e}")
 
         return document, not attained_lock
-    
+
     def getRecordGroupIdsByGroup(self, location, group_id):
         ## Get the list of record group ids
         if location == "team":
@@ -840,14 +844,14 @@ class DataManager:
         sort_direction = sortBy[1]
         if sort_direction == ASCENDING:
             operator = "$gt"
-        else: ## if sort_direction == DESCENDING
+        else:  ## if sort_direction == DESCENDING
             operator = "$lt"
         filterBy[sort_key] = {operator: sort_val}
         cursor = self.db.records.find(filterBy).sort(sort_key, sort_direction)
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
-        
+
         ## in this case, we likely hit the last document, so now we need to fetch the first
         del filterBy[sort_key]
         cursor = self.db.records.find(filterBy).sort(sort_key, sort_direction)
@@ -861,15 +865,15 @@ class DataManager:
         opposite_direction = DESCENDING if sort_direction == ASCENDING else ASCENDING
         if sort_direction == ASCENDING:
             operator = "$lt"
-        else: ## if sort_direction == DESCENDING
+        else:  ## if sort_direction == DESCENDING
             operator = "$gt"
         filterBy[sort_key] = {operator: sort_val}
         cursor = self.db.records.find(filterBy).sort(sort_key, opposite_direction)
-        
+
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
-        
+
         ## in this case, we likely hit the first document, so now we need to fetch the last
         del filterBy[sort_key]
         cursor = self.db.records.find(filterBy).sort(sort_key, opposite_direction)
