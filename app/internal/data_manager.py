@@ -702,7 +702,7 @@ class DataManager:
 
         return project_document, record_group
 
-    def fetchRecordData(self, record_id, user_info):
+    def fetchRecordData(self, record_id, user_info, page_state=None):
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -754,18 +754,48 @@ class DataManager:
         document["project_name"] = project_name
         document["project_id"] = project_id
 
+        ## For the frontend, we want to know the record index, the next record id, and the previous record id
+        ## This^ helps for navigation between records.
+        ## Users typically arrive at a record by clicking on one in a table.
+        ## This table can be a record group, a project, or a table of all the records a team owns.
+        ## We want to allow for the location of the record in the table to persist when navigating to the record.
+        ## This means that we must incldue the filters and sorting that that table had when
+        ## checking the index, next, and previous IDs
+
+        ## need to get that list depending on location and group id
+        if page_state:
+            location = page_state.get("location")
+            group_id = page_state.get("group_id")
+            filterBy = page_state.get("filterBy")
+            sortBy = page_state.get("sortBy")
+            if not filterBy:
+                filterBy = {}
+            if not sortBy:
+                sortBy = ["dateCreated", 1]
+            group_record_group_ids = self.getRecordGroupIdsByGroup(location, group_id)
+            filterBy["record_group_id"] = {"$in": group_record_group_ids}
+        else:
+            filterBy = {"record_group_id": rg_id}
+            sortBy = ["dateCreated", 1]
+
         ## get record index
-        dateCreated = document.get("dateCreated", 0)
-        record_index_query = {
-            "dateCreated": {"$lte": dateCreated},
-            "record_group_id": rg_id,
-        }
+        record_index_query = {**filterBy}
+        sort_val = document.get(sortBy[0])
+        if sortBy[1] == ASCENDING:
+            operator = "$lte"
+        else:  ## if sortBy[1] == DESCENDING
+            operator = "$gte"
+        record_index_query[sortBy[0]] = {operator: sort_val}
         record_index = self.db.records.count_documents(record_index_query)
         document["recordIndex"] = record_index
 
         ## get previous and next IDs
-        document["previous_id"] = self.getPreviousRecordId(dateCreated, rg_id)
-        document["next_id"] = self.getNextRecordId(dateCreated, rg_id)
+        document["previous_id"] = self.getPreviousRecordId(
+            filterBy=filterBy, sortBy=sortBy, sort_val=sort_val
+        )
+        document["next_id"] = self.getNextRecordId(
+            filterBy=filterBy, sortBy=sortBy, sort_val=sort_val
+        )
 
         ## sort record attributes
         try:
@@ -793,6 +823,15 @@ class DataManager:
 
         return document, not attained_lock
 
+    def getRecordGroupIdsByGroup(self, location, group_id):
+        ## Get the list of record group ids
+        if location == "team":
+            return self.getTeamRecordGroupsList(team_name=group_id)
+        elif location == "project":
+            return self.getProjectRecordGroupsList(group_id)
+        elif location == "record_group":
+            return [group_id]
+
     def fetchRecordNotes(self, record_id, user_info):
         # user = user_info.get("email", "")
         _id = ObjectId(record_id)
@@ -800,32 +839,44 @@ class DataManager:
         document = cursor.next()
         return document.get("record_notes", [])
 
-    def getNextRecordId(self, dateCreated, rg_id):
-        # _log.info(f"fetching next record for {dateCreated} and {rg_id}")
-        cursor = self.db.records.find(
-            {"dateCreated": {"$gt": dateCreated}, "record_group_id": rg_id}
-        ).sort("dateCreated", ASCENDING)
+    def getNextRecordId(self, filterBy, sortBy, sort_val):
+        sort_key = sortBy[0]
+        sort_direction = sortBy[1]
+        if sort_direction == ASCENDING:
+            operator = "$gt"
+        else:  ## if sort_direction == DESCENDING
+            operator = "$lt"
+        filterBy[sort_key] = {operator: sort_val}
+        cursor = self.db.records.find(filterBy).sort(sort_key, sort_direction)
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
-        cursor = self.db.records.find({"record_group_id": rg_id}).sort(
-            "dateCreated", ASCENDING
-        )
+
+        ## in this case, we likely hit the last document, so now we need to fetch the first
+        del filterBy[sort_key]
+        cursor = self.db.records.find(filterBy).sort(sort_key, sort_direction)
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
 
-    def getPreviousRecordId(self, dateCreated, rg_id):
-        # _log.info(f"fetching previous record for {dateCreated} and {rg_id}")
-        cursor = self.db.records.find(
-            {"dateCreated": {"$lt": dateCreated}, "record_group_id": rg_id}
-        ).sort("dateCreated", DESCENDING)
+    def getPreviousRecordId(self, filterBy, sortBy, sort_val):
+        sort_key = sortBy[0]
+        sort_direction = sortBy[1]
+        opposite_direction = DESCENDING if sort_direction == ASCENDING else ASCENDING
+        if sort_direction == ASCENDING:
+            operator = "$lt"
+        else:  ## if sort_direction == DESCENDING
+            operator = "$gt"
+        filterBy[sort_key] = {operator: sort_val}
+        cursor = self.db.records.find(filterBy).sort(sort_key, opposite_direction)
+
         for document in cursor:
             record_id = str(document.get("_id", ""))
             return record_id
-        cursor = self.db.records.find({"record_group_id": rg_id}).sort(
-            "dateCreated", DESCENDING
-        )
+
+        ## in this case, we likely hit the first document, so now we need to fetch the last
+        del filterBy[sort_key]
+        cursor = self.db.records.find(filterBy).sort(sort_key, opposite_direction)
         document = cursor.next()
         record_id = str(document.get("_id", ""))
         return record_id
