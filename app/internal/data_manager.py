@@ -822,7 +822,7 @@ class DataManager:
         cursor = self.db.records.find({"_id": _id})
         document = cursor.next()
         return document.get("record_notes", [])
-            
+
     def getRecordIndexes(self, document, filterBy, sortBy):
         pipeline = [
             {"$match": filterBy},  # Apply filters
@@ -842,30 +842,30 @@ class DataManager:
         for i, doc in enumerate(result):
             doc["_id"] = str(doc["_id"])
             if doc["_id"] == document["_id"]:
-                
+
                 record_index = i
                 current_record = doc
                 break
         if not current_record:
             _log.error(f"we couldnt get record indexes. record_amt: {record_amt}")
             return
-        
+
         if record_amt == 1:
             next_id = current_record["_id"]
             previous_id = current_record["_id"]
         elif record_index == 0:
-            next_record = result[record_index+1]
+            next_record = result[record_index + 1]
             previous_record = result[record_amt - 1]
             next_id = next_record["_id"]
             previous_id = previous_record["_id"]
         elif record_index == record_amt - 1:
             next_record = result[0]
-            previous_record = result[record_index-1]
+            previous_record = result[record_index - 1]
             next_id = next_record["_id"]
             previous_id = previous_record["_id"]
         else:
-            next_record = result[record_index+1]
-            previous_record = result[record_index-1]
+            next_record = result[record_index + 1]
+            previous_record = result[record_index - 1]
             next_id = next_record["_id"]
             previous_id = previous_record["_id"]
 
