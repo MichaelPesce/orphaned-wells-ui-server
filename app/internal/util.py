@@ -31,7 +31,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
 
     ## we want to make sure that the frontend and backend are always in sync.
     ## for now, update the db with this sorted list every time before returning
-    requires_db_update = True
+    requires_db_update = len(processor_attributes) > 0
 
     ## match record attribute to each processor attribute
     sorted_attributes = []
