@@ -801,7 +801,7 @@ class DataManager:
                     update_type="attributesList",
                     user_info=user_info,
                     notes="Auto updating record while fetching record.",
-                    calling_function="fetchRecordData"
+                    calling_function="fetchRecordData",
                 )
 
         except Exception as e:
@@ -1021,7 +1021,13 @@ class DataManager:
 
     def updateRecordReviewStatus(self, record_id, review_status, user_info):
         new_data = {"review_status": review_status}
-        self.updateRecord(record_id, new_data, "record", user_info, calling_function="updateRecordReviewStatus")
+        self.updateRecord(
+            record_id,
+            new_data,
+            "record",
+            user_info,
+            calling_function="updateRecordReviewStatus",
+        )
 
     def updateRecord(
         self,
@@ -1220,7 +1226,12 @@ class DataManager:
         for update in updates:
             self.db.records.update_one(search_query, update)
             self.recordHistory(
-                "updateRecordNotes", user, record_id=record_id, query=update, notes="updateRecordNotes", calling_function="updateRecordNotes"
+                "updateRecordNotes",
+                user,
+                record_id=record_id,
+                query=update,
+                notes="updateRecordNotes",
+                calling_function="updateRecordNotes",
             )
         record_doc = self.db.records.find(search_query).next()
         return record_doc.get("record_notes", [])
