@@ -3,7 +3,7 @@ name: Deploy OSAGE Server
 
 on:
   push:
-    branches: [add-osage]
+    branches: [osage]
 
 defaults:
   run:
@@ -16,7 +16,7 @@ env:
 jobs:
 
   deploy_osage:
-    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to OSAGE Compute Engine
     runs-on: ubuntu-latest
     steps:
