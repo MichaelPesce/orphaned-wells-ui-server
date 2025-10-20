@@ -336,6 +336,7 @@ def defaultJSONDumpHandler(obj):
         _log.info(f"JSON Dump found Type {type(obj)}. returning string")
         return str(obj)
 
+
 def time_it(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -345,4 +346,5 @@ def time_it(func):
         elapsed_time = end_time - start_time
         _log.info(f"Function '{func.__name__}' executed in {elapsed_time:.2f} seconds")
         return result
+
     return wrapper

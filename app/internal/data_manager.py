@@ -826,7 +826,7 @@ class DataManager:
         cursor = self.db.records.find({"_id": _id})
         document = cursor.next()
         return document.get("record_notes", [])
-    
+
     @time_it
     def getRecordIndexes(self, document, filterBy, sortBy):
         """
@@ -835,7 +835,11 @@ class DataManager:
         sortBy     - tuple like ('dateCreated', 1) or [('dateCreated', 1), ('name', 1)]
         """
 
-        target_id = ObjectId(document["_id"]) if not isinstance(document["_id"], ObjectId) else document["_id"]
+        target_id = (
+            ObjectId(document["_id"])
+            if not isinstance(document["_id"], ObjectId)
+            else document["_id"]
+        )
 
         # Normalize sortBy to dict for $setWindowFields, and to list for .find/.aggregate sort
         if isinstance(sortBy, tuple):
@@ -855,11 +859,11 @@ class DataManager:
                     "output": {
                         "rank": {"$rank": {}},
                         "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                        "nextId": {"$shift": {"by": 1, "output": "$_id"}}
-                    }
+                        "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+                    },
                 }
             },
-            {"$match": {"_id": target_id}}
+            {"$match": {"_id": target_id}},
         ]
 
         result = list(self.db.records.aggregate(pipeline))
@@ -876,7 +880,11 @@ class DataManager:
 
         # Handle wrap-around for prevId (if prev_id is None, we have the first record)
         if prev_id is None:
-            last_doc = self.db.records.find(filterBy, sort=sort_list).sort(sort_list[0][0], -sort_list[0][1]).limit(1)
+            last_doc = (
+                self.db.records.find(filterBy, sort=sort_list)
+                .sort(sort_list[0][0], -sort_list[0][1])
+                .limit(1)
+            )
             last_doc = list(last_doc)
             prev_id = last_doc[0]["_id"] if last_doc else target_id
 
