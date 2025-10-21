@@ -8,6 +8,8 @@ import datetime
 import sys
 import requests
 import functools
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 
@@ -187,6 +189,73 @@ def zip_files(file_paths, documents=None):
     zip_buffer.close()
 
     return zip_bytes
+
+def zip_files_streaming(file_paths, documents=None, max_workers=10):
+    """
+        Download document files concurrently from Cloud Storage, 
+        then write to zip sequentially along with CSV and JSON (if included).
+    """
+
+    temp_zip = tempfile.NamedTemporaryFile(delete=False)
+    temp_zip_path = temp_zip.name
+    temp_zip.close()
+
+    downloaded_files = []
+
+    def download_image(record_id, record_name, rg_id, image_file):
+        signed_url = generate_download_signed_url_v4(rg_id, record_id, image_file)
+        try:
+            with requests.get(signed_url, stream=True, timeout=30) as response:
+                if response.status_code == 200:
+                    file_name = os.path.basename(image_file)
+                    arcname = f"documents/{record_name}/{file_name}"
+                    temp_file = tempfile.NamedTemporaryFile(delete=False)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        temp_file.write(chunk)
+                    temp_file.close()
+                    return (arcname, temp_file.name)
+                else:
+                    arcname = f"documents/error_{os.path.basename(image_file)}.txt"
+                    temp_file = tempfile.NamedTemporaryFile("w", delete=False)
+                    temp_file.write(f"Failed to fetch {signed_url} - status {response.status_code}")
+                    temp_file.close()
+                    return (arcname, temp_file.name)
+        except Exception as e:
+            arcname = f"documents/error_{os.path.basename(image_file)}.txt"
+            temp_file = tempfile.NamedTemporaryFile("w", delete=False)
+            temp_file.write(f"Exception: {str(e)}")
+            temp_file.close()
+            return (arcname, temp_file.name)
+
+    # Queue all downloads
+    tasks = []
+    if documents:
+        for record_id, document in documents.items():
+            rg_id = document["rg_id"]
+            record_name = document["record_name"]
+            for image_file in document["files"]:
+                tasks.append((record_id, record_name, rg_id, image_file))
+
+    # Run concurrent downloads
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(download_image, *task) for task in tasks]
+        for future in as_completed(futures):
+            downloaded_files.append(future.result())
+
+    # Write local + downloaded files into ZIP sequentially
+    with zipfile.ZipFile(temp_zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # Add CSV and JSON first, if included
+        if file_paths:
+            for file_path in file_paths:
+                if os.path.isfile(file_path):
+                    zip_file.write(file_path, arcname=os.path.basename(file_path))
+
+        # Add downloaded files
+        for arcname, tmp_path in downloaded_files:
+            zip_file.write(tmp_path, arcname)
+            os.remove(tmp_path)  # cleanup temp file
+
+    return temp_zip_path
 
 
 def searchRecordForAttributeErrors(document):
