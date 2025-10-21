@@ -927,8 +927,9 @@ async def download_records(
     ## remove file after 30 seconds to allow for the user download to finish
     background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=30)
     # return Response(content=zipped_files, media_type="application/zip")
-    return FileResponse(zip_path, filename="documents.zip", media_type="application/zip")
-
+    return FileResponse(
+        zip_path, filename="documents.zip", media_type="application/zip"
+    )
 
 
 @router.get("/get_users")

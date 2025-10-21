@@ -190,10 +190,11 @@ def zip_files(file_paths, documents=None):
 
     return zip_bytes
 
+
 def zip_files_streaming(file_paths, documents=None, max_workers=10):
     """
-        Download document files concurrently from Cloud Storage, 
-        then write to zip sequentially along with CSV and JSON (if included).
+    Download document files concurrently from Cloud Storage,
+    then write to zip sequentially along with CSV and JSON (if included).
     """
 
     temp_zip = tempfile.NamedTemporaryFile(delete=False)
@@ -217,7 +218,9 @@ def zip_files_streaming(file_paths, documents=None, max_workers=10):
                 else:
                     arcname = f"documents/error_{os.path.basename(image_file)}.txt"
                     temp_file = tempfile.NamedTemporaryFile("w", delete=False)
-                    temp_file.write(f"Failed to fetch {signed_url} - status {response.status_code}")
+                    temp_file.write(
+                        f"Failed to fetch {signed_url} - status {response.status_code}"
+                    )
                     temp_file.close()
                     return (arcname, temp_file.name)
         except Exception as e:
