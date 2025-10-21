@@ -253,7 +253,7 @@ def zip_files_streaming(file_paths, documents=None, max_workers=10):
             for image_file in document["files"]:
                 tasks.append((record_id, record_name, rg_id, image_file))
 
-    _log.info(f"downloading images. {len(tasks)} tasks")
+    _log.info(f"downloading images. {len(tasks)} image tasks")
     # Run concurrent downloads
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(download_image, *task) for task in tasks]
