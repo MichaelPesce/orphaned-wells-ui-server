@@ -29,6 +29,19 @@ STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 
 
+def time_it(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
+        _log.info(f"Function '{func.__name__}' executed in {elapsed_time:.2f} seconds")
+        return result
+
+    return wrapper
+
+
 def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
     processor_attributes = processor["attributes"]
     processor_attributes.sort(key=lambda x: x.get("page_order_sort", float("inf")))
@@ -191,6 +204,7 @@ def zip_files(file_paths, documents=None):
     return zip_bytes
 
 
+@time_it
 def zip_files_streaming(file_paths, documents=None, max_workers=10):
     """
     Download document files concurrently from Cloud Storage,
@@ -239,12 +253,14 @@ def zip_files_streaming(file_paths, documents=None, max_workers=10):
             for image_file in document["files"]:
                 tasks.append((record_id, record_name, rg_id, image_file))
 
+    _log.info(f"downloading images. {len(tasks)} tasks")
     # Run concurrent downloads
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(download_image, *task) for task in tasks]
         for future in as_completed(futures):
             downloaded_files.append(future.result())
 
+    _log.info(f"zipping files")
     # Write local + downloaded files into ZIP sequentially
     with zipfile.ZipFile(temp_zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
         # Add CSV and JSON first, if included
@@ -258,6 +274,7 @@ def zip_files_streaming(file_paths, documents=None, max_workers=10):
             zip_file.write(tmp_path, arcname)
             os.remove(tmp_path)  # cleanup temp file
 
+    _log.info(f"finished zipping, returning")
     return temp_zip_path
 
 
@@ -407,16 +424,3 @@ def defaultJSONDumpHandler(obj):
     else:
         _log.info(f"JSON Dump found Type {type(obj)}. returning string")
         return str(obj)
-
-
-def time_it(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        result = func(*args, **kwargs)
-        end_time = time.perf_counter()
-        elapsed_time = end_time - start_time
-        _log.info(f"Function '{func.__name__}' executed in {elapsed_time:.2f} seconds")
-        return result
-
-    return wrapper

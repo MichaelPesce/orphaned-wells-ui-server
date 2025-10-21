@@ -920,13 +920,11 @@ async def download_records(
         else:
             documents = None
         _log.info(f"zipping files: {filepaths}")
-        # zipped_files = util.zip_files(filepaths, documents)
         zip_path = util.zip_files_streaming(filepaths, documents)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
-    ## remove file after 30 seconds to allow for the user download to finish
-    background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=30)
-    # return Response(content=zipped_files, media_type="application/zip")
+    ## remove file after 60 seconds to allow for the user download to finish
+    background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=60)
     return FileResponse(
         zip_path, filename="documents.zip", media_type="application/zip"
     )
