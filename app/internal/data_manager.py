@@ -375,75 +375,115 @@ class DataManager:
         return record_groups
 
     def getRecordGroupProgress(self, rg_ids):
-        ## pipeline for getting the following record group stats: 
+        ## pipeline for getting the following record group stats:
         ## total amount, amount reviewed (reviewed or defected), amount containing cleaning errors
         pipeline = [
             {"$match": {"record_group_id": {"$in": rg_ids}}},
-            {"$group": {
-                "_id": "$record_group_id",
-                "total_amt": {"$sum": 1},
-                "reviewed_amt": {
-                    "$sum": {
-                        "$cond": [
-                            {"$in": ["$review_status", ["defective", "reviewed"]]},
-                            1,
-                            0
-                        ]
-                    }
-                },
-                "error_amt": {
-                    "$sum": {
-                        "$cond": [
-                            {
-                                "$or": [
-                                    {
-                                        "$anyElementTrue": {
-                                            "$map": {
-                                                "input": {"$ifNull": ["$attributesList", []]},
-                                                "as": "attr",
-                                                "in": {
-                                                    "$and": [
-                                                        {"$ne": ["$$attr.cleaning_error", False]},
-                                                        {"$ne": [{"$type": "$$attr.cleaning_error"}, "missing"]}
-                                                    ]
+            {
+                "$group": {
+                    "_id": "$record_group_id",
+                    "total_amt": {"$sum": 1},
+                    "reviewed_amt": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$review_status", ["defective", "reviewed"]]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "error_amt": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$or": [
+                                        {
+                                            "$anyElementTrue": {
+                                                "$map": {
+                                                    "input": {
+                                                        "$ifNull": [
+                                                            "$attributesList",
+                                                            [],
+                                                        ]
+                                                    },
+                                                    "as": "attr",
+                                                    "in": {
+                                                        "$and": [
+                                                            {
+                                                                "$ne": [
+                                                                    "$$attr.cleaning_error",
+                                                                    False,
+                                                                ]
+                                                            },
+                                                            {
+                                                                "$ne": [
+                                                                    {
+                                                                        "$type": "$$attr.cleaning_error"
+                                                                    },
+                                                                    "missing",
+                                                                ]
+                                                            },
+                                                        ]
+                                                    },
                                                 }
                                             }
-                                        }
-                                    },
-
-                                    {
-                                        "$anyElementTrue": {
-                                            "$map": {
-                                                "input": {
-                                                    "$reduce": {
-                                                        "input": {"$ifNull": ["$attributesList", []]},
-                                                        "initialValue": [],
-                                                        "in": {
-                                                            "$concatArrays": [
-                                                                "$$value",
-                                                                {"$ifNull": ["$$this.subattributes", []]}
-                                                            ]
+                                        },
+                                        {
+                                            "$anyElementTrue": {
+                                                "$map": {
+                                                    "input": {
+                                                        "$reduce": {
+                                                            "input": {
+                                                                "$ifNull": [
+                                                                    "$attributesList",
+                                                                    [],
+                                                                ]
+                                                            },
+                                                            "initialValue": [],
+                                                            "in": {
+                                                                "$concatArrays": [
+                                                                    "$$value",
+                                                                    {
+                                                                        "$ifNull": [
+                                                                            "$$this.subattributes",
+                                                                            [],
+                                                                        ]
+                                                                    },
+                                                                ]
+                                                            },
                                                         }
-                                                    }
-                                                },
-                                                "as": "sub",
-                                                "in": {
-                                                    "$and": [
-                                                        {"$ne": ["$$sub.cleaning_error", False]},
-                                                        {"$ne": [{"$type": "$$sub.cleaning_error"}, "missing"]}
-                                                    ]
+                                                    },
+                                                    "as": "sub",
+                                                    "in": {
+                                                        "$and": [
+                                                            {
+                                                                "$ne": [
+                                                                    "$$sub.cleaning_error",
+                                                                    False,
+                                                                ]
+                                                            },
+                                                            {
+                                                                "$ne": [
+                                                                    {
+                                                                        "$type": "$$sub.cleaning_error"
+                                                                    },
+                                                                    "missing",
+                                                                ]
+                                                            },
+                                                        ]
+                                                    },
                                                 }
                                             }
-                                        }
-                                    }
-                                ]
-                            },
-                            1,
-                            0
-                        ]
-                    }
+                                        },
+                                    ]
+                                },
+                                1,
+                                0,
+                            ]
+                        }
+                    },
                 }
-            }}
+            },
         ]
 
         stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
@@ -614,7 +654,9 @@ class DataManager:
         cursor = self.db.record_groups.find({"_id": {"$in": record_group_ids}})
         for document in cursor:
             document["_id"] = str(document["_id"])
-            stats = all_stats.get(document["_id"], {"total_amt": 0, "reviewed_amt": 0, "error_amt": 0})
+            stats = all_stats.get(
+                document["_id"], {"total_amt": 0, "reviewed_amt": 0, "error_amt": 0}
+            )
             document.update(stats)
             record_groups.append(document)
 
