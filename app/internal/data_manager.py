@@ -549,6 +549,7 @@ class DataManager:
                 _log.error(f"unable to get record groups for project {project_id}: {e}")
         return record_groups_list
 
+    @time_it
     def fetchRecords(
         self,
         sort_by=["dateCreated", 1],
