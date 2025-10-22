@@ -664,6 +664,7 @@ class DataManager:
 
         return {"project": project, "record_groups": record_groups}
 
+    @time_it
     def fetchColumnData(self, location, _id):
         if location == "project" or location == "team":
             columns = set()
