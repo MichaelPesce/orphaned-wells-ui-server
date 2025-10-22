@@ -203,7 +203,6 @@ def zip_files_stream(local_file_paths, documents=None):
             if os.path.isfile(file_path):
                 zs.write(file_path, os.path.basename(file_path))
 
-    # Init GCS client
     client = storage.Client.from_service_account_json(
         f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
     )
@@ -220,7 +219,7 @@ def zip_files_stream(local_file_paths, documents=None):
             start_file = time.time()
             bytes_read = 0
 
-            with blob.open("rb") as f:  # streaming read from GCS
+            with blob.open("rb") as f:
                 while True:
                     chunk = f.read(65536)  # 64KB chunks
                     if not chunk:
