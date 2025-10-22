@@ -519,6 +519,7 @@ class DataManager:
             return document
         return None
 
+    @time_it
     def fetchProjects(self, user):
         user_projects = self.getUserProjectList(user)
         projects = []
@@ -718,6 +719,7 @@ class DataManager:
             roles.append(document)
         return roles
 
+    @time_it
     def fetchProjectData(
         self, project_id, user, page, records_per_page, sort_by, filter_by
     ):
