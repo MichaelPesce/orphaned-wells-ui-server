@@ -681,13 +681,16 @@ class DataManager:
                     document["project_list"][i] = str(document["project_list"][i])
                 record_groups = self.getTeamRecordGroupsList(_id)
             for rg_id in record_groups:
-                rg_document = self.db.record_groups.find(
-                    {"_id": ObjectId(rg_id)}
-                ).next()
-                google_id = rg_document["processorId"]
-                processor = self.getProcessorByGoogleId(google_id)
-                for attr in processor["attributes"]:
-                    columns.add(attr["name"])
+                try:
+                    rg_document = self.db.record_groups.find(
+                        {"_id": ObjectId(rg_id)}
+                    ).next()
+                    google_id = rg_document["processorId"]
+                    processor = self.getProcessorByGoogleId(google_id)
+                    for attr in processor["attributes"]:
+                        columns.add(attr["name"])
+                except Exception as e:
+                    _log.error(f"unable to get {rg_id}: {e}")
             columns = list(columns)
             if "projects" in document:
                 del document["projects"]
@@ -718,49 +721,6 @@ class DataManager:
             del document["_id"]
             roles.append(document)
         return roles
-
-    @time_it
-    def fetchProjectData(
-        self, project_id, user, page, records_per_page, sort_by, filter_by
-    ):
-        ## get user's projects, check if user has access to this project
-        user_projects = self.getUserProjectList(user)
-        _id = ObjectId(project_id)
-        if not _id in user_projects:
-            return None, None
-
-        ## get project data
-        cursor = self.db.projects.find({"_id": _id})
-        project_data = cursor.next()
-        project_data["_id"] = str(project_data["_id"])
-
-        ## get project's records
-        records = []
-        filter_by["project_id"] = project_id
-        record_index = 1
-        if page is not None and records_per_page is not None and records_per_page != -1:
-            cursor = (
-                self.db.records.find(filter_by)
-                .sort(
-                    sort_by[0],
-                    sort_by[1]
-                    # )
-                )
-                .skip(records_per_page * page)
-                .limit(records_per_page)
-            )
-            record_index += page * records_per_page
-        else:
-            cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
-
-        for document in cursor:
-            document["_id"] = str(document["_id"])
-            document["recordIndex"] = record_index
-            record_index += 1
-            records.append(document)
-
-        record_count = self.db.records.count_documents(filter_by)
-        return project_data, records, record_count
 
     def fetchRecordGroupData(self, rg_id, user):
         ## get user's projects, check if user has access to this project
