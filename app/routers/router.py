@@ -933,7 +933,6 @@ async def download_records(
     # return FileResponse(
     #     zip_path, filename="documents.zip", media_type="application/zip"
     # )
-    
 
 
 @router.get("/get_users")

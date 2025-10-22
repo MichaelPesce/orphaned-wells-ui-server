@@ -43,6 +43,7 @@ def time_it(func):
 
     return wrapper
 
+
 def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
     processor_attributes = processor["attributes"]
     processor_attributes.sort(key=lambda x: x.get("page_order_sort", float("inf")))
@@ -118,19 +119,21 @@ def validateUser(user):
     except Exception as e:
         _log.error(f"failed attempting to validate user {user}: {e}")
 
+
 def generate_gcs_paths(documents):
-    if (not documents or len(documents) == 0):
+    if not documents or len(documents) == 0:
         return []
     gcs_paths = {}
     for record_id, document in documents.items():
         # print(f"{record_id}")
         rg_id = document["rg_id"]
         record_name = document["record_name"]
-        for image_file in document.get("files",[]):
+        for image_file in document.get("files", []):
             blob_path = f"uploads/{rg_id}/{record_id}/{image_file}"
             arcname = f"documents/{record_name}/{os.path.basename(image_file)}"
             gcs_paths[blob_path] = arcname
     return gcs_paths
+
 
 def generate_download_signed_url_v4(
     rg_id, record_id, filename, bucket_name=BUCKET_NAME
@@ -180,16 +183,19 @@ def compileDocumentImageList(records):
 
     return images
 
+
 @time_it
 def zip_files_stream(local_file_paths, documents=None):
     """
-        Streams a ZIP file directly without writing to temp files.
-        Includes optional local files
+    Streams a ZIP file directly without writing to temp files.
+    Includes optional local files
     """
     start_total = time.time()
-    _log.info(f"downloading and zipping {len(documents)} images along with {local_file_paths}")
+    _log.info(
+        f"downloading and zipping {len(documents)} images along with {local_file_paths}"
+    )
 
-    zs = zipstream.ZipFile(mode='w', compression=zipstream.ZIP_STORED)
+    zs = zipstream.ZipFile(mode="w", compression=zipstream.ZIP_STORED)
 
     # Add CSV and JSON first
     if local_file_paths:
@@ -225,7 +231,9 @@ def zip_files_stream(local_file_paths, documents=None):
             elapsed_file = time.time() - start_file
             mb_size = bytes_read / (1024 * 1024)
             speed = (mb_size / elapsed_file) if elapsed_file > 0 else 0
-            _log.debug(f"Finished {arcname}: {mb_size:.2f} MB in {elapsed_file:.2f} s ({speed:.2f} MB/s)")
+            _log.debug(
+                f"Finished {arcname}: {mb_size:.2f} MB in {elapsed_file:.2f} s ({speed:.2f} MB/s)"
+            )
 
         zs.write_iter(arcname, gcs_yield_chunks())
 
@@ -236,6 +244,7 @@ def zip_files_stream(local_file_paths, documents=None):
         _log.info(f"{len(documents)} files streamed in {elapsed_total:.2f} seconds")
 
     return streaming_generator()
+
 
 def searchRecordForAttributeErrors(document):
     try:
