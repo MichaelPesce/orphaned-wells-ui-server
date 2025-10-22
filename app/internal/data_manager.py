@@ -374,53 +374,80 @@ class DataManager:
             record_groups += project.get("record_groups", [])
         return record_groups
 
-    def getRecordGroupProgress(self, rg_id, check_for_errors=True):
-        ## get total records count
-        query = {"record_group_id": rg_id}
-        total_amt = self.db.records.count_documents(query)
+    def getRecordGroupProgress(self, rg_ids):
+        ## pipeline for getting the following record group stats: 
+        ## total amount, amount reviewed (reviewed or defected), amount containing cleaning errors
+        pipeline = [
+            {"$match": {"record_group_id": {"$in": rg_ids}}},
+            {"$group": {
+                "_id": "$record_group_id",
+                "total_amt": {"$sum": 1},
+                "reviewed_amt": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": ["$review_status", ["defective", "reviewed"]]},
+                            1,
+                            0
+                        ]
+                    }
+                },
+                "error_amt": {
+                    "$sum": {
+                        "$cond": [
+                            {
+                                "$or": [
+                                    {
+                                        "$anyElementTrue": {
+                                            "$map": {
+                                                "input": {"$ifNull": ["$attributesList", []]},
+                                                "as": "attr",
+                                                "in": {
+                                                    "$and": [
+                                                        {"$ne": ["$$attr.cleaning_error", False]},
+                                                        {"$ne": [{"$type": "$$attr.cleaning_error"}, "missing"]}
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    },
 
-        ## get count of reviewed and defective
-        query = {
-            "record_group_id": rg_id,
-            "review_status": {"$in": ["defective", "reviewed"]},
-        }
-        reviewed_amt = self.db.records.count_documents(query)
-
-        if check_for_errors:
-            try:
-                query = {
-                    "record_group_id": rg_id,
-                    "$or": [
-                        {
-                            "attributesList": {
-                                "$elemMatch": {
-                                    "$and": [
-                                        {"cleaning_error": {"$ne": False}},
-                                        {"cleaning_error": {"$exists": True}},
-                                    ]
-                                }
-                            }
-                        },
-                        {
-                            "attributesList.subattributes": {
-                                "$elemMatch": {
-                                    "$and": [
-                                        {"cleaning_error": {"$ne": False}},
-                                        {"cleaning_error": {"$exists": True}},
-                                    ]
-                                }
-                            }
-                        },
-                    ],
+                                    {
+                                        "$anyElementTrue": {
+                                            "$map": {
+                                                "input": {
+                                                    "$reduce": {
+                                                        "input": {"$ifNull": ["$attributesList", []]},
+                                                        "initialValue": [],
+                                                        "in": {
+                                                            "$concatArrays": [
+                                                                "$$value",
+                                                                {"$ifNull": ["$$this.subattributes", []]}
+                                                            ]
+                                                        }
+                                                    }
+                                                },
+                                                "as": "sub",
+                                                "in": {
+                                                    "$and": [
+                                                        {"$ne": ["$$sub.cleaning_error", False]},
+                                                        {"$ne": [{"$type": "$$sub.cleaning_error"}, "missing"]}
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    }
+                                ]
+                            },
+                            1,
+                            0
+                        ]
+                    }
                 }
-                error_amt = self.db.records.count_documents(query)
-            except Exception as e:
-                _log.info(f"unable to check for errors: {e}")
-                error_amt = 0
-        else:
-            error_amt = 0
+            }}
+        ]
 
-        return total_amt, reviewed_amt, error_amt
+        stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
+        return stats
 
     def fetchTeamInfo(self, email):
         user_doc = self.db.users.find({"email": email}).next()
@@ -570,25 +597,27 @@ class DataManager:
             filter_by["record_group_id"] = {"$in": record_group_ids}
         return self.fetchRecords(sort_by, filter_by, page, records_per_page)
 
+    @time_it
     def fetchRecordGroups(self, project_id, user):
         project = self.fetchProject(project_id)
         if project is None:
             _log.info(f"project {project_id} not found")
             return {}
+
         project_record_groups = project.get("record_groups", [])
-        record_group_ids = []
-        for i in range(len(project_record_groups)):
-            record_group_ids.append(ObjectId(project_record_groups[i]))
+
+        all_stats = self.getRecordGroupProgress(project_record_groups)
+
+        record_group_ids = [ObjectId(rg) for rg in project_record_groups]
+
         record_groups = []
         cursor = self.db.record_groups.find({"_id": {"$in": record_group_ids}})
         for document in cursor:
             document["_id"] = str(document["_id"])
-            (
-                document["total_amt"],
-                document["reviewed_amt"],
-                document["error_amt"],
-            ) = self.getRecordGroupProgress(document["_id"])
+            stats = all_stats.get(document["_id"], {"total_amt": 0, "reviewed_amt": 0, "error_amt": 0})
+            document.update(stats)
             record_groups.append(document)
+
         return {"project": project, "record_groups": record_groups}
 
     def fetchColumnData(self, location, _id):
