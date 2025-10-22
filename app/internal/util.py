@@ -244,6 +244,7 @@ def zip_files_stream(local_file_paths, documents=None):
 
     return streaming_generator()
 
+
 def searchRecordForAttributeErrors(document):
     try:
         attributes = document.get("attributesList") or []
@@ -258,7 +259,8 @@ def searchRecordForAttributeErrors(document):
         # Check subattributes for errors
         if any(
             sub is not None and sub.get("cleaning_error", False)
-            for attr in attributes if attr is not None
+            for attr in attributes
+            if attr is not None
             for sub in (attr.get("subattributes") or [])
         ):
             return True
@@ -270,6 +272,7 @@ def searchRecordForAttributeErrors(document):
         _log.info(f"e: {e}")
 
     return False
+
 
 def convert_processor_attributes_to_dict(attributes):
     attributes_dict = {}
