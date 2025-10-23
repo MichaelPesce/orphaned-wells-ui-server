@@ -593,7 +593,9 @@ class DataManager:
             document["_id"] = str(document["_id"])
             document["recordIndex"] = record_index
             if search_for_errors:
-                [hasErrors, found_values] = util.searchRecordForErrorsAndTargetKeys(document)
+                [hasErrors, found_values] = util.searchRecordForErrorsAndTargetKeys(
+                    document
+                )
                 document["has_errors"] = hasErrors
                 for each in found_values:
                     document[each] = found_values[each]
