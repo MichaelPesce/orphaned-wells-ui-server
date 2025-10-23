@@ -245,33 +245,60 @@ def zip_files_stream(local_file_paths, documents=None):
     return streaming_generator()
 
 
-def searchRecordForAttributeErrors(document):
+def searchRecordForErrorsAndTargetKeys(document, target_keys=None):
+    """
+    Checks if any attributes or subattributes have cleaning errors.
+    Also retrieves values for attributes whose 'key' is in target_keys.
+
+    Args:
+        document (dict): The document to inspect.
+        target_keys (list[str], optional): List of attribute keys to locate values for.
+
+    Returns:
+        tuple: (hasError, found_values)
+            - hasError (bool): True if cleaning errors found.
+            - found_values (dict): Mapping of target_keys to their located values.
+    """
+    if target_keys is None:
+        target_keys = ["T", "Sec"]
+
+    hasError = False
+    found_values = {}
+
     try:
         attributes = document.get("attributesList") or []
 
-        # Check attributes for errors
-        if any(
-            attr is not None and attr.get("cleaning_error", False)
-            for attr in attributes
-        ):
-            return True
+        # Check attributes for errors & locate target key values
+        for attr in attributes:
+            if attr is None:
+                continue
 
-        # Check subattributes for errors
-        if any(
-            sub is not None and sub.get("cleaning_error", False)
-            for attr in attributes
-            if attr is not None
-            for sub in (attr.get("subattributes") or [])
-        ):
-            return True
+            if attr.get("cleaning_error", False):
+                hasError = True
+
+            key_name = attr.get("key")
+            if key_name in target_keys:
+                found_values[key_name] = attr.get("value")
+
+            # Check subattributes for errors & locate target key values
+            for sub in attr.get("subattributes") or []:
+                if sub is None:
+                    continue
+
+                if sub.get("cleaning_error", False):
+                    hasError = True
+
+                sub_key = sub.get("key")
+                if sub_key in target_keys:
+                    found_values[sub_key] = sub.get("value")
 
     except Exception as e:
         _log.info(
-            f"unable to searchRecordForAttributeErrors for document: {document.get('_id')}"
+            f"unable to searchRecordForErrorsAndTargetKeys for document: {document.get('_id')}"
         )
         _log.info(f"e: {e}")
 
-    return False
+    return hasError, found_values
 
 
 def convert_processor_attributes_to_dict(attributes):

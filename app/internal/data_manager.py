@@ -593,7 +593,10 @@ class DataManager:
             document["_id"] = str(document["_id"])
             document["recordIndex"] = record_index
             if search_for_errors:
-                document["has_errors"] = util.searchRecordForAttributeErrors(document)
+                [hasErrors, found_values] = util.searchRecordForErrorsAndTargetKeys(document)
+                document["has_errors"] = hasErrors
+                for each in found_values:
+                    document[each] = found_values[each]
             record_index += 1
             records.append(document)
         record_count = self.db.records.count_documents(filter_by)
