@@ -552,6 +552,56 @@ class DataManager:
                 _log.error(f"unable to get record groups for project {project_id}: {e}")
         return record_groups_list
 
+    def build_pipeline(
+            self,
+            filter_by,
+            sort_key,
+            sort_direction,
+            records_per_page,
+            page,    
+            secondary_sort_field="dateCreated",
+            secondary_sort_direction=-1
+        ):
+        pipeline = [
+            # Step 1: Filter
+            {"$match": filter_by},
+
+            # Step 2: Extract sort target from attributesList
+            {
+                "$addFields": {
+                    "targetValue": {
+                        "$first": {
+                            "$map": {
+                                "input": {
+                                    "$filter": {
+                                        "input": "$attributesList",
+                                        "as": "attr",
+                                        "cond": {"$eq": ["$$attr.key", sort_key]}
+                                    }
+                                },
+                                "as": "targetAttr",
+                                "in": "$$targetAttr.value"
+                            }
+                        }
+                    }
+                }
+            },
+
+            # Step 3: Sort by targetValue first, then secondary sort field (dateCreated by default)
+            {"$sort": {
+                "targetValue": sort_direction,
+                secondary_sort_field: secondary_sort_direction
+            }},
+
+            # Step 4: Paging
+            {"$skip": records_per_page * page},
+            {"$limit": records_per_page},
+
+            # Optional: Remove helper field
+            {"$project": {"targetValue": 0}}
+        ]
+        return pipeline
+
     @time_it
     def fetchRecords(
         self,
@@ -563,32 +613,32 @@ class DataManager:
     ):
         records = []
         record_index = 1
-        if page is not None and records_per_page is not None and records_per_page != -1:
-            # pipeline = [
-            #     {"$match": filter_by},
-            #     {"$sort": {sort_by[0]: sort_by[1]}},
-            #     {"$skip": records_per_page * page},
-            #     {"$limit": records_per_page}
-            # ]
-            # cursor = self.db.records.aggregate(pipeline, allowDiskUse=True)
+        sort_key = sort_by[0]
+        sort_direction = sort_by[1]
+
+        ## Functionality to sort by an attribute field (this may break if we don't have proper indexes)
+        if "attributesList" in sort_key:
+            sort_key = sort_key.replace("attributesList.", "")
+            pipeline = self.build_pipeline(
+                filter_by=filter_by,
+                sort_key=sort_key,
+                sort_direction=sort_direction,
+                records_per_page=records_per_page,
+                page=page
+            )
+            cursor = self.db.records.aggregate(pipeline)
+        elif page is not None and records_per_page is not None and records_per_page != -1:
             cursor = (
                 self.db.records.find(filter_by)
                 .sort(
                     sort_by[0],
                     sort_by[1]
-                    # )
                 )
                 .skip(records_per_page * page)
                 .limit(records_per_page)
             )
             record_index += page * records_per_page
         else:
-            # print(f"aggregating with match, sort")
-            # pipeline = [
-            #     {"$match": filter_by},  # same as find(filter_by)
-            #     {"$sort": {sort_by[0]: sort_by[1]}}  # same as sort(field, direction)
-            # ]
-            # cursor = self.db.records.aggregate(pipeline, allowDiskUse=True)
             cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
 
         for document in cursor:
