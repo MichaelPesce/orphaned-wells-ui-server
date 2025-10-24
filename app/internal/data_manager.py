@@ -925,75 +925,133 @@ class DataManager:
         document   - dict with at least '_id'
         filterBy   - MongoDB filter dict
         sortBy     - tuple like ('dateCreated', 1) or [('dateCreated', 1), ('name', 1)]
+                    If first key starts with 'attributesList.', will compute value from nested attributesList.
         """
-
         target_id = (
             ObjectId(document["_id"])
             if not isinstance(document["_id"], ObjectId)
             else document["_id"]
         )
 
-        # Normalize sortBy to dict for $setWindowFields, and to list for .find/.aggregate sort
+        # Normalize sortBy to dict and list
         if isinstance(sortBy, tuple):
-            sort_dict = {sortBy[0]: sortBy[1]}
             sort_list = [sortBy]
+            sort_dict = {sortBy[0]: sortBy[1]}
         elif isinstance(sortBy, list):
-            sort_dict = dict(sortBy)
             sort_list = sortBy
+            sort_dict = dict(sortBy)
         else:
             raise ValueError("sortBy must be tuple or list of tuples")
 
-        pipeline = [
-            {"$match": filterBy},
-            {
+        pipeline = [{"$match": filterBy}]
+
+        # Detect if we're sorting by an attributesList.* value
+        primary_sort_key, primary_sort_dir = sort_list[0]
+        if primary_sort_key.startswith("attributesList."):
+            # Remove "attributesList." prefix
+            attr_key_name = primary_sort_key.split(".", 1)[1]
+
+            # Compute target value from attributesList
+            pipeline.append({
+                "$addFields": {
+                    "targetValue": {
+                        "$first": {
+                            "$map": {
+                                "input": {
+                                    "$filter": {
+                                        "input": "$attributesList",
+                                        "as": "attr",
+                                        "cond": {"$eq": ["$$attr.key", attr_key_name]}
+                                    }
+                                },
+                                "as": "targetAttr",
+                                "in": "$$targetAttr.value"
+                            }
+                        }
+                    }
+                }
+            })
+
+            # Determine secondary sort
+            if len(sort_list) > 1:
+                secondary_sort_key, secondary_sort_dir = sort_list[1]
+            else:
+                secondary_sort_key, secondary_sort_dir = "dateCreated", -1
+
+            print(f"secondary_sort_key, secondary_sort_dir: {secondary_sort_key}, {secondary_sort_dir}")
+
+            # Do a multi-field sort
+            pipeline.append({
+                "$sort": {
+                    "targetValue": primary_sort_dir,
+                    secondary_sort_key: secondary_sort_dir
+                }
+            })
+
+            # $setWindowFields with only ONE sort field for $rank ($setWindowFields is not compatible with multirank)
+            pipeline.append({
                 "$setWindowFields": {
-                    "sortBy": sort_dict,
+                    "sortBy": {"targetValue": primary_sort_dir},
                     "output": {
-                        "rank": {"$rank": {}},
+                        "rank": {"$documentNumber": {}},
                         "prevId": {"$shift": {"by": -1, "output": "$_id"}},
                         "nextId": {"$shift": {"by": 1, "output": "$_id"}},
                     },
                 }
-            },
-            {"$match": {"_id": target_id}},
-        ]
+            })
 
+        else:
+            # Sorting by a top level key
+            pipeline.append({
+                "$setWindowFields": {
+                    "sortBy": sort_dict,
+                    "output": {
+                        "rank": {"$documentNumber": {}},
+                        "prevId": {"$shift": {"by": -1, "output": "$_id"}},
+                        "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+                    },
+                }
+            })
+
+        pipeline.append({"$match": {"_id": target_id}})
+
+        # Run the aggregation
         result = list(self.db.records.aggregate(pipeline))
         if not result:
             _log.error("Could not get record indexes via $setWindowFields.")
             return None
 
         record = result[0]
-
         recordIndex = record["rank"]
-
         prev_id = record.get("prevId")
         next_id = record.get("nextId")
 
-        # Handle wrap-around for prevId (if prev_id is None, we have the first record)
         if prev_id is None:
+            fallback_sort_list = sort_list
+            if primary_sort_key.startswith("attributesList."):
+                fallback_sort_list = [(secondary_sort_key, secondary_sort_dir)]
             last_doc = (
-                self.db.records.find(filterBy, sort=sort_list)
-                .sort(sort_list[0][0], -sort_list[0][1])
+                self.db.records.find(filterBy)
+                .sort(fallback_sort_list[0][0], -fallback_sort_list[0][1])
                 .limit(1)
             )
             last_doc = list(last_doc)
             prev_id = last_doc[0]["_id"] if last_doc else target_id
 
-        # Handle wrap-around for nextId (if next_id is None, we have the last record)
         if next_id is None:
-            first_doc = self.db.records.find(filterBy, sort=sort_list).limit(1)
+            fallback_sort_list = sort_list
+            if primary_sort_key.startswith("attributesList."):
+                fallback_sort_list = [(secondary_sort_key, secondary_sort_dir)]
+            first_doc = self.db.records.find(filterBy).sort(fallback_sort_list).limit(1)
             first_doc = list(first_doc)
             next_id = first_doc[0]["_id"] if first_doc else target_id
 
-        # For frontend: indexes should start at 1
         document["recordIndex"] = str(recordIndex)
         document["previous_id"] = str(prev_id)
         document["next_id"] = str(next_id)
 
-        # _log.info(f"new method\nrecord_index: {recordIndex}; next_id: {next_id}; previous_id: {prev_id}")
-
         return document
+
 
     def getProcessorByRecordGroupID(self, rg_id):
         _id = ObjectId(rg_id)
