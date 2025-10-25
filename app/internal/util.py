@@ -536,13 +536,16 @@ def generate_sort_filter_pipeline(
             pipeline.append({"$sort": sort_stage})
 
     if for_ranking:
-        if secondary_sort_key:
+        ## TODO: we're ignoring secondary sort key in here.
+        # if secondary_sort_key:
+        if "attributesList." in primary_sort_key:
             # Ranking with composite field
             pipeline.append(
                 {
                     "$setWindowFields": {
                         "sortBy": {
-                            "sortComposite": primary_sort_dir,
+                            "targetValue": primary_sort_dir,
+                            # "sortComposite": primary_sort_dir,
                         },
                         "output": {
                             "rank": {"$documentNumber": {}},
@@ -563,7 +566,9 @@ def generate_sort_filter_pipeline(
             pipeline.append(
                 {
                     "$setWindowFields": {
-                        "sortBy": {primary_sort_key: primary_sort_dir},
+                        "sortBy": {
+                            primary_sort_key: primary_sort_dir,
+                        },
                         "output": {
                             "rank": {"$documentNumber": {}},
                             "prevId": {"$shift": {"by": -1, "output": "$_id"}},
