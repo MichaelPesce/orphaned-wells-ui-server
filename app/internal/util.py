@@ -513,15 +513,7 @@ def generate_sort_filter_pipeline(
                     }
                 }
             )
-            # pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
-            pipeline.append(
-                {
-                    "$sort": {
-                        "targetValue": primary_sort_dir,
-                        #   secondary_sort_key: secondary_sort_dir,
-                    }
-                }
-            )
+            pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
             pipeline.append({"$sort": {"targetValue": primary_sort_dir}})
             pipeline.append({"$project": {"targetValue": 0}})
@@ -538,15 +530,7 @@ def generate_sort_filter_pipeline(
                     }
                 }
             )
-            # pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
-            pipeline.append(
-                {
-                    "$sort": {
-                        "targetValue": primary_sort_dir,
-                        #   secondary_sort_key: secondary_sort_dir,
-                    }
-                }
-            )
+            pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
             sort_stage = {primary_sort_key: primary_sort_dir}
             pipeline.append({"$sort": sort_stage})
@@ -558,13 +542,18 @@ def generate_sort_filter_pipeline(
                 {
                     "$setWindowFields": {
                         "sortBy": {
-                            "targetValue": primary_sort_dir,
-                            # secondary_sort_key: secondary_sort_dir
+                            "sortComposite": primary_sort_dir,
                         },
                         "output": {
                             "rank": {"$documentNumber": {}},
-                            "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                            "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+                            "prevId": {"$shift": {
+                                "by": -1,
+                                "output": { "$toString": "$_id" }
+                            }},
+                            "nextId": {"$shift": {
+                                "by": 1,
+                                "output": { "$toString": "$_id" }
+                            }},
                         },
                     }
                 }
