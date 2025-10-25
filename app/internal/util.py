@@ -487,7 +487,9 @@ def generate_sort_filter_pipeline(
                                             "$filter": {
                                                 "input": "$attributesList",
                                                 "as": "attr",
-                                                "cond": {"$eq": ["$$attr.key", attr_key_name]},
+                                                "cond": {
+                                                    "$eq": ["$$attr.key", attr_key_name]
+                                                },
                                             }
                                         },
                                         "as": "targetAttr",
@@ -495,7 +497,7 @@ def generate_sort_filter_pipeline(
                                     }
                                 }
                             },
-                            ""  # replace null with empty string
+                            "",  # replace null with empty string
                         ]
                     }
                 }
@@ -548,14 +550,12 @@ def generate_sort_filter_pipeline(
                     "sortBy": windowSortBy,
                     "output": {
                         "rank": {"$documentNumber": {}},
-                        "prevId": {"$shift": {
-                            "by": -1,
-                            "output": { "$toString": "$_id" }
-                        }},
-                        "nextId": {"$shift": {
-                            "by": 1,
-                            "output": { "$toString": "$_id" }
-                        }},
+                        "prevId": {
+                            "$shift": {"by": -1, "output": {"$toString": "$_id"}}
+                        },
+                        "nextId": {
+                            "$shift": {"by": 1, "output": {"$toString": "$_id"}}
+                        },
                     },
                 }
             }
