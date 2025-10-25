@@ -421,6 +421,7 @@ def defaultJSONDumpHandler(obj):
         _log.info(f"JSON Dump found Type {type(obj)}. returning string")
         return str(obj)
 
+
 def normalize_sort_direction(direction):
     """
     Ensures sort direction is an integer 1 or -1.
@@ -461,9 +462,7 @@ def generate_sort_filter_pipeline(
     else:
         include_paging = False
 
-    pipeline = [
-        {"$match": filter_by}
-    ]
+    pipeline = [{"$match": filter_by}]
 
     primary_sort_key = primary_sort[0]
     primary_sort_dir = primary_sort[1]
@@ -483,54 +482,55 @@ def generate_sort_filter_pipeline(
         if secondary_sort_key is None:
             secondary_sort_key, secondary_sort_dir = "dateCreated", -1
 
-        pipeline.append({
-            "$addFields": {
-                "targetValue": {
-                    "$first": {
-                        "$map": {
-                            "input": {
-                                "$filter": {
-                                    "input": "$attributesList",
-                                    "as": "attr",
-                                    "cond": {"$eq": ["$$attr.key", attr_key_name]}
-                                }
-                            },
-                            "as": "targetAttr",
-                            "in": "$$targetAttr.value"
+        pipeline.append(
+            {
+                "$addFields": {
+                    "targetValue": {
+                        "$first": {
+                            "$map": {
+                                "input": {
+                                    "$filter": {
+                                        "input": "$attributesList",
+                                        "as": "attr",
+                                        "cond": {"$eq": ["$$attr.key", attr_key_name]},
+                                    }
+                                },
+                                "as": "targetAttr",
+                                "in": "$$targetAttr.value",
+                            }
                         }
                     }
                 }
             }
-        })
+        )
 
-        if secondary_sort_key: 
+        if secondary_sort_key:
             # Create a composite field to sort by
-            pipeline.append({
-                "$addFields": {
-                    "sortComposite": ["$targetValue", f"${secondary_sort_key}"]
+            pipeline.append(
+                {
+                    "$addFields": {
+                        "sortComposite": ["$targetValue", f"${secondary_sort_key}"]
+                    }
                 }
-            })
-            pipeline.append({
-                "$sort": {"sortComposite": primary_sort_dir}
-            })
+            )
+            pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
-            pipeline.append({
-                "$sort": {
-                    "targetValue": primary_sort_dir
-                }
-            })
+            pipeline.append({"$sort": {"targetValue": primary_sort_dir}})
             pipeline.append({"$project": {"targetValue": 0}})
 
-    else: # Sorting by top level field
+    else:  # Sorting by top level field
         if secondary_sort_key:
-            pipeline.append({
-                "$addFields": {
-                    "sortComposite": [f"${primary_sort_key}", f"${secondary_sort_key}"]
+            pipeline.append(
+                {
+                    "$addFields": {
+                        "sortComposite": [
+                            f"${primary_sort_key}",
+                            f"${secondary_sort_key}",
+                        ]
+                    }
                 }
-            })
-            pipeline.append({
-                "$sort": {"sortComposite": primary_sort_dir}
-            })
+            )
+            pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
             sort_stage = {primary_sort_key: primary_sort_dir}
             pipeline.append({"$sort": sort_stage})

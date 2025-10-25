@@ -558,7 +558,7 @@ class DataManager:
         primary_sort,
         records_per_page,
         page,
-        secondary_sort = None,
+        secondary_sort=None,
     ):
         pipeline = util.generate_sort_filter_pipeline(
             filter_by=filter_by,
@@ -572,7 +572,7 @@ class DataManager:
         print(f"build_pipeline final pipeline:\n{pipeline}")
 
         return pipeline
-    
+
     @time_it
     def fetchRecords(
         self,
@@ -584,12 +584,12 @@ class DataManager:
     ):
         records = []
         record_index = 1
-        
+
         pipeline = self.build_pipeline(
             filter_by=filter_by,
             primary_sort=sort_by,
             records_per_page=records_per_page,
-            page=page
+            page=page,
         )
         cursor = self.db.records.aggregate(pipeline)
         # elif page is not None and records_per_page is not None and records_per_page != -1:
@@ -886,12 +886,14 @@ class DataManager:
 
     @time_it
     def getRecordIndexes(self, document, filterBy, sortBy):
-        target_id = ObjectId(document["_id"]) if not isinstance(document["_id"], ObjectId) else document["_id"]
+        target_id = (
+            ObjectId(document["_id"])
+            if not isinstance(document["_id"], ObjectId)
+            else document["_id"]
+        )
 
         pipeline = util.generate_sort_filter_pipeline(
-            filter_by=filterBy,
-            primary_sort=sortBy,
-            for_ranking=True
+            filter_by=filterBy, primary_sort=sortBy, for_ranking=True
         )
 
         # Determine if we're using composite sort field
@@ -903,28 +905,32 @@ class DataManager:
 
         if len(sortBy) > 1 or primary_sort_key.startswith("attributesList."):
             # Ranking with composite field
-            pipeline.append({
-                "$setWindowFields": {
-                    "sortBy": {"sortComposite": primary_sort_dir},
-                    "output": {
-                        "rank": {"$documentNumber": {}},
-                        "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                        "nextId": {"$shift": {"by": 1, "output": "$_id"}},
-                    },
+            pipeline.append(
+                {
+                    "$setWindowFields": {
+                        "sortBy": {"sortComposite": primary_sort_dir},
+                        "output": {
+                            "rank": {"$documentNumber": {}},
+                            "prevId": {"$shift": {"by": -1, "output": "$_id"}},
+                            "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+                        },
+                    }
                 }
-            })
+            )
         else:
             # Simple primary-only sort
-            pipeline.append({
-                "$setWindowFields": {
-                    "sortBy": {primary_sort_key: primary_sort_dir},
-                    "output": {
-                        "rank": {"$documentNumber": {}},
-                        "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                        "nextId": {"$shift": {"by": 1, "output": "$_id"}},
-                    },
+            pipeline.append(
+                {
+                    "$setWindowFields": {
+                        "sortBy": {primary_sort_key: primary_sort_dir},
+                        "output": {
+                            "rank": {"$documentNumber": {}},
+                            "prevId": {"$shift": {"by": -1, "output": "$_id"}},
+                            "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+                        },
+                    }
                 }
-            })
+            )
 
         pipeline.append({"$match": {"_id": target_id}})
         print(f"final pipeline: \n{pipeline}")
@@ -939,7 +945,6 @@ class DataManager:
         document["next_id"] = str(record.get("nextId", target_id))
 
         return document
-
 
     def getProcessorByRecordGroupID(self, rg_id):
         _id = ObjectId(rg_id)
