@@ -457,7 +457,7 @@ def generate_sort_filter_pipeline(
     secondary_sort : list [field, direction]
     for_ranking : If True, will produce a 'sortComposite' field and $sort/$setWindowFields with a single top-level sort key.
     """
-    if records_per_page and page:
+    if records_per_page is not None and page is not None:
         include_paging = True
     else:
         include_paging = False

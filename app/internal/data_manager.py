@@ -569,8 +569,6 @@ class DataManager:
             secondary_sort=secondary_sort,
         )
 
-        print(f"build_pipeline final pipeline:\n{pipeline}")
-
         return pipeline
 
     @time_it
@@ -591,20 +589,9 @@ class DataManager:
             records_per_page=records_per_page,
             page=page,
         )
+
+        _log.info(f"fetchRecords pipeline: {pipeline}")
         cursor = self.db.records.aggregate(pipeline)
-        # elif page is not None and records_per_page is not None and records_per_page != -1:
-        #     cursor = (
-        #         self.db.records.find(filter_by)
-        #         .sort(
-        #             sort_by[0],
-        #             sort_by[1]
-        #         )
-        #         .skip(records_per_page * page)
-        #         .limit(records_per_page)
-        #     )
-        #     record_index += page * records_per_page
-        # else:
-        #     cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
 
         for document in cursor:
             document["_id"] = str(document["_id"])
@@ -616,8 +603,10 @@ class DataManager:
                 document["has_errors"] = hasErrors
                 for each in found_values:
                     document[each] = found_values[each]
+            # document["attributesList"] = None ## this takes up a lot of data, no need to keep it here
             record_index += 1
             records.append(document)
+        # _log.info(records)
         record_count = self.db.records.count_documents(filter_by)
         return records, record_count
 
@@ -896,14 +885,13 @@ class DataManager:
             filter_by=filterBy, primary_sort=sortBy, for_ranking=True
         )
 
-        # Determine if we're using composite sort field
-        # first_stage_sort = sortBy[0]
-        # primary_sort_dir = first_stage_sort[1]
-        ## TODO: this might not always work
+
+        # _log.info(f"getrecordindexes pipeline: {pipeline}")
+
         primary_sort_key = sortBy[0]
         primary_sort_dir = sortBy[1]
 
-        if len(sortBy) > 1 or primary_sort_key.startswith("attributesList."):
+        if primary_sort_key.startswith("attributesList."):
             # Ranking with composite field
             pipeline.append(
                 {
@@ -918,7 +906,7 @@ class DataManager:
                 }
             )
         else:
-            # Simple primary-only sort
+            # primary-only sort
             pipeline.append(
                 {
                     "$setWindowFields": {
@@ -933,7 +921,7 @@ class DataManager:
             )
 
         pipeline.append({"$match": {"_id": target_id}})
-        print(f"final pipeline: \n{pipeline}")
+        _log.info(f"getrecordindexes pipeline: {pipeline}")
 
         result = list(self.db.records.aggregate(pipeline))
         if not result:
