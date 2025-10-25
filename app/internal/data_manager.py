@@ -885,40 +885,43 @@ class DataManager:
             filter_by=filterBy, primary_sort=sortBy, for_ranking=True
         )
 
-
         # _log.info(f"getrecordindexes pipeline: {pipeline}")
 
-        primary_sort_key = sortBy[0]
-        primary_sort_dir = sortBy[1]
+        # primary_sort_key = sortBy[0]
+        # primary_sort_dir = sortBy[1]
 
-        if primary_sort_key.startswith("attributesList."):
-            # Ranking with composite field
-            pipeline.append(
-                {
-                    "$setWindowFields": {
-                        "sortBy": {"sortComposite": primary_sort_dir},
-                        "output": {
-                            "rank": {"$documentNumber": {}},
-                            "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                            "nextId": {"$shift": {"by": 1, "output": "$_id"}},
-                        },
-                    }
-                }
-            )
-        else:
-            # primary-only sort
-            pipeline.append(
-                {
-                    "$setWindowFields": {
-                        "sortBy": {primary_sort_key: primary_sort_dir},
-                        "output": {
-                            "rank": {"$documentNumber": {}},
-                            "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                            "nextId": {"$shift": {"by": 1, "output": "$_id"}},
-                        },
-                    }
-                }
-            )
+        # if primary_sort_key.startswith("attributesList."):
+        #     # Ranking with composite field
+        #     pipeline.append(
+        #         {
+        #             "$setWindowFields": {
+        #                 "sortBy": {
+        #                     "sortComposite": primary_sort_dir
+        #                 },
+        #                 "output": {
+        #                     "rank": {"$documentNumber": {}},
+        #                     "prevId": {"$shift": {"by": -1, "output": "$_id"}},
+        #                     "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+        #                 },
+        #             }
+        #         }
+        #     )
+        # else:
+        #     # primary-only sort
+        #     pipeline.append(
+        #         {
+        #             "$setWindowFields": {
+        #                 "sortBy": {
+        #                     primary_sort_key: primary_sort_dir
+        #                 },
+        #                 "output": {
+        #                     "rank": {"$documentNumber": {}},
+        #                     "prevId": {"$shift": {"by": -1, "output": "$_id"}},
+        #                     "nextId": {"$shift": {"by": 1, "output": "$_id"}},
+        #                 },
+        #             }
+        #         }
+        #     )
 
         pipeline.append({"$match": {"_id": target_id}})
         _log.info(f"getrecordindexes pipeline: {pipeline}")
