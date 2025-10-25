@@ -590,7 +590,6 @@ class DataManager:
             page=page,
         )
 
-        _log.info(f"fetchRecords pipeline: {pipeline}")
         cursor = self.db.records.aggregate(pipeline)
 
         for document in cursor:
@@ -603,7 +602,6 @@ class DataManager:
                 document["has_errors"] = hasErrors
                 for each in found_values:
                     document[each] = found_values[each]
-            # document["attributesList"] = None ## this takes up a lot of data, no need to keep it here
             record_index += 1
             records.append(document)
         # _log.info(records)
@@ -886,7 +884,7 @@ class DataManager:
         )
 
         pipeline.append({"$match": {"_id": target_id}})
-        _log.info(f"getrecordindexes pipeline: {pipeline}")
+        # _log.info(f"getrecordindexes pipeline: {pipeline}")
 
         result = list(self.db.records.aggregate(pipeline))
         if not result:

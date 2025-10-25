@@ -12,6 +12,7 @@ import tempfile
 import zipstream
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.cloud import storage
+import pprint
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 
@@ -477,10 +478,8 @@ def generate_sort_filter_pipeline(
     # Handle attributesList.* case
     if primary_sort_key.startswith("attributesList."):
         attr_key_name = primary_sort_key.split(".", 1)[1]
-
-        ## If we are sorting by an attribute, we need a secondary sort
-        if secondary_sort_key is None:
-            secondary_sort_key, secondary_sort_dir = "dateCreated", -1
+        primary_sort_key = attr_key_name
+        useTargetValue = True
 
         pipeline.append(
             {
@@ -516,9 +515,10 @@ def generate_sort_filter_pipeline(
             pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
             pipeline.append({"$sort": {"targetValue": primary_sort_dir}})
-            pipeline.append({"$project": {"targetValue": 0}})
+            # pipeline.append({"$project": {"targetValue": 0}})
 
     else:  # Sorting by top level field
+        useTargetValue = False
         if secondary_sort_key:
             pipeline.append(
                 {
@@ -536,51 +536,35 @@ def generate_sort_filter_pipeline(
             pipeline.append({"$sort": sort_stage})
 
     if for_ranking:
-        ## TODO: we're ignoring secondary sort key in here.
+        ## TODO: implement secondary sort key in here
+        ## we'll need to use the sortComposite field
         # if secondary_sort_key:
-        if "attributesList." in primary_sort_key:
-            # Ranking with composite field
-            pipeline.append(
-                {
-                    "$setWindowFields": {
-                        "sortBy": {
-                            "targetValue": primary_sort_dir,
-                            # "sortComposite": primary_sort_dir,
-                        },
-                        "output": {
-                            "rank": {"$documentNumber": {}},
-                            "prevId": {"$shift": {
-                                "by": -1,
-                                "output": { "$toString": "$_id" }
-                            }},
-                            "nextId": {"$shift": {
-                                "by": 1,
-                                "output": { "$toString": "$_id" }
-                            }},
-                        },
-                    }
-                }
-            )
+        if useTargetValue:
+            windowSortBy = {"targetValue": primary_sort_dir}
         else:
-            # primary-only sort
-            pipeline.append(
-                {
-                    "$setWindowFields": {
-                        "sortBy": {
-                            primary_sort_key: primary_sort_dir,
-                        },
-                        "output": {
-                            "rank": {"$documentNumber": {}},
-                            "prevId": {"$shift": {"by": -1, "output": "$_id"}},
-                            "nextId": {"$shift": {"by": 1, "output": "$_id"}},
-                        },
-                    }
+            windowSortBy = {primary_sort_key: primary_sort_dir}
+        pipeline.append(
+            {
+                "$setWindowFields": {
+                    "sortBy": windowSortBy,
+                    "output": {
+                        "rank": {"$documentNumber": {}},
+                        "prevId": {"$shift": {
+                            "by": -1,
+                            "output": { "$toString": "$_id" }
+                        }},
+                        "nextId": {"$shift": {
+                            "by": 1,
+                            "output": { "$toString": "$_id" }
+                        }},
+                    },
                 }
-            )
-
+            }
+        )
     # Optional paging
     if include_paging and records_per_page is not None and page is not None:
         pipeline.append({"$skip": records_per_page * page})
         pipeline.append({"$limit": records_per_page})
-
+    _log.info(f"returning pipeline:")
+    pprint.pprint(pipeline)
     return pipeline
