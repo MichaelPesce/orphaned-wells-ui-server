@@ -553,55 +553,26 @@ class DataManager:
         return record_groups_list
 
     def build_pipeline(
-            self,
-            filter_by,
-            sort_key,
-            sort_direction,
-            records_per_page,
-            page,    
-            secondary_sort_field="dateCreated",
-            secondary_sort_direction=-1
-        ):
-        pipeline = [
-            # Step 1: Filter
-            {"$match": filter_by},
+        self,
+        filter_by,
+        primary_sort,
+        records_per_page,
+        page,
+        secondary_sort = None,
+    ):
+        pipeline = util.generate_sort_filter_pipeline(
+            filter_by=filter_by,
+            primary_sort=primary_sort,
+            records_per_page=records_per_page,
+            page=page,
+            for_ranking=False,
+            secondary_sort=secondary_sort,
+        )
 
-            # Step 2: Extract sort target from attributesList
-            {
-                "$addFields": {
-                    "targetValue": {
-                        "$first": {
-                            "$map": {
-                                "input": {
-                                    "$filter": {
-                                        "input": "$attributesList",
-                                        "as": "attr",
-                                        "cond": {"$eq": ["$$attr.key", sort_key]}
-                                    }
-                                },
-                                "as": "targetAttr",
-                                "in": "$$targetAttr.value"
-                            }
-                        }
-                    }
-                }
-            },
+        print(f"build_pipeline final pipeline:\n{pipeline}")
 
-            # Step 3: Sort by targetValue first, then secondary sort field (dateCreated by default)
-            {"$sort": {
-                "targetValue": sort_direction,
-                secondary_sort_field: secondary_sort_direction
-            }},
-
-            # Step 4: Paging
-            {"$skip": records_per_page * page},
-            {"$limit": records_per_page},
-
-            # Optional: Remove helper field
-            {"$project": {"targetValue": 0}}
-        ]
         return pipeline
-
+    
     @time_it
     def fetchRecords(
         self,
@@ -613,33 +584,27 @@ class DataManager:
     ):
         records = []
         record_index = 1
-        sort_key = sort_by[0]
-        sort_direction = sort_by[1]
-
-        ## Functionality to sort by an attribute field (this may break if we don't have proper indexes)
-        if "attributesList" in sort_key:
-            sort_key = sort_key.replace("attributesList.", "")
-            pipeline = self.build_pipeline(
-                filter_by=filter_by,
-                sort_key=sort_key,
-                sort_direction=sort_direction,
-                records_per_page=records_per_page,
-                page=page
-            )
-            cursor = self.db.records.aggregate(pipeline)
-        elif page is not None and records_per_page is not None and records_per_page != -1:
-            cursor = (
-                self.db.records.find(filter_by)
-                .sort(
-                    sort_by[0],
-                    sort_by[1]
-                )
-                .skip(records_per_page * page)
-                .limit(records_per_page)
-            )
-            record_index += page * records_per_page
-        else:
-            cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
+        
+        pipeline = self.build_pipeline(
+            filter_by=filter_by,
+            primary_sort=sort_by,
+            records_per_page=records_per_page,
+            page=page
+        )
+        cursor = self.db.records.aggregate(pipeline)
+        # elif page is not None and records_per_page is not None and records_per_page != -1:
+        #     cursor = (
+        #         self.db.records.find(filter_by)
+        #         .sort(
+        #             sort_by[0],
+        #             sort_by[1]
+        #         )
+        #         .skip(records_per_page * page)
+        #         .limit(records_per_page)
+        #     )
+        #     record_index += page * records_per_page
+        # else:
+        #     cursor = self.db.records.find(filter_by).sort(sort_by[0], sort_by[1])
 
         for document in cursor:
             document["_id"] = str(document["_id"])
@@ -921,77 +886,26 @@ class DataManager:
 
     @time_it
     def getRecordIndexes(self, document, filterBy, sortBy):
-        """
-        document   - dict with at least '_id'
-        filterBy   - MongoDB filter dict
-        sortBy     - tuple like ('dateCreated', 1) or [('dateCreated', 1), ('name', 1)]
-                    If first key starts with 'attributesList.', will compute value from nested attributesList.
-        """
-        target_id = (
-            ObjectId(document["_id"])
-            if not isinstance(document["_id"], ObjectId)
-            else document["_id"]
+        target_id = ObjectId(document["_id"]) if not isinstance(document["_id"], ObjectId) else document["_id"]
+
+        pipeline = util.generate_sort_filter_pipeline(
+            filter_by=filterBy,
+            primary_sort=sortBy,
+            for_ranking=True
         )
 
-        # Normalize sortBy to dict and list
-        if isinstance(sortBy, tuple):
-            sort_list = [sortBy]
-            sort_dict = {sortBy[0]: sortBy[1]}
-        elif isinstance(sortBy, list):
-            sort_list = sortBy
-            sort_dict = dict(sortBy)
-        else:
-            raise ValueError("sortBy must be tuple or list of tuples")
+        # Determine if we're using composite sort field
+        # first_stage_sort = sortBy[0]
+        # primary_sort_dir = first_stage_sort[1]
+        ## TODO: this might not always work
+        primary_sort_key = sortBy[0]
+        primary_sort_dir = sortBy[1]
 
-        pipeline = [{"$match": filterBy}]
-
-        # Detect if we're sorting by an attributesList.* value
-        primary_sort_key, primary_sort_dir = sort_list[0]
-        if primary_sort_key.startswith("attributesList."):
-            # Remove "attributesList." prefix
-            attr_key_name = primary_sort_key.split(".", 1)[1]
-
-            # Compute target value from attributesList
-            pipeline.append({
-                "$addFields": {
-                    "targetValue": {
-                        "$first": {
-                            "$map": {
-                                "input": {
-                                    "$filter": {
-                                        "input": "$attributesList",
-                                        "as": "attr",
-                                        "cond": {"$eq": ["$$attr.key", attr_key_name]}
-                                    }
-                                },
-                                "as": "targetAttr",
-                                "in": "$$targetAttr.value"
-                            }
-                        }
-                    }
-                }
-            })
-
-            # Determine secondary sort
-            if len(sort_list) > 1:
-                secondary_sort_key, secondary_sort_dir = sort_list[1]
-            else:
-                secondary_sort_key, secondary_sort_dir = "dateCreated", -1
-
-            print(f"secondary_sort_key, secondary_sort_dir: {secondary_sort_key}, {secondary_sort_dir}")
-
-            # Do a multi-field sort
-            pipeline.append({
-                "$sort": {
-                    "targetValue": primary_sort_dir,
-                    secondary_sort_key: secondary_sort_dir
-                }
-            })
-
-            # $setWindowFields with only ONE sort field for $rank ($setWindowFields is not compatible with multirank)
+        if len(sortBy) > 1 or primary_sort_key.startswith("attributesList."):
+            # Ranking with composite field
             pipeline.append({
                 "$setWindowFields": {
-                    "sortBy": {"targetValue": primary_sort_dir},
+                    "sortBy": {"sortComposite": primary_sort_dir},
                     "output": {
                         "rank": {"$documentNumber": {}},
                         "prevId": {"$shift": {"by": -1, "output": "$_id"}},
@@ -999,12 +913,11 @@ class DataManager:
                     },
                 }
             })
-
         else:
-            # Sorting by a top level key
+            # Simple primary-only sort
             pipeline.append({
                 "$setWindowFields": {
-                    "sortBy": sort_dict,
+                    "sortBy": {primary_sort_key: primary_sort_dir},
                     "output": {
                         "rank": {"$documentNumber": {}},
                         "prevId": {"$shift": {"by": -1, "output": "$_id"}},
@@ -1014,41 +927,16 @@ class DataManager:
             })
 
         pipeline.append({"$match": {"_id": target_id}})
+        print(f"final pipeline: \n{pipeline}")
 
-        # Run the aggregation
         result = list(self.db.records.aggregate(pipeline))
         if not result:
-            _log.error("Could not get record indexes via $setWindowFields.")
             return None
 
         record = result[0]
-        recordIndex = record["rank"]
-        prev_id = record.get("prevId")
-        next_id = record.get("nextId")
-
-        if prev_id is None:
-            fallback_sort_list = sort_list
-            if primary_sort_key.startswith("attributesList."):
-                fallback_sort_list = [(secondary_sort_key, secondary_sort_dir)]
-            last_doc = (
-                self.db.records.find(filterBy)
-                .sort(fallback_sort_list[0][0], -fallback_sort_list[0][1])
-                .limit(1)
-            )
-            last_doc = list(last_doc)
-            prev_id = last_doc[0]["_id"] if last_doc else target_id
-
-        if next_id is None:
-            fallback_sort_list = sort_list
-            if primary_sort_key.startswith("attributesList."):
-                fallback_sort_list = [(secondary_sort_key, secondary_sort_dir)]
-            first_doc = self.db.records.find(filterBy).sort(fallback_sort_list).limit(1)
-            first_doc = list(first_doc)
-            next_id = first_doc[0]["_id"] if first_doc else target_id
-
-        document["recordIndex"] = str(recordIndex)
-        document["previous_id"] = str(prev_id)
-        document["next_id"] = str(next_id)
+        document["recordIndex"] = str(record["rank"])
+        document["previous_id"] = str(record.get("prevId", target_id))
+        document["next_id"] = str(record.get("nextId", target_id))
 
         return document
 

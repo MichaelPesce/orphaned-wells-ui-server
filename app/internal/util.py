@@ -420,3 +420,124 @@ def defaultJSONDumpHandler(obj):
     else:
         _log.info(f"JSON Dump found Type {type(obj)}. returning string")
         return str(obj)
+
+def normalize_sort_direction(direction):
+    """
+    Ensures sort direction is an integer 1 or -1.
+    Accepts 'asc', 'desc', 'ascending', 'descending', etc.
+    """
+    if isinstance(direction, int):
+        if direction in (1, -1):
+            return direction
+        raise ValueError("Sort direction integer must be 1 or -1")
+    if isinstance(direction, str):
+        dir_lower = direction.lower()
+        if dir_lower in ("asc", "ascending"):
+            return 1
+        elif dir_lower in ("desc", "descending"):
+            return -1
+    raise ValueError(f"Invalid sort direction value: {direction}")
+
+
+def generate_sort_filter_pipeline(
+    filter_by,
+    primary_sort,
+    records_per_page=None,
+    page=None,
+    for_ranking=False,
+    secondary_sort=None,
+):
+    """
+    Generates the part of the pipeline that applies filtering, extraction of sort values,
+    and sorting (including secondary keys when desired) in a consistent way.
+
+    filter_by : dictionary in mongo filters format
+    primary_sort : list [field, direction]
+    secondary_sort : list [field, direction]
+    for_ranking : If True, will produce a 'sortComposite' field and $sort/$setWindowFields with a single top-level sort key.
+    """
+    if records_per_page and page:
+        include_paging = True
+    else:
+        include_paging = False
+
+    pipeline = [
+        {"$match": filter_by}
+    ]
+
+    primary_sort_key = primary_sort[0]
+    primary_sort_dir = primary_sort[1]
+
+    if secondary_sort is None:
+        secondary_sort_key = None
+        secondary_sort_dir = None
+    else:
+        secondary_sort_key = secondary_sort[0]
+        secondary_sort_dir = secondary_sort[1]
+
+    # Handle attributesList.* case
+    if primary_sort_key.startswith("attributesList."):
+        attr_key_name = primary_sort_key.split(".", 1)[1]
+
+        ## If we are sorting by an attribute, we need a secondary sort
+        if secondary_sort_key is None:
+            secondary_sort_key, secondary_sort_dir = "dateCreated", -1
+
+        pipeline.append({
+            "$addFields": {
+                "targetValue": {
+                    "$first": {
+                        "$map": {
+                            "input": {
+                                "$filter": {
+                                    "input": "$attributesList",
+                                    "as": "attr",
+                                    "cond": {"$eq": ["$$attr.key", attr_key_name]}
+                                }
+                            },
+                            "as": "targetAttr",
+                            "in": "$$targetAttr.value"
+                        }
+                    }
+                }
+            }
+        })
+
+        if secondary_sort_key: 
+            # Create a composite field to sort by
+            pipeline.append({
+                "$addFields": {
+                    "sortComposite": ["$targetValue", f"${secondary_sort_key}"]
+                }
+            })
+            pipeline.append({
+                "$sort": {"sortComposite": primary_sort_dir}
+            })
+        else:
+            pipeline.append({
+                "$sort": {
+                    "targetValue": primary_sort_dir
+                }
+            })
+            pipeline.append({"$project": {"targetValue": 0}})
+
+    else: # Sorting by top level field
+        if secondary_sort_key:
+            pipeline.append({
+                "$addFields": {
+                    "sortComposite": [f"${primary_sort_key}", f"${secondary_sort_key}"]
+                }
+            })
+            pipeline.append({
+                "$sort": {"sortComposite": primary_sort_dir}
+            })
+        else:
+            sort_stage = {primary_sort_key: primary_sort_dir}
+            pipeline.append({"$sort": sort_stage})
+
+    # Optional paging
+    if include_paging and records_per_page is not None and page is not None:
+        pipeline.append({"$skip": records_per_page * page})
+        pipeline.append({"$limit": records_per_page})
+
+    return pipeline
