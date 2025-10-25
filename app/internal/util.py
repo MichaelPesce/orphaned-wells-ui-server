@@ -1,18 +1,12 @@
 import time
 import os
 import logging
-import zipfile
-from io import BytesIO
 from google.cloud import storage
 import datetime
 import sys
-import requests
 import functools
-import tempfile
 import zipstream
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.cloud import storage
-import pprint
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 
@@ -485,19 +479,24 @@ def generate_sort_filter_pipeline(
             {
                 "$addFields": {
                     "targetValue": {
-                        "$first": {
-                            "$map": {
-                                "input": {
-                                    "$filter": {
-                                        "input": "$attributesList",
-                                        "as": "attr",
-                                        "cond": {"$eq": ["$$attr.key", attr_key_name]},
+                        "$ifNull": [
+                            {
+                                "$first": {
+                                    "$map": {
+                                        "input": {
+                                            "$filter": {
+                                                "input": "$attributesList",
+                                                "as": "attr",
+                                                "cond": {"$eq": ["$$attr.key", attr_key_name]},
+                                            }
+                                        },
+                                        "as": "targetAttr",
+                                        "in": "$$targetAttr.value",
                                     }
-                                },
-                                "as": "targetAttr",
-                                "in": "$$targetAttr.value",
-                            }
-                        }
+                                }
+                            },
+                            ""  # replace null with empty string
+                        ]
                     }
                 }
             }
@@ -565,6 +564,6 @@ def generate_sort_filter_pipeline(
     if include_paging and records_per_page is not None and page is not None:
         pipeline.append({"$skip": records_per_page * page})
         pipeline.append({"$limit": records_per_page})
-    _log.info(f"returning pipeline:")
-    pprint.pprint(pipeline)
+    # _log.info(f"returning pipeline:")
+    # pprint.pprint(pipeline)
     return pipeline
