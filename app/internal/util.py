@@ -425,6 +425,7 @@ def generate_mongo_pipeline(
     for_ranking=False,
     secondary_sort=None,
     convert_target_value_to_number=False,
+    match_record_id=None,
 ):
     """
     Generates pipeline that applies filtering, complex sorting, paging.
@@ -455,7 +456,6 @@ def generate_mongo_pipeline(
     if primary_sort_key.startswith("attributesList."):
         attr_key_name = primary_sort_key.split(".", 1)[1]
         primary_sort_key = attr_key_name
-        useTargetValue = True
 
         pipeline.append(
             {
@@ -526,12 +526,15 @@ def generate_mongo_pipeline(
                     }
                 }
             )
-            pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
+            pipeline_sort = {"sortComposite": primary_sort_dir}
+            reverse_pipeline_sort = {"sortComposite": primary_sort_dir*-1}
+            pipeline.append({"$sort": pipeline_sort})
         else:
-            pipeline.append({"$sort": {f"{target}": primary_sort_dir}})
+            pipeline_sort = {f"{target}": primary_sort_dir}
+            reverse_pipeline_sort = {f"{target}": primary_sort_dir*-1}
+            pipeline.append({"$sort": pipeline_sort})
 
     else:  # Sorting by top level field
-        useTargetValue = False
         if secondary_sort_key:
             pipeline.append(
                 {
@@ -543,10 +546,14 @@ def generate_mongo_pipeline(
                     }
                 }
             )
-            pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
+            pipeline_sort = {"sortComposite": primary_sort_dir}
+            reverse_pipeline_sort = {"sortComposite": primary_sort_dir*-1}
+            pipeline.append({"$sort": pipeline_sort})
         else:
             sort_stage = {primary_sort_key: primary_sort_dir}
-            pipeline.append({"$sort": sort_stage})
+            pipeline_sort = sort_stage
+            reverse_pipeline_sort = {primary_sort_key: primary_sort_dir*-1}
+            pipeline.append({"$sort": pipeline_sort})
 
     if for_ranking: # Adds rank (record index) and previous, next ids using setWindowFields
         ## Note: $setWindowFields appears to sort differently than the regular sort applied above, even when sorting on the
@@ -554,14 +561,10 @@ def generate_mongo_pipeline(
 
         ## TODO: implement secondary sort key in here
         ## we'll need to use the sortComposite field
-        if useTargetValue:
-            windowSortBy = {f"{target}": primary_sort_dir}
-        else:
-            windowSortBy = {primary_sort_key: primary_sort_dir}
         pipeline.append(
             {
                 "$setWindowFields": {
-                    "sortBy": windowSortBy,
+                    "sortBy": pipeline_sort,
                     "output": {
                         "rank": {"$documentNumber": {}},
                         "prevId": {
@@ -570,11 +573,31 @@ def generate_mongo_pipeline(
                         "nextId": {
                             "$shift": {"by": 1, "output": {"$toString": "$_id"}}
                         },
+                        # get first and last _id in sorted window
+                        "firstId": {
+                            "$first": {"output": {"$toString": "$_id"}}
+                        },
+                        "lastId": {
+                            "$last": {"output": {"$toString": "$_id"}}
+                        }
                     },
                 }
             }
         )
     
+    if match_record_id:
+        pipeline.append({"$match": {"_id": match_record_id}})
+
+        ## Wrap-around cases:
+        ## If we fetched the last record, nextId will be null; use firstId in this case
+        ## If we fetched the first record, prevId will be null; use lastId in this case
+        pipeline.append({
+            "$addFields": {
+                "prevId": {"$ifNull": ["$prevId", "$lastId.output"]},
+                "nextId": {"$ifNull": ["$nextId", "$firstId.output"]}
+            }
+        })
+
     # Optional paging
     if records_per_page is not None and page is not None:
         pipeline.append({"$skip": records_per_page * page})

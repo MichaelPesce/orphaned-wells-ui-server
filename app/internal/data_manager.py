@@ -875,19 +875,20 @@ class DataManager:
             primary_sort=sortBy,
             for_ranking=True,
             convert_target_value_to_number=True,
+            match_record_id=target_id
         )
-
-        pipeline.append({"$match": {"_id": target_id}})
-        # _log.info(f"getrecordindexes pipeline: {pipeline}")
 
         result = list(self.db.records.aggregate(pipeline))
         if not result:
             return None
 
         record = result[0]
-        document["recordIndex"] = str(record["rank"])
-        document["previous_id"] = str(record.get("prevId", target_id))
-        document["next_id"] = str(record.get("nextId", target_id))
+        prevId = record.get("prevId", target_id)
+        nextId = record.get("nextId", target_id)
+
+        document["recordIndex"] = record["rank"]
+        document["previous_id"] = prevId
+        document["next_id"] = nextId
 
         return document
 
