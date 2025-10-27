@@ -875,7 +875,7 @@ class DataManager:
             primary_sort=sortBy,
             for_ranking=True,
             convert_target_value_to_number=True,
-            match_record_id=target_id
+            match_record_id=target_id,
         )
 
         result = list(self.db.records.aggregate(pipeline))

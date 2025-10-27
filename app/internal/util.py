@@ -527,11 +527,11 @@ def generate_mongo_pipeline(
                 }
             )
             pipeline_sort = {"sortComposite": primary_sort_dir}
-            reverse_pipeline_sort = {"sortComposite": primary_sort_dir*-1}
+            reverse_pipeline_sort = {"sortComposite": primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
         else:
             pipeline_sort = {f"{target}": primary_sort_dir}
-            reverse_pipeline_sort = {f"{target}": primary_sort_dir*-1}
+            reverse_pipeline_sort = {f"{target}": primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
 
     else:  # Sorting by top level field
@@ -547,15 +547,17 @@ def generate_mongo_pipeline(
                 }
             )
             pipeline_sort = {"sortComposite": primary_sort_dir}
-            reverse_pipeline_sort = {"sortComposite": primary_sort_dir*-1}
+            reverse_pipeline_sort = {"sortComposite": primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
         else:
             sort_stage = {primary_sort_key: primary_sort_dir}
             pipeline_sort = sort_stage
-            reverse_pipeline_sort = {primary_sort_key: primary_sort_dir*-1}
+            reverse_pipeline_sort = {primary_sort_key: primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
 
-    if for_ranking: # Adds rank (record index) and previous, next ids using setWindowFields
+    if (
+        for_ranking
+    ):  # Adds rank (record index) and previous, next ids using setWindowFields
         ## Note: $setWindowFields appears to sort differently than the regular sort applied above, even when sorting on the
         ## same keys. Because of this, we apply $setWindowFields even when we don't need the rank.
 
@@ -574,29 +576,27 @@ def generate_mongo_pipeline(
                             "$shift": {"by": 1, "output": {"$toString": "$_id"}}
                         },
                         # get first and last _id in sorted window
-                        "firstId": {
-                            "$first": {"output": {"$toString": "$_id"}}
-                        },
-                        "lastId": {
-                            "$last": {"output": {"$toString": "$_id"}}
-                        }
+                        "firstId": {"$first": {"output": {"$toString": "$_id"}}},
+                        "lastId": {"$last": {"output": {"$toString": "$_id"}}},
                     },
                 }
             }
         )
-    
+
     if match_record_id:
         pipeline.append({"$match": {"_id": match_record_id}})
 
         ## Wrap-around cases:
         ## If we fetched the last record, nextId will be null; use firstId in this case
         ## If we fetched the first record, prevId will be null; use lastId in this case
-        pipeline.append({
-            "$addFields": {
-                "prevId": {"$ifNull": ["$prevId", "$lastId.output"]},
-                "nextId": {"$ifNull": ["$nextId", "$firstId.output"]}
+        pipeline.append(
+            {
+                "$addFields": {
+                    "prevId": {"$ifNull": ["$prevId", "$lastId.output"]},
+                    "nextId": {"$ifNull": ["$nextId", "$firstId.output"]},
+                }
             }
-        })
+        )
 
     # Optional paging
     if records_per_page is not None and page is not None:
