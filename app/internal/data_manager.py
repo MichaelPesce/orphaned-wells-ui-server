@@ -555,26 +555,6 @@ class DataManager:
                 _log.error(f"unable to get record groups for project {project_id}: {e}")
         return record_groups_list
 
-    def build_pipeline(
-        self,
-        filter_by,
-        primary_sort,
-        records_per_page,
-        page,
-        secondary_sort=None,
-    ):
-        pipeline = util.generate_sort_filter_pipeline(
-            filter_by=filter_by,
-            primary_sort=primary_sort,
-            records_per_page=records_per_page,
-            page=page,
-            for_ranking=True,
-            secondary_sort=secondary_sort,
-            convert_target_value_to_number=True,
-        )
-
-        return pipeline
-
     @time_it
     def fetchRecords(
         self,
@@ -587,11 +567,14 @@ class DataManager:
         records = []
         record_index = 1
 
-        pipeline = self.build_pipeline(
+        pipeline = util.generate_mongo_pipeline(
             filter_by=filter_by,
             primary_sort=sort_by,
             records_per_page=records_per_page,
             page=page,
+            for_ranking=True,
+            secondary_sort=None,
+            convert_target_value_to_number=True,
         )
 
         cursor = self.db.records.aggregate(pipeline)
@@ -887,7 +870,7 @@ class DataManager:
             else document["_id"]
         )
 
-        pipeline = util.generate_sort_filter_pipeline(
+        pipeline = util.generate_mongo_pipeline(
             filter_by=filterBy,
             primary_sort=sortBy,
             for_ranking=True,

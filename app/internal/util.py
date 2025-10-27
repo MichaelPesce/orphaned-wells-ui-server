@@ -417,7 +417,7 @@ def defaultJSONDumpHandler(obj):
         return str(obj)
 
 
-def generate_sort_filter_pipeline(
+def generate_mongo_pipeline(
     filter_by,
     primary_sort,
     records_per_page=None,
@@ -427,19 +427,18 @@ def generate_sort_filter_pipeline(
     convert_target_value_to_number=False,
 ):
     """
-    Generates the part of the pipeline that applies filtering, extraction of sort values,
-    and sorting (including secondary keys when desired) in a consistent way.
+    Generates pipeline that applies filtering, complex sorting, paging.
 
     filter_by : dictionary in mongo filters format
     primary_sort : list [field, direction]
-    secondary_sort : list [field, direction]
+        To sort by field inside attributesList, send parameter in as "attributesList.<field-name>"
+    records_per_page : number
+    page : number
     for_ranking : If True, will produce a 'sortComposite' field and $sort/$setWindowFields with a single top-level sort key.
+    secondary_sort : list [field, direction]
+    convert_target_value_to_number : for sorting attributesList field.
+        if true, will attempt to use regex to convert field to number before applying sort
     """
-    if records_per_page is not None and page is not None:
-        include_paging = True
-    else:
-        include_paging = False
-
     pipeline = [{"$match": filter_by}]
 
     primary_sort_key = primary_sort[0]
@@ -530,7 +529,6 @@ def generate_sort_filter_pipeline(
             pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
             pipeline.append({"$sort": {f"{target}": primary_sort_dir}})
-            # pipeline.append({"$project": {"targetValue": 0}})
 
     else:  # Sorting by top level field
         useTargetValue = False
@@ -550,10 +548,12 @@ def generate_sort_filter_pipeline(
             sort_stage = {primary_sort_key: primary_sort_dir}
             pipeline.append({"$sort": sort_stage})
 
-    if for_ranking:
+    if for_ranking: # Adds rank (record index) and previous, next ids using setWindowFields
+        ## Note: $setWindowFields appears to sort differently than the regular sort applied above, even when sorting on the
+        ## same keys. Because of this, we apply $setWindowFields even when we don't need the rank.
+
         ## TODO: implement secondary sort key in here
         ## we'll need to use the sortComposite field
-        # if secondary_sort_key:
         if useTargetValue:
             windowSortBy = {f"{target}": primary_sort_dir}
         else:
@@ -574,10 +574,10 @@ def generate_sort_filter_pipeline(
                 }
             }
         )
+    
     # Optional paging
-    if include_paging and records_per_page is not None and page is not None:
+    if records_per_page is not None and page is not None:
         pipeline.append({"$skip": records_per_page * page})
         pipeline.append({"$limit": records_per_page})
-    # _log.info(f"returning pipeline:")
-    # pprint.pprint(pipeline)
+
     return pipeline
