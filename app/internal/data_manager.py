@@ -76,6 +76,7 @@ class DataManager:
         _log.info(f"{user} releasing lock")
         self.LOCKED = False
 
+    @time_it
     def lockRecord(self, record_id, user, release_previous_record=True):
         _log.info(f"{user} locking {record_id}")
         if release_previous_record:
@@ -96,6 +97,7 @@ class DataManager:
         elif user:
             self.db.locked_records.delete_many({"user": user})
 
+    @time_it
     def tryLockingRecord(self, record_id, user):
         try:
             # self.fetchLock(user)
@@ -369,6 +371,7 @@ class DataManager:
         default_team = user_document.get("default_team", None)
         return self.getTeamProjectList(default_team)
 
+    @time_it
     def getUserRecordGroups(self, user):
         projects = self.fetchProjects(user)
         record_groups = []
@@ -749,7 +752,10 @@ class DataManager:
 
         return project_document, record_group
 
-    def fetchRecordData(self, record_id, user_info, page_state=None):
+    @time_it
+    def fetchRecordData(
+        self, record_id, user_info, page_state=None, background_tasks=None
+    ):
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -839,10 +845,11 @@ class DataManager:
             )
             document["attributesList"] = sorted_attributes
 
-            if update_db:
+            if update_db and background_tasks:
                 ## after sorting, update the record list so frontend and backend are in sync
                 ## this shouldnt always be necessary, but for now do it every time
-                self.updateRecord(
+                background_tasks.add_task(
+                    self.updateRecord,
                     record_id=document["_id"],
                     new_data={"attributesList": document["attributesList"]},
                     update_type="attributesList",
@@ -901,6 +908,7 @@ class DataManager:
 
         return document
 
+    @time_it
     def getProcessorByRecordGroupID(self, rg_id):
         _id = ObjectId(rg_id)
         try:
@@ -1054,6 +1062,7 @@ class DataManager:
             calling_function="updateRecordReviewStatus",
         )
 
+    @time_it
     def updateRecord(
         self,
         record_id,
