@@ -567,6 +567,7 @@ class DataManager:
             page=page,
             for_ranking=True,
             secondary_sort=secondary_sort,
+            convert_target_value_to_number=True,
         )
 
         return pipeline
@@ -880,7 +881,10 @@ class DataManager:
         )
 
         pipeline = util.generate_sort_filter_pipeline(
-            filter_by=filterBy, primary_sort=sortBy, for_ranking=True
+            filter_by=filterBy,
+            primary_sort=sortBy,
+            for_ranking=True,
+            convert_target_value_to_number=True,
         )
 
         pipeline.append({"$match": {"_id": target_id}})

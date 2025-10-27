@@ -417,24 +417,6 @@ def defaultJSONDumpHandler(obj):
         return str(obj)
 
 
-def normalize_sort_direction(direction):
-    """
-    Ensures sort direction is an integer 1 or -1.
-    Accepts 'asc', 'desc', 'ascending', 'descending', etc.
-    """
-    if isinstance(direction, int):
-        if direction in (1, -1):
-            return direction
-        raise ValueError("Sort direction integer must be 1 or -1")
-    if isinstance(direction, str):
-        dir_lower = direction.lower()
-        if dir_lower in ("asc", "ascending"):
-            return 1
-        elif dir_lower in ("desc", "descending"):
-            return -1
-    raise ValueError(f"Invalid sort direction value: {direction}")
-
-
 def generate_sort_filter_pipeline(
     filter_by,
     primary_sort,
@@ -442,6 +424,7 @@ def generate_sort_filter_pipeline(
     page=None,
     for_ranking=False,
     secondary_sort=None,
+    convert_target_value_to_number=False,
 ):
     """
     Generates the part of the pipeline that applies filtering, extraction of sort values,
@@ -504,18 +487,49 @@ def generate_sort_filter_pipeline(
             }
         )
 
+        target = "targetValue"
+        if convert_target_value_to_number:
+            target = "targetNumber"
+
+            pipeline.append(
+                {
+                    "$addFields": {
+                        "targetNumber": {
+                            "$let": {
+                                "vars": {
+                                    "match": {
+                                        "$regexFind": {
+                                            "input": {"$toString": "$targetValue"},
+                                            # "input": "$targetValue",
+                                            "regex": "\\d+",
+                                        }
+                                    }
+                                },
+                                "in": {
+                                    "$cond": [
+                                        {"$ne": ["$$match", None]},
+                                        {"$toInt": "$$match.match"},
+                                        None,
+                                    ]
+                                },
+                            }
+                        }
+                    }
+                }
+            )
+
         if secondary_sort_key:
             # Create a composite field to sort by
             pipeline.append(
                 {
                     "$addFields": {
-                        "sortComposite": ["$targetValue", f"${secondary_sort_key}"]
+                        "sortComposite": [f"${target}", f"${secondary_sort_key}"]
                     }
                 }
             )
             pipeline.append({"$sort": {"sortComposite": primary_sort_dir}})
         else:
-            pipeline.append({"$sort": {"targetValue": primary_sort_dir}})
+            pipeline.append({"$sort": {f"{target}": primary_sort_dir}})
             # pipeline.append({"$project": {"targetValue": 0}})
 
     else:  # Sorting by top level field
@@ -541,7 +555,7 @@ def generate_sort_filter_pipeline(
         ## we'll need to use the sortComposite field
         # if secondary_sort_key:
         if useTargetValue:
-            windowSortBy = {"targetValue": primary_sort_dir}
+            windowSortBy = {f"{target}": primary_sort_dir}
         else:
             windowSortBy = {primary_sort_key: primary_sort_dir}
         pipeline.append(
