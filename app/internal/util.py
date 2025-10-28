@@ -439,6 +439,7 @@ def generate_mongo_pipeline(
     secondary_sort : list [field, direction]
     convert_target_value_to_number : for sorting attributesList field.
         if true, will attempt to use regex to convert field to number before applying sort
+    match_record_id : ObjectID for record that we want to find
     """
     pipeline = [{"$match": filter_by}]
 
