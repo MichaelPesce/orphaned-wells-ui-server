@@ -565,7 +565,6 @@ class DataManager:
         search_for_errors=True,
     ):
         records = []
-        record_index = 1
 
         pipeline = util.generate_mongo_pipeline(
             filter_by=filter_by,
@@ -581,7 +580,6 @@ class DataManager:
 
         for document in cursor:
             document["_id"] = str(document["_id"])
-            document["recordIndex"] = record_index
             if search_for_errors:
                 [hasErrors, found_values] = util.searchRecordForErrorsAndTargetKeys(
                     document
@@ -589,7 +587,6 @@ class DataManager:
                 document["has_errors"] = hasErrors
                 for each in found_values:
                     document[each] = found_values[each]
-            record_index += 1
             records.append(document)
         # _log.info(records)
         record_count = self.db.records.count_documents(filter_by)
@@ -886,7 +883,7 @@ class DataManager:
         prevId = record.get("prevId", target_id)
         nextId = record.get("nextId", target_id)
 
-        document["recordIndex"] = record["rank"]
+        document["rank"] = record["rank"]
         document["previous_id"] = prevId
         document["next_id"] = nextId
 
