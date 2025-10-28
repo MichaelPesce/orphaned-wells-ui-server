@@ -835,7 +835,7 @@ async def download_records(
 
     json_fields_to_include = {
         "topLevelFields": ["name", "filename"],
-        "attributesList": ["key", "value", "normalized_vertices", "subattributes"]
+        "attributesList": ["key", "value", "normalized_vertices", "subattributes"],
     }
 
     keep_all_columns = False
@@ -844,15 +844,26 @@ async def download_records(
 
     if location == "project":
         records, _ = data_manager.fetchRecordsByProject(
-            user_info, _id, filter_by=filter_by, sort_by=sort_by, include_attribute_fields=json_fields_to_include
+            user_info,
+            _id,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
         )
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(
-            user_info, _id, filter_by=filter_by, sort_by=sort_by, include_attribute_fields=json_fields_to_include
+            user_info,
+            _id,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
         )
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
-            user_info, filter_by=filter_by, sort_by=sort_by, include_attribute_fields=json_fields_to_include
+            user_info,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
         )
     else:
         raise HTTPException(

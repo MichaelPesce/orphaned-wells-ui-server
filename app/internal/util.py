@@ -427,7 +427,7 @@ def generate_mongo_pipeline(
     convert_target_value_to_number=False,
     match_record_id=None,
     include_attribute_fields: dict = None,
-    exclude_attribute_fields: dict = None, ##TODO: add functionality for this
+    exclude_attribute_fields: dict = None,  ##TODO: add functionality for this
 ):
     """
     Generates pipeline that applies filtering, complex sorting, paging.
@@ -461,16 +461,17 @@ def generate_mongo_pipeline(
         if len(attributesListFields) > 0:
             attributesList_include = {}
             for attributesListField in attributesListFields:
-                attributesList_include[attributesListField] = f"$$attr.{attributesListField}"
+                attributesList_include[
+                    attributesListField
+                ] = f"$$attr.{attributesListField}"
             project["$project"]["attributesList"] = {
-                        "$map": {
-                            "input": "$attributesList",
-                            "as": "attr",
-                            "in": attributesList_include
-                        }
-                    }
+                "$map": {
+                    "input": "$attributesList",
+                    "as": "attr",
+                    "in": attributesList_include,
+                }
+            }
         pipeline.append(project)
-        
 
     primary_sort_key = primary_sort[0]
     primary_sort_dir = primary_sort[1]
