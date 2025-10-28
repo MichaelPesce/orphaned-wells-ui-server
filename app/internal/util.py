@@ -528,11 +528,9 @@ def generate_mongo_pipeline(
                 }
             )
             pipeline_sort = {"sortComposite": primary_sort_dir}
-            reverse_pipeline_sort = {"sortComposite": primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
         else:
             pipeline_sort = {f"{target}": primary_sort_dir}
-            reverse_pipeline_sort = {f"{target}": primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
 
     else:  # Sorting by top level field
@@ -548,12 +546,10 @@ def generate_mongo_pipeline(
                 }
             )
             pipeline_sort = {"sortComposite": primary_sort_dir}
-            reverse_pipeline_sort = {"sortComposite": primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
         else:
             sort_stage = {primary_sort_key: primary_sort_dir}
             pipeline_sort = sort_stage
-            reverse_pipeline_sort = {primary_sort_key: primary_sort_dir * -1}
             pipeline.append({"$sort": pipeline_sort})
 
     if (
