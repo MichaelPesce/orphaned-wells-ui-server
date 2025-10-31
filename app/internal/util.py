@@ -637,6 +637,7 @@ def generate_mongo_pipeline(
 
     return pipeline
 
+
 def remap_airtable_keys(original_dict):
     key_map = {
         "Page Sort Order": "page_order_sort",
@@ -646,7 +647,7 @@ def remap_airtable_keys(original_dict):
         "Occurrence": "occurrence",
         "Database Data Type": "database_data_type",
         "Cleaning Function": "cleaning_function",
-        "Model Enabled": "model_enabled"
+        "Model Enabled": "model_enabled",
     }
 
     new_dict = {}
@@ -655,4 +656,3 @@ def remap_airtable_keys(original_dict):
         new_dict[new_key] = value
 
     return new_dict
-
