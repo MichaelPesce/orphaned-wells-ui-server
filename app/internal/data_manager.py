@@ -29,7 +29,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_AIRTABLE = False
+USE_AIRTABLE = True
 
 
 class DataManager:
@@ -53,6 +53,16 @@ class DataManager:
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
         self.createProcessorsList()
+
+    @time_it
+    def getProcessorById(self, google_id=None):
+        if USE_AIRTABLE:
+            _log.info(f"getting processor using airtable")
+            processor = airtable_api.get_processor_by_id(self.airtable_base, google_id)
+        elif google_id is not None:
+            _log.info(f"getting processor using processor_api")
+            processor = processor_api.get_processor_by_id(self.collaborator, google_id)
+        return processor
 
     def getAirtableIds(self):
         ## TODO:
@@ -85,6 +95,7 @@ class DataManager:
         return airtable_api.get_processor_list(airtable_base)
         # AIRTABLE_PROCESSORS_TABLE_ID = airtable_keys.get("AIRTABLE_PROCESSORS_TABLE_ID")
 
+    @time_it
     def createProcessorsList(self):
         if USE_AIRTABLE:
             processor_list = self.createAirtableProcessorsList()
@@ -97,8 +108,7 @@ class DataManager:
             else:
                 self.using_default_processor = False
             self.processor_list = processor_list
-            # self.processor_dict = util.convert_processor_list_to_dict(processor_list)
-        _log.info(f"returning processor list: {processor_list}")
+        # _log.info(f"returning processor list: {processor_list}")
         return processor_list
 
     ## lock functions
@@ -772,7 +782,7 @@ class DataManager:
         return None
 
     def getProcessorByGoogleId(self, google_id):
-        processor = processor_api.get_processor_by_id(self.collaborator, google_id)
+        processor = self.getProcessorById(google_id)
         return processor
 
     def fetchProcessors(self, user):
@@ -888,9 +898,7 @@ class DataManager:
         ## sort record attributes
         try:
             google_id = rg["processorId"]
-            processor_doc = processor_api.get_processor_by_id(
-                self.collaborator, google_id
-            )
+            processor_doc = self.getProcessorById(google_id)
             sorted_attributes, update_db = util.sortRecordAttributes(
                 document["attributesList"], processor_doc
             )
@@ -967,9 +975,7 @@ class DataManager:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
-            processor_document = processor_api.get_processor_by_id(
-                self.collaborator, google_id
-            )
+            processor_document = self.getProcessorById(google_id)
             if not processor_document:
                 processor_document = DEFAULT_PROCESSORS[0]
             processor_attributes = processor_document.get("attributes", None)

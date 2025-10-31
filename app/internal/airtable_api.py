@@ -2,6 +2,7 @@ import os
 import pyairtable
 from pyairtable import Api
 from dotenv import load_dotenv
+from app.internal.util import remap_airtable_keys
 
 load_dotenv()
 
@@ -110,8 +111,7 @@ def get_table_data(airtable_base, table_name: str):
                 table_contents = table.all()
                 for row in table_contents:
                     row_fields = row.get("fields", {})
-                    ## TODO: we have to convert field names
-                    attributes.append(row_fields)
+                    attributes.append(remap_airtable_keys(row_fields))
                 break
 
     except Exception as e:
@@ -149,7 +149,7 @@ def get_processor_by_id(airtable_base, processor_id: str):
 
     processor_name = processor_data.get("Processor Name")
 
-    processor_data["attributes"] = get_table_data(processor_name)
+    processor_data["attributes"] = get_table_data(airtable_base, processor_name)
 
     return processor_data
 
@@ -183,6 +183,6 @@ def get_processor_by_name(
         print(f"unable to find processor data for: {processor_name}")
         return None
 
-    processor_data["attributes"] = get_table_data(processor_name)
+    processor_data["attributes"] = get_table_data(airtable_base, processor_name)
 
     return processor_data
