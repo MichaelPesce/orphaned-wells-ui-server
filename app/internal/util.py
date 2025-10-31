@@ -46,7 +46,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
     processor_attributes = processor.get("attributes", None)
     if processor_attributes is None:
         _log.info(f"no processor attributes found")
-        return attributes, False 
+        return attributes, False
     processor_attributes.sort(key=lambda x: x.get("page_order_sort", float("inf")))
 
     ## we want to make sure that the frontend and backend are always in sync.

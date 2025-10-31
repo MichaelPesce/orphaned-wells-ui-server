@@ -14,6 +14,7 @@ from app.internal.settings import AppSettings
 from app.internal.util import generate_download_signed_url_v4
 import app.internal.util as util
 from app.internal.util import time_it
+from app.internal import airtable_api
 
 _log = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ DEFAULT_PROCESSORS = [
 ]
 
 USE_AIRTABLE = False
+
 
 class DataManager:
     """Manage the active data."""
@@ -50,24 +52,53 @@ class DataManager:
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
-        self.processor_list = self.createProcessorsList()
-        self.processor_dict = util.convert_processor_list_to_dict(self.processor_list)
+        self.createProcessorsList()
+
+    def getAirtableIds(self):
+        ## TODO:
+        _log.info(f"getting airtable ids for {self.collaborator}")
+        query = {"collaborator": self.collaborator}
+        airtable_data = list(self.db.airtable_data.find(query))
+        if len(airtable_data) == 1:
+            airtable_keys = airtable_data[0]
+        elif len(airtable_data) > 0:
+            _log.info(f"found MULTIPLE ENTRIES OF airtable data")
+            airtable_keys = airtable_data[0]
+        else:
+            _log.info(f"did not find airtable data")
+            airtable_keys = None
+            ## TODO: make call to get default?
+
+        return airtable_keys
+
+    def createAirtableProcessorsList(self):
+        airtable_keys = self.getAirtableIds()
+        if airtable_keys is None:
+            _log.info(f"airtable_keys is none")
+            return []
+        AIRTABLE_API_TOKEN = airtable_keys.get("AIRTABLE_API_TOKEN")
+        AIRTABLE_BASE_ID = airtable_keys.get("AIRTABLE_BASE_ID")
+        airtable_base = airtable_api.get_airtable_base(
+            AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID
+        )
+        self.airtable_base = airtable_base
+        return airtable_api.get_processor_list(airtable_base)
+        # AIRTABLE_PROCESSORS_TABLE_ID = airtable_keys.get("AIRTABLE_PROCESSORS_TABLE_ID")
 
     def createProcessorsList(self):
-        # if USE_AIRTABLE:
-        ## TODO: if we're using airtable, try and fetch necessary IDs from mongo
-        ## the frontend will have to initialize these IDs
-        ## also, we might not want to store processor_list in memory. 
-        ## rather, we'll fetch it each time we need it
-
-
-        processor_list = processor_api.get_processor_list(self.collaborator)
-        if not processor_list:
-            _log.info(f"no processors found, using default extractor")
-            processor_list = DEFAULT_PROCESSORS
-            self.using_default_processor = True
+        if USE_AIRTABLE:
+            processor_list = self.createAirtableProcessorsList()
         else:
-            self.using_default_processor = False
+            processor_list = processor_api.get_processor_list(self.collaborator)
+            if not processor_list:
+                _log.info(f"no processors found, using default extractor")
+                processor_list = DEFAULT_PROCESSORS
+                self.using_default_processor = True
+            else:
+                self.using_default_processor = False
+            self.processor_list = processor_list
+            # self.processor_dict = util.convert_processor_list_to_dict(processor_list)
+        _log.info(f"returning processor list: {processor_list}")
         return processor_list
 
     ## lock functions
@@ -745,7 +776,8 @@ class DataManager:
         return processor
 
     def fetchProcessors(self, user):
-        return self.processor_list
+        _log.info("fetching processors")
+        return self.createProcessorsList()
 
     def fetchRoles(self, role_categories):
         roles = []
