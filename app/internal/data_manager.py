@@ -28,6 +28,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
+USE_AIRTABLE = False
 
 class DataManager:
     """Manage the active data."""
@@ -53,6 +54,13 @@ class DataManager:
         self.processor_dict = util.convert_processor_list_to_dict(self.processor_list)
 
     def createProcessorsList(self):
+        # if USE_AIRTABLE:
+        ## TODO: if we're using airtable, try and fetch necessary IDs from mongo
+        ## the frontend will have to initialize these IDs
+        ## also, we might not want to store processor_list in memory. 
+        ## rather, we'll fetch it each time we need it
+
+
         processor_list = processor_api.get_processor_list(self.collaborator)
         if not processor_list:
             _log.info(f"no processors found, using default extractor")
@@ -937,7 +945,7 @@ class DataManager:
             return google_id, model_id, processor_attributes
         except Exception as e:
             _log.error(f"unable to find processor: {e}")
-            return None
+            return None, None, None
 
     def getProcessorByRecordID(self, record_id):
         _id = ObjectId(record_id)
@@ -948,7 +956,7 @@ class DataManager:
             return self.getProcessorByRecordGroupID(rg_id)
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
-            return None
+            return None, None, None
 
     ## create/add functions
     def createProject(self, project_info, user_info):

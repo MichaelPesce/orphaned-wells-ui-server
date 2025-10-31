@@ -40,7 +40,13 @@ def time_it(func):
 
 
 def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
-    processor_attributes = processor["attributes"]
+    if processor is None:
+        _log.info(f"no processor found")
+        return attributes, False
+    processor_attributes = processor.get("attributes", None)
+    if processor_attributes is None:
+        _log.info(f"no processor attributes found")
+        return attributes, False 
     processor_attributes.sort(key=lambda x: x.get("page_order_sort", float("inf")))
 
     ## we want to make sure that the frontend and backend are always in sync.
@@ -78,7 +84,6 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
                     f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
                 )
                 sorted_attributes.append(attr)
-
     return sorted_attributes, requires_db_update
 
 
