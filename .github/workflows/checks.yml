@@ -49,6 +49,27 @@ jobs:
           pip install .
           pip install -r requirements.txt
 
+      - name: Add creds file
+        id: create-creds-json
+        uses: jsdaniell/create-json@v1.2.3
+        with:
+            name: "app/creds.json"
+            json: ${{ secrets.STAGING_CREDS_JSON }}
+
+      - name: Add service key json file
+        id: create-service-key-json
+        uses: jsdaniell/create-json@v1.2.3
+        with:
+            name: "app/michael2-service-key.json"
+            json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
+
+      - name: Create .env file from secret
+        run: |
+          echo "${{ secrets.ENV_FILE }}" > app/.env
+
+      - name: show .env
+        run: cat app/.env
+
       - name: DEBUG LS
         run: ls -a
 
