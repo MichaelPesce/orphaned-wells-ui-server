@@ -45,7 +45,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install application
-        run: pip install .
+        run: |
+          pip install .
+          pip install -r requirements.txt
 
       - name: DEBUG LS
         run: ls -a
