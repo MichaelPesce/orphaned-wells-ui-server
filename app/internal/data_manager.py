@@ -31,7 +31,6 @@ DEFAULT_PROCESSORS = [
 
 USE_AIRTABLE = True
 
-
 class DataManager:
     """Manage the active data."""
 
@@ -52,6 +51,7 @@ class DataManager:
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
+        self.using_default_processor = False
         self.createProcessorsList()
 
     @time_it
