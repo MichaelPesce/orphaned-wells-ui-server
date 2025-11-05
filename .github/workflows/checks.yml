@@ -44,6 +44,17 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.12'
+
+      - name: Create .env file from secret
+        run: |
+          echo "${{ secrets.STAGING_ENV }}" > app/.env
+
+      - name: show .env
+        run: cat app/.env
+
+      - name: DEBUG LS
+        run: ls -a ./app
+
       - name: Install application
         run: |
           pip install .
@@ -62,13 +73,6 @@ jobs:
         with:
             name: "app/michael2-service-key.json"
             json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
-
-      - name: Create .env file from secret
-        run: |
-          echo "${{ secrets.ENV_FILE }}" > app/.env
-
-      - name: show .env
-        run: cat app/.env
 
       - name: DEBUG LS
         run: ls -a
