@@ -31,6 +31,7 @@ DEFAULT_PROCESSORS = [
 
 USE_AIRTABLE = True
 
+
 class DataManager:
     """Manage the active data."""
 
