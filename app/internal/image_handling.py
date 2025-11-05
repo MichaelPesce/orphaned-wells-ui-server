@@ -32,7 +32,7 @@ os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
 os.environ[
     "GOOGLE_APPLICATION_CREDENTIALS"
-] = f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
+] = f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
 
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com"),
@@ -603,7 +603,7 @@ async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET
 
     async with aiohttp.ClientSession() as session:
         storage = Storage(
-            service_file=f"{DIRNAME}/internal/creds.json", session=session
+            service_file=f"{DIRNAME}/creds.json", session=session
         )
         status = await storage.upload(bucket_name, f"{folder}/{blob_name}", file_obj)
         return status["selfLink"]
@@ -619,7 +619,7 @@ async def upload_to_google_storage(file_path, file_name, folder="uploads"):
 def delete_google_storage_directory(rg_id, bucket_name=BUCKET_NAME):
     _log.info(f"deleting record group {rg_id} from google storage")
     storage_client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
+        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
     )
     bucket = storage_client.get_bucket(bucket_name)
     blobs = bucket.list_blobs(prefix=f"uploads/{rg_id}")
