@@ -45,9 +45,19 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Check secret length
+        run: |
+          echo "Length: ${#STAGING_ENV}"
+        env:
+          STAGING_ENV: ${{ secrets.STAGING_ENV }}
+
       - name: Create .env file from secret
         run: |
-          echo "${{ secrets.STAGING_ENV }}" > app/.env
+          cat << 'EOF' > app/.env
+          ${{ secrets.STAGING_ENV }}
+          EOF
+        # run: |
+        #   echo "${{ secrets.STAGING_ENV }}" > app/.env
 
       - name: show .env
         run: cat app/.env
