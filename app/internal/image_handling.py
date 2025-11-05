@@ -30,9 +30,7 @@ STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
-os.environ[
-    "GOOGLE_APPLICATION_CREDENTIALS"
-] = f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
 
 docai_client = documentai.DocumentProcessorServiceClient(
     client_options=ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com"),
@@ -602,9 +600,7 @@ async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET
     """Upload image file to bucket."""
 
     async with aiohttp.ClientSession() as session:
-        storage = Storage(
-            service_file=f"{DIRNAME}/creds.json", session=session
-        )
+        storage = Storage(service_file=f"{DIRNAME}/creds.json", session=session)
         status = await storage.upload(bucket_name, f"{folder}/{blob_name}", file_obj)
         return status["selfLink"]
 

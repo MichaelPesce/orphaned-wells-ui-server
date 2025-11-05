@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import argparse
 
 from dotenv import load_dotenv
+
 # fetch environment variables
 load_dotenv()
 
