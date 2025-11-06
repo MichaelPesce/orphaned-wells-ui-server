@@ -33,7 +33,7 @@ google-resumable-media==2.7.0
 googleapis-common-protos==1.62.0
 grpcio==1.60.0
 grpcio-status==1.60.0
-h11==0.14.0
+h11==0.16.0
 idna==3.6
 multidict
 mypy-extensions==1.0.0
