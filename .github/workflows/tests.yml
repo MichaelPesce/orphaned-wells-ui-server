@@ -78,16 +78,26 @@ jobs:
             -d '"${{ secrets.REFRESH_TOKEN }}"' \
             http://localhost:8001/auth_refresh
 
-            echo "Full response: $RESPONSE"
+            # echo "Full response: $RESPONSE"
 
             ID_TOKEN=$(echo "$RESPONSE" | jq -r '.id_token')
 
+            echo "Parsed ID_TOKEN: $ID_TOKEN"
+
+            # Fail if it's empty or null
+            if [ -z "$ID_TOKEN" ] || [ "$ID_TOKEN" = "null" ]; then
+              echo "Failed to extract id_token"
+              exit 1
+            fi
+
+            # Save for later steps
             echo "id_token=$ID_TOKEN" >> $GITHUB_OUTPUT
+
 
 
       - name: Test get_projects
         run: |
           echo "ID Token is: ${{ steps.get_token.outputs.id_token }}"
-          curl -s \
+          curl -s -f \
             -H "Authorization: Bearer ${{ steps.get_token.outputs.id_token }}" \
             http://localhost:8001/get_projects
