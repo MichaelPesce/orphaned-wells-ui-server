@@ -40,7 +40,6 @@ jobs:
       - name: Install application
         run: |
           pip install .
-          pip install -r requirements.txt
 
       - name: Add creds file
         id: create-creds-json
