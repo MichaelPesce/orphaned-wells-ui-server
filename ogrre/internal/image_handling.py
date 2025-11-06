@@ -17,10 +17,6 @@ import mimetypes
 
 from ogrre.internal.bulk_upload import upload_documents_from_directory
 import ogrre.internal.util as util
-from ogrre.internal.google_processor_manager import (
-    deploy_processor_version,
-    undeploy_processor_version,
-)
 
 _log = logging.getLogger(__name__)
 
@@ -37,6 +33,10 @@ docai_client = documentai.DocumentProcessorServiceClient(
     # credentials=f"{DIRNAME}/creds.json"
 )
 
+from ogrre.internal.google_processor_manager import (
+    deploy_processor_version,
+    undeploy_processor_version,
+)
 
 def process_zip(
     rg_id,
