@@ -1,5 +1,5 @@
 
-name: Checks
+name: OGRRE Backend Tests
 
 on:
   push:
