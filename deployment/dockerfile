@@ -7,7 +7,7 @@ WORKDIR /code
 COPY ./requirements.txt /code/requirements.txt
 COPY ./setup.py /code/setup.py
 COPY ./README.md /code/README.md
-COPY ./app /code/app
+COPY ./ogrre /code/ogrre
 
 RUN pip install --no-cache-dir --upgrade .
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
