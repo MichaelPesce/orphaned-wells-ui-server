@@ -9,12 +9,12 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, UpdateOne
 
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
-from app.internal.mongodb_connection import connectToDatabase
-from app.internal.settings import AppSettings
-from app.internal.util import generate_download_signed_url_v4
-import app.internal.util as util
-from app.internal.util import time_it
-from app.internal import airtable_api
+from ogrre.internal.mongodb_connection import connectToDatabase
+from ogrre.internal.settings import AppSettings
+from ogrre.internal.util import generate_download_signed_url_v4
+import ogrre.internal.util as util
+from ogrre.internal.util import time_it
+from ogrre.internal import airtable_api
 
 _log = logging.getLogger(__name__)
 
