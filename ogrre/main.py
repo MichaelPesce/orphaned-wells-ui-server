@@ -15,7 +15,7 @@ load_dotenv()
 
 _log = logging.getLogger(__name__)
 
-from app.routers import router
+from ogrre.routers import router
 
 app = FastAPI()
 

@@ -17,16 +17,16 @@ from fastapi import (
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 
-from app.internal.data_manager import data_manager
-from app.internal.image_handling import (
+from ogrre.internal.data_manager import data_manager
+from ogrre.internal.image_handling import (
     process_document,
     process_zip,
     deployProcessor,
     undeployProcessor,
     check_if_processor_is_deployed,
 )
-import app.internal.util as util
-import app.internal.auth as auth
+import ogrre.internal.util as util
+import ogrre.internal.auth as auth
 
 _log = logging.getLogger(__name__)
 

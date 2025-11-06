@@ -148,7 +148,7 @@ def generate_download_signed_url_v4(
     """
 
     storage_client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
+        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
     )
 
     # blob_name: path to file in google cloud bucket
@@ -206,7 +206,7 @@ def zip_files_stream(local_file_paths, documents=[]):
                 zs.write(file_path, os.path.basename(file_path))
 
     client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/internal/{STORAGE_SERVICE_KEY}"
+        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
     )
     bucket = client.bucket(BUCKET_NAME)
 

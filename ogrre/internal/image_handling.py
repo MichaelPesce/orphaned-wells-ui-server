@@ -15,9 +15,9 @@ import fitz
 import zipfile
 import mimetypes
 
-from app.internal.bulk_upload import upload_documents_from_directory
-import app.internal.util as util
-from app.internal.google_processor_manager import (
+from ogrre.internal.bulk_upload import upload_documents_from_directory
+import ogrre.internal.util as util
+from ogrre.internal.google_processor_manager import (
     deploy_processor_version,
     undeploy_processor_version,
 )

@@ -2,7 +2,7 @@ import os
 import pyairtable
 from pyairtable import Api
 from dotenv import load_dotenv
-from app.internal.util import remap_airtable_keys
+from ogrre.internal.util import remap_airtable_keys
 
 load_dotenv()
 

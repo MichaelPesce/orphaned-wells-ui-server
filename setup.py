@@ -35,7 +35,7 @@ setup(
     ],
     keywords="orphaned wells",
     packages=find_packages(
-        include=("app*",),
+        include=("ogrre*",),
     ),
     python_requires=">=3.8",
     install_requires=[
