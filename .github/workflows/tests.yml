@@ -59,4 +59,8 @@ jobs:
         run: ls -a
 
       - name: Run application
-        run: python ogrre/main.py
+        run: nohup python ogrre/main.py &
+
+      ## TODO: test a couple endpoints
+      # - name: Test endpoints
+      #   run: 
