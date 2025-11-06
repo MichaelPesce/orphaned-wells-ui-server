@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 EXPOSE 8001
 
 # run app in prod
-CMD ["python", "app/main.py", "--docker"]
+CMD ["python", "ogrre/main.py", "--docker"]

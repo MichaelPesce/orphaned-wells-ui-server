@@ -83,4 +83,4 @@ jobs:
   #       run: ls -a
 
   #     - name: Run application
-  #       run: python app/main.py
+  #       run: python oggre/main.py
