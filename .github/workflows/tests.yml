@@ -1,0 +1,63 @@
+
+name: Checks
+
+on:
+  push:
+
+defaults:
+  run:
+    # -l: login shell, needed when using Conda
+    shell: bash -l {0}
+
+env:
+  PIP_PROGRESS_BAR: "off"
+
+jobs:
+  app-test:
+    name: Run the application
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Check secret length
+        run: |
+          echo "Length: ${#STAGING_ENV}"
+        env:
+          STAGING_ENV: ${{ secrets.STAGING_ENV }}
+
+      - name: Create .env file from secret
+        run: |
+          cat << 'EOF' > app/.env
+          ${{ secrets.STAGING_ENV }}
+          EOF
+
+      - name: DEBUG LS
+        run: ls -a ./app
+
+      - name: Install application
+        run: |
+          pip install .
+          pip install -r requirements.txt
+
+      - name: Add creds file
+        id: create-creds-json
+        uses: jsdaniell/create-json@v1.2.3
+        with:
+            name: "app/creds.json"
+            json: ${{ secrets.STAGING_CREDS_JSON }}
+
+      - name: Add service key json file
+        id: create-service-key-json
+        uses: jsdaniell/create-json@v1.2.3
+        with:
+            name: "app/michael2-service-key.json"
+            json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
+
+      - name: DEBUG LS
+        run: ls -a
+
+      - name: Run application
+        run: python oggre/main.py
