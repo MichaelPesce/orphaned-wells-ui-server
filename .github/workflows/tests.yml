@@ -59,4 +59,4 @@ jobs:
         run: ls -a
 
       - name: Run application
-        run: python oggre/main.py
+        run: python ogrre/main.py
