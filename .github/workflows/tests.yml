@@ -67,7 +67,7 @@ jobs:
         run: |
           curl -f http://localhost:8001/docs
 
-      - name: Get ID token
+      - name: Test auth_refresh
         id: get_token
         run: |
           RESPONSE=$(curl -sSf \
