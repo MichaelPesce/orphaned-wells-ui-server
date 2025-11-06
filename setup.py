@@ -108,7 +108,7 @@ setup(
         "wheel==0.42.0",
         "yarl==1.9.4",
         "zipstream==1.1.4",
-        "ogrre_data_cleaning @ git+https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning@7a1dae01ab8bfa7be558837348a23783487707ce"
+        "ogrre_data_cleaning @ git+https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning@7a1dae01ab8bfa7be558837348a23783487707ce",
     ],
     extras_require={
         "dev": [
