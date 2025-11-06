@@ -59,8 +59,35 @@ jobs:
         run: ls -a
 
       - name: Run application
-        run: nohup python ogrre/main.py &
+        run: |
+          nohup python ogrre/main.py &
+          sleep 15
 
       ## TODO: test a couple endpoints
-      # - name: Test endpoints
-      #   run: 
+      - name: Test that backend is up and running
+        run: |
+          curl -f http://localhost:8001/docs
+
+      - name: Get ID token
+        id: get_token
+        run: |
+          curl -f \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.REFRESH_TOKEN}}" \
+            -H "Content-Type: application/json" \
+            -d '"${{ secrets.REFRESH_TOKEN }}"' \
+            http://localhost:8001/auth_refresh
+
+            echo "Full response: $RESPONSE"
+
+            ID_TOKEN=$(echo "$RESPONSE" | jq -r '.id_token')
+
+            echo "id_token=$ID_TOKEN" >> $GITHUB_OUTPUT
+
+
+      - name: Test get_projects
+        run: |
+          echo "ID Token is: ${{ steps.get_token.outputs.id_token }}"
+          curl -s \
+            -H "Authorization: Bearer ${{ steps.get_token.outputs.id_token }}" \
+            http://localhost:8001/get_projects
