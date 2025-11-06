@@ -13,7 +13,6 @@ defaults:
     shell: bash -l {0}
 
 env:
-  PYTEST_ADDOPTS: "--color=yes"
   PIP_PROGRESS_BAR: "off"
 
 jobs:
@@ -35,57 +34,53 @@ jobs:
         run: |
           black --check .
 
-  app-test:
-    name: Run the application
-    runs-on: ubuntu-latest
-    needs: [code-formatting]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
+  ## DOESNT WORK because we cannot access secrets in a PR
+  # app-test:
+  #   name: Run the application
+  #   runs-on: ubuntu-latest
+  #   needs: [code-formatting]
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: actions/setup-python@v4
+  #       with:
+  #         python-version: '3.12'
 
-      - name: Check secret length
-        run: |
-          echo "Length: ${#STAGING_ENV}"
-        env:
-          STAGING_ENV: ${{ secrets.STAGING_ENV }}
+  #     - name: Check secret length
+  #       run: |
+  #         echo "Length: ${#STAGING_ENV}"
+  #       env:
+  #         STAGING_ENV: ${{ secrets.STAGING_ENV }}
 
-      - name: Create .env file from secret
-        run: |
-          cat << 'EOF' > app/.env
-          ${{ secrets.STAGING_ENV }}
-          EOF
-        # run: |
-        #   echo "${{ secrets.STAGING_ENV }}" > app/.env
+  #     - name: Create .env file from secret
+  #       run: |
+  #         cat << 'EOF' > app/.env
+  #         ${{ secrets.STAGING_ENV }}
+  #         EOF
 
-      - name: show .env
-        run: cat app/.env
+  #     - name: DEBUG LS
+  #       run: ls -a ./app
 
-      - name: DEBUG LS
-        run: ls -a ./app
+  #     - name: Install application
+  #       run: |
+  #         pip install .
+  #         pip install -r requirements.txt
 
-      - name: Install application
-        run: |
-          pip install .
-          pip install -r requirements.txt
+  #     - name: Add creds file
+  #       id: create-creds-json
+  #       uses: jsdaniell/create-json@v1.2.3
+  #       with:
+  #           name: "app/creds.json"
+  #           json: ${{ secrets.STAGING_CREDS_JSON }}
 
-      - name: Add creds file
-        id: create-creds-json
-        uses: jsdaniell/create-json@v1.2.3
-        with:
-            name: "app/creds.json"
-            json: ${{ secrets.STAGING_CREDS_JSON }}
+  #     - name: Add service key json file
+  #       id: create-service-key-json
+  #       uses: jsdaniell/create-json@v1.2.3
+  #       with:
+  #           name: "app/michael2-service-key.json"
+  #           json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
 
-      - name: Add service key json file
-        id: create-service-key-json
-        uses: jsdaniell/create-json@v1.2.3
-        with:
-            name: "app/michael2-service-key.json"
-            json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
+  #     - name: DEBUG LS
+  #       run: ls -a
 
-      - name: DEBUG LS
-        run: ls -a
-
-      - name: Run application
-        run: python app/main.py
+  #     - name: Run application
+  #       run: python app/main.py
