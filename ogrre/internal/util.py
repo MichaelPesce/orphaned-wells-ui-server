@@ -229,6 +229,7 @@ def compute_total_size(local_file_paths, gcs_paths):
 
     return total_size
 
+
 @time_it
 def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
     """
@@ -301,13 +302,18 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
             elapsed_file = time.time() - start_file
             mb_size = bytes_read / (1024 * 1024)
             speed = (mb_size / elapsed_file) if elapsed_file > 0 else 0
-            logg(f"Downloaded #{i}: {mb_size:.2f} MB in {elapsed_file:.2f} s ({speed:.2f} MB/s)")
+            logg(
+                f"Downloaded #{i}: {mb_size:.2f} MB in {elapsed_file:.2f} s ({speed:.2f} MB/s)"
+            )
 
             # Add log file to download at last iteration
             if i == len(gcs_paths):
                 if log_to_file and os.path.isfile(log_to_file):
                     elapsed_total = time.time() - start_total
-                    logg(f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds", level="none")
+                    logg(
+                        f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds",
+                        level="none",
+                    )
                     log_file.flush()
                     zs.write(log_to_file, os.path.basename(log_to_file))
                 elif log_to_file:
@@ -319,7 +325,10 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
         for chunk in zs:
             yield chunk
         elapsed_total = time.time() - start_total
-        logg(f"{len(documents)} files streamed in {elapsed_total:.2f} seconds", level="info")
+        logg(
+            f"{len(documents)} files streamed in {elapsed_total:.2f} seconds",
+            level="info",
+        )
 
     return streaming_generator()
 
