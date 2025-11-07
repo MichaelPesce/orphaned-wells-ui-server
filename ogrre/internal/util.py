@@ -7,6 +7,7 @@ import sys
 import functools
 import zipstream
 from google.cloud import storage
+from google.api_core.exceptions import NotFound
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 
@@ -188,26 +189,45 @@ def compileDocumentImageList(records):
 def compute_total_size(local_file_paths, gcs_paths):
     """
     Compute total bytes of local files + google cloud images.
-    local_file_paths : list of paths
-    gcs_paths : dict list of paths
+    local_file_paths: list of paths
+    gcs_paths: dict or list of GCS blob paths
     """
     total_size = 0
 
+    # Local file sizes
     for file_path in local_file_paths or []:
         if os.path.isfile(file_path):
-            total_size += os.path.getsize(file_path)
+            try:
+                total_size += os.path.getsize(file_path)
+            except OSError as e:
+                _log.warning(f"Failed to get size of local file {file_path}: {e}")
+        else:
+            _log.warning(f"Local file not found: {file_path}")
 
-    storage_client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
-    )
-    bucket = storage_client.bucket(BUCKET_NAME)
-    for blob_name in gcs_paths:
-        blob = bucket.blob(blob_name)
-        blob.reload()  # fetch metadata from GCS
-        total_size += blob.size or 0
+    # GCS blob sizes
+    try:
+        storage_client = storage.Client.from_service_account_json(
+            f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+        )
+        bucket = storage_client.bucket(BUCKET_NAME)
+
+        for blob_name in gcs_paths or []:
+            try:
+                blob = bucket.blob(blob_name)
+                blob.reload()  # fetch metadata from GCS
+                if blob.size is not None:
+                    total_size += blob.size
+                else:
+                    _log.warning(f"GCS blob has no size info: {blob_name}")
+            except NotFound:
+                _log.warning(f"GCS blob not found: {blob_name}")
+            except Exception as e:
+                _log.error(f"Error retrieving GCS blob size for {blob_name}: {e}")
+
+    except Exception as e:
+        _log.error(f"Error initializing GCS client or bucket: {e}")
 
     return total_size
-
 
 @time_it
 def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
