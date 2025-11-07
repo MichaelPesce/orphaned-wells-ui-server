@@ -615,6 +615,7 @@ class DataManager:
         search_for_errors=True,
         include_attribute_fields=None,  ## use this to include ONLY specific fields
         exclude_attribute_fields=None,  ## use this to exclude specific fields
+        forDownload=False,
     ):
         records = []
 
@@ -628,6 +629,7 @@ class DataManager:
             convert_target_value_to_number=True,
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
+            forDownload=forDownload,
         )
 
         cursor = self.db.records.aggregate(pipeline)
@@ -655,6 +657,7 @@ class DataManager:
         filter_by={},
         include_attribute_fields=None,
         exclude_attribute_fields=None,
+        forDownload=False,
     ):
         team_info = self.fetchTeamInfo(user["email"])
         rg_list = self.getTeamRecordGroupsList(team_info["name"])
@@ -666,6 +669,7 @@ class DataManager:
             records_per_page,
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
+            forDownload=forDownload,
         )
 
     def fetchRecordsByRecordGroup(
@@ -678,6 +682,7 @@ class DataManager:
         filter_by={},
         include_attribute_fields=None,
         exclude_attribute_fields=None,
+        forDownload=False,
     ):
         filter_by["record_group_id"] = rg_id
         return self.fetchRecords(
@@ -687,6 +692,7 @@ class DataManager:
             records_per_page,
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
+        forDownload=forDownload,
         )
 
     def fetchRecordsByProject(
@@ -699,6 +705,7 @@ class DataManager:
         filter_by={},
         include_attribute_fields=None,
         exclude_attribute_fields=None,
+        forDownload=False,
     ):
         ## if we arent filtering by record_group_id, add filter to look for ALL record_ids in given project
         if "record_group_id" not in filter_by:
@@ -711,6 +718,7 @@ class DataManager:
             records_per_page,
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
+        forDownload=forDownload,
         )
 
     @time_it

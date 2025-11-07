@@ -858,6 +858,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
+            forDownload=True
         )
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(
@@ -866,6 +867,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
+            forDownload=True
         )
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
@@ -873,6 +875,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
+            forDownload=True
         )
     else:
         raise HTTPException(
@@ -908,12 +911,15 @@ async def download_records(
             documents = util.compileDocumentImageList(records)
         else:
             documents = []
-        z = util.zip_files_stream(filepaths, documents)
+        ## TODO: make this file name more unique, so multiple downloads dont have the same name
+        download_log_file = "zip_log.txt"
+        z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
 
         ## remove file after 60 seconds to allow for the user download to finish
+        filepaths.append(download_log_file)
         background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=60)
         headers = {"Content-Disposition": "attachment; filename=records.zip"}
-        _log.info(f"returning streaming response")
+        # _log.info(f"returning streaming response")
         return StreamingResponse(z, media_type="application/zip", headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
