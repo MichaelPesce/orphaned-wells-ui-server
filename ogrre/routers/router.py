@@ -808,6 +808,79 @@ async def check_if_records_exist(
     return data_manager.checkIfRecordsExist(file_list, rg_id)
 
 
+@router.post("/get_download_size/{location}/{_id}")
+async def get_download_size(
+    location: str,
+    _id: str,
+    request: Request,
+    user_info: dict = Depends(authenticate),
+):
+    """Download records for given project ID.
+
+    Args:
+        location: one of: team, project, record_group
+        _id: id of team, project or record group
+        request body:
+            exportType: type of export (csv or json)
+            columns: list attributes to export
+
+    Returns:
+        Some combination of
+            JSON file containing all or subset of record data for provided location
+            CSV file containing all or subset of record data for provided location
+            All document images for provided location
+    """
+    req = await request.json()
+
+    filter_by = req.get("filter", {})
+    sort_by = req.get("sort", ["dateCreated", 1])
+
+    json_fields_to_include = {
+        "topLevelFields": ["name", "filename", "image_files", "record_group_id"],
+        "attributesList": ["key", "value", "normalized_vertices", "subattributes"],
+    }
+
+    if location == "project":
+        records, _ = data_manager.fetchRecordsByProject(
+            user_info,
+            _id,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    elif location == "record_group":
+        records, _ = data_manager.fetchRecordsByRecordGroup(
+            user_info,
+            _id,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    elif location == "team":
+        records, _ = data_manager.fetchRecordsByTeam(
+            user_info,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Location must be project, record_group, or team"
+        )
+
+    try:
+        documents = util.compileDocumentImageList(records)
+        gcs_paths = util.generate_gcs_paths(documents)
+        totalBytes = util.compute_total_size([], gcs_paths.keys())
+        return totalBytes
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
+
+
 @router.post("/download_records/{location}/{_id}", response_class=StreamingResponse)
 async def download_records(
     location: str,
@@ -858,6 +931,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
+            forDownload=True,
         )
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(
@@ -866,6 +940,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
+            forDownload=True,
         )
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
@@ -873,6 +948,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
+            forDownload=True,
         )
     else:
         raise HTTPException(
@@ -908,12 +984,15 @@ async def download_records(
             documents = util.compileDocumentImageList(records)
         else:
             documents = []
-        z = util.zip_files_stream(filepaths, documents)
+        ## TODO: make this file name more unique, so multiple downloads dont have the same name
+        download_log_file = "zip_log.txt"
+        z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
 
         ## remove file after 60 seconds to allow for the user download to finish
+        filepaths.append(download_log_file)
         background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=60)
         headers = {"Content-Disposition": "attachment; filename=records.zip"}
-        _log.info(f"returning streaming response")
+        # _log.info(f"returning streaming response")
         return StreamingResponse(z, media_type="application/zip", headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
