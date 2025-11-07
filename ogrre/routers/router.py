@@ -985,7 +985,7 @@ async def download_records(
         else:
             documents = []
         ## TODO: make this file name more unique, so multiple downloads dont have the same name
-        download_log_file = "zip_log.txt"
+        download_log_file = f"zip_log_{time.time()}.txt"
         z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
 
         ## remove file after 60 seconds to allow for the user download to finish
