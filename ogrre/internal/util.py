@@ -276,8 +276,16 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
     gcs_paths = generate_gcs_paths(documents)
     i = 0
     for gcs_path in gcs_paths:
-        i += 1
         blob = bucket.blob(gcs_path)
+        # check if blob exists before writing to ZIP
+        try:
+            if not blob.exists():
+                logg(f"blob not found, skipping: {gcs_path}", level="info")
+                continue
+        except Exception as e:
+            logg(f"Error checking existence for {gcs_path}: {e}", level="info")
+            continue
+        i += 1
         arcname = gcs_paths[gcs_path]
 
         def gcs_yield_chunks(blob, arcname, gcs_path, i):
@@ -293,7 +301,7 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
                         bytes_read += len(chunk)
                         yield chunk
             except NotFound:
-                logg(f"GCS blob not found, skipping: {gcs_path}", level="info")
+                logg(f"Exception, blob not found: {gcs_path}", level="info")
                 return
             except Exception as e:
                 logg(f"Error downloading {gcs_path}: {e}", level="info")
@@ -306,7 +314,7 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
                 f"Downloaded #{i}: {mb_size:.2f} MB in {elapsed_file:.2f} s ({speed:.2f} MB/s)"
             )
 
-            # Add log file to download at last iteration
+            # Add log file to download on last iteration
             if i == len(gcs_paths):
                 if log_to_file and os.path.isfile(log_to_file):
                     elapsed_total = time.time() - start_total
