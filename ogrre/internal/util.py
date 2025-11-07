@@ -194,17 +194,22 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
     log_file = None
     if log_to_file:
         log_file = open(log_to_file, "w")
+
         def logg(msg, level="debug"):
             log_file.write(msg + "\n")
             if level == "debug":
                 _log.debug(msg)
             elif level == "info":
                 _log.info(msg)
+
     else:
         logg = _log.info
     if documents is None:
         documents = []
-    logg(f"downloading and zipping {len(documents)} images along with {local_file_paths}", level="info")
+    logg(
+        f"downloading and zipping {len(documents)} images along with {local_file_paths}",
+        level="info",
+    )
 
     zs = zipstream.ZipFile(mode="w", compression=zipstream.ZIP_STORED, allowZip64=True)
 
@@ -222,7 +227,7 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
     gcs_paths = generate_gcs_paths(documents)
     i = 0
     for gcs_path in gcs_paths:
-        i+=1
+        i += 1
         blob = bucket.blob(gcs_path)
         arcname = gcs_paths[gcs_path]
 
@@ -251,13 +256,14 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
                 if log_to_file:
                     if os.path.isfile(log_to_file):
                         elapsed_total = time.time() - start_total
-                        logg(f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds", level="none")
+                        logg(
+                            f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds",
+                            level="none",
+                        )
                         log_file.flush()
                         zs.write(log_to_file, os.path.basename(log_to_file))
                     else:
                         _log.info(f"log text file is not file: {log_to_file}")
-
-
 
         zs.write_iter(arcname, gcs_yield_chunks(blob, arcname, gcs_path, i))
 
@@ -265,7 +271,10 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
         for chunk in zs:
             yield chunk
         elapsed_total = time.time() - start_total
-        logg(f"{len(documents)} files streamed in {elapsed_total:.2f} seconds", level="info")
+        logg(
+            f"{len(documents)} files streamed in {elapsed_total:.2f} seconds",
+            level="info",
+        )
 
     return streaming_generator()
 
@@ -661,7 +670,11 @@ def generate_mongo_pipeline(
 
     if forDownload:
         ## no need for sorting if we are downloading the records
-        pipeline = [stage for stage in pipeline if not any(k in stage for k in ["$setWindowFields", "$sort"])]
+        pipeline = [
+            stage
+            for stage in pipeline
+            if not any(k in stage for k in ["$setWindowFields", "$sort"])
+        ]
     return pipeline
 
 

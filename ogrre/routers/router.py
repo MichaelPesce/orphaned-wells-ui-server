@@ -858,7 +858,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
-            forDownload=True
+            forDownload=True,
         )
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(
@@ -867,7 +867,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
-            forDownload=True
+            forDownload=True,
         )
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
@@ -875,7 +875,7 @@ async def download_records(
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
-            forDownload=True
+            forDownload=True,
         )
     else:
         raise HTTPException(

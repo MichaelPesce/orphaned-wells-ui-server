@@ -692,7 +692,7 @@ class DataManager:
             records_per_page,
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
-        forDownload=forDownload,
+            forDownload=forDownload,
         )
 
     def fetchRecordsByProject(
@@ -718,7 +718,7 @@ class DataManager:
             records_per_page,
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
-        forDownload=forDownload,
+            forDownload=forDownload,
         )
 
     @time_it
