@@ -190,7 +190,7 @@ def compute_total_size(local_file_paths, gcs_paths):
     """
     Compute total bytes of local files + google cloud images.
     local_file_paths: list of paths
-    gcs_paths: dict or list of GCS blob paths
+    gcs_paths: dict or list of google cloud storage image paths
     """
     total_size = 0
 
@@ -218,11 +218,11 @@ def compute_total_size(local_file_paths, gcs_paths):
                 if blob.size is not None:
                     total_size += blob.size
                 else:
-                    _log.warning(f"GCS blob has no size info: {blob_name}")
+                    _log.warning(f"blob has no size info: {blob_name}")
             except NotFound:
-                _log.warning(f"GCS blob not found: {blob_name}")
+                _log.warning(f"blob not found: {blob_name}")
             except Exception as e:
-                _log.error(f"Error retrieving GCS blob size for {blob_name}: {e}")
+                _log.error(f"Error retrieving blob size for {blob_name}: {e}")
 
     except Exception as e:
         _log.error(f"Error initializing GCS client or bucket: {e}")
@@ -275,17 +275,19 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
 
     gcs_paths = generate_gcs_paths(documents)
     i = 0
+    not_found_amt = 0
     for gcs_path in gcs_paths:
+        i += 1
         blob = bucket.blob(gcs_path)
         # check if blob exists before writing to ZIP
         try:
             if not blob.exists():
-                logg(f"blob not found, skipping: {gcs_path}", level="info")
+                not_found_amt += 1
+                logg(f"image #{i} not found, skipping: {gcs_path}", level="info")
                 continue
         except Exception as e:
             logg(f"Error checking existence for {gcs_path}: {e}", level="info")
             continue
-        i += 1
         arcname = gcs_paths[gcs_path]
 
         def gcs_yield_chunks(blob, arcname, gcs_path, i):
@@ -319,7 +321,7 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
                 if log_to_file and os.path.isfile(log_to_file):
                     elapsed_total = time.time() - start_total
                     logg(
-                        f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds",
+                        f"FINISHED: {i - not_found_amt} files streamed in {elapsed_total:.2f} seconds",
                         level="none",
                     )
                     log_file.flush()
