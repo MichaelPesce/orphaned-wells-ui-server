@@ -807,6 +807,7 @@ async def check_if_records_exist(
     file_list = req.get("file_list", [])
     return data_manager.checkIfRecordsExist(file_list, rg_id)
 
+
 @router.post("/get_download_size/{location}/{_id}")
 async def get_download_size(
     location: str,
@@ -869,15 +870,16 @@ async def get_download_size(
         raise HTTPException(
             status_code=400, detail=f"Location must be project, record_group, or team"
         )
-    
+
     try:
         documents = util.compileDocumentImageList(records)
         gcs_paths = util.generate_gcs_paths(documents)
         totalBytes = util.compute_total_size([], gcs_paths.keys())
         return totalBytes
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
+
 
 @router.post("/download_records/{location}/{_id}", response_class=StreamingResponse)
 async def download_records(
