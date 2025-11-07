@@ -34,9 +34,6 @@ jobs:
           ${{ secrets.STAGING_ENV }}
           EOF
 
-      - name: DEBUG LS
-        run: ls -a ./ogrre
-
       - name: Install application
         run: |
           pip install .
@@ -54,9 +51,6 @@ jobs:
         with:
             name: "ogrre/michael2-service-key.json"
             json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
-
-      - name: DEBUG LS
-        run: ls -a
 
       - name: Run application
         run: |
