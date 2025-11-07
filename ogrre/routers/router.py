@@ -920,6 +920,8 @@ async def download_records(
         "attributesList": ["key", "value", "normalized_vertices", "subattributes"],
     }
 
+    output_file_id = util.last4_before_decimal()
+
     keep_all_columns = False
     if len(selectedColumns) == 0:
         keep_all_columns = True
@@ -965,7 +967,7 @@ async def download_records(
                 location,
                 selectedColumns=selectedColumns,
                 keep_all_columns=keep_all_columns,
-                output_filename=output_name,
+                output_filename=f"{output_name}_{output_file_id}",
             )
             filepaths.append(csv_file)
         if export_json:
@@ -977,7 +979,7 @@ async def download_records(
                 location,
                 selectedColumns=selectedColumns,
                 keep_all_columns=keep_all_columns,
-                output_filename=output_name,
+                output_filename=f"{output_name}_{output_file_id}",
             )
             filepaths.append(json_file)
         if export_images:
@@ -985,7 +987,7 @@ async def download_records(
         else:
             documents = []
         ## TODO: make this file name more unique, so multiple downloads dont have the same name
-        download_log_file = "zip_log.txt"
+        download_log_file = f"zip_log_{output_file_id}.txt"
         z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
 
         ## remove file after 60 seconds to allow for the user download to finish
