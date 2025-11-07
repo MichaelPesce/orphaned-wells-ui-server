@@ -30,7 +30,8 @@ BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 def last4_before_decimal(ts=None):
     if ts is None:
         ts = time.time()
-    return int(ts) % 10000  
+    return int(ts) % 10000
+
 
 def time_it(func):
     @functools.wraps(func)
