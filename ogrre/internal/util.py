@@ -183,6 +183,29 @@ def compileDocumentImageList(records):
 
     return images
 
+@time_it
+def compute_total_size(local_file_paths, gcs_paths):
+    """
+    Compute total bytes of local files + google cloud images.
+    local_file_paths : list of paths
+    gcs_paths : dict list of paths
+    """
+    total_size = 0
+
+    for file_path in local_file_paths or []:
+        if os.path.isfile(file_path):
+            total_size += os.path.getsize(file_path)
+    
+    storage_client = storage.Client.from_service_account_json(
+        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+    )
+    bucket = storage_client.bucket(BUCKET_NAME)
+    for blob_name in gcs_paths:
+        blob = bucket.blob(blob_name)
+        blob.reload()  # fetch metadata from GCS
+        total_size += blob.size or 0
+
+    return total_size
 
 @time_it
 def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):

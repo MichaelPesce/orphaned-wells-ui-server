@@ -807,6 +807,77 @@ async def check_if_records_exist(
     file_list = req.get("file_list", [])
     return data_manager.checkIfRecordsExist(file_list, rg_id)
 
+@router.post("/get_download_size/{location}/{_id}")
+async def get_download_size(
+    location: str,
+    _id: str,
+    request: Request,
+    user_info: dict = Depends(authenticate),
+):
+    """Download records for given project ID.
+
+    Args:
+        location: one of: team, project, record_group
+        _id: id of team, project or record group
+        request body:
+            exportType: type of export (csv or json)
+            columns: list attributes to export
+
+    Returns:
+        Some combination of
+            JSON file containing all or subset of record data for provided location
+            CSV file containing all or subset of record data for provided location
+            All document images for provided location
+    """
+    req = await request.json()
+
+    filter_by = req.get("filter", {})
+    sort_by = req.get("sort", ["dateCreated", 1])
+
+    json_fields_to_include = {
+        "topLevelFields": ["name", "filename", "image_files", "record_group_id"],
+        "attributesList": ["key", "value", "normalized_vertices", "subattributes"],
+    }
+
+    if location == "project":
+        records, _ = data_manager.fetchRecordsByProject(
+            user_info,
+            _id,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    elif location == "record_group":
+        records, _ = data_manager.fetchRecordsByRecordGroup(
+            user_info,
+            _id,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    elif location == "team":
+        records, _ = data_manager.fetchRecordsByTeam(
+            user_info,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Location must be project, record_group, or team"
+        )
+    
+    try:
+        documents = util.compileDocumentImageList(records)
+        gcs_paths = util.generate_gcs_paths(documents)
+        totalBytes = util.compute_total_size([], gcs_paths.keys())
+        return totalBytes
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 @router.post("/download_records/{location}/{_id}", response_class=StreamingResponse)
 async def download_records(
