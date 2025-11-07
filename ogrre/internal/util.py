@@ -7,6 +7,7 @@ import sys
 import functools
 import zipstream
 from google.cloud import storage
+from google.api_core.exceptions import NotFound
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 
@@ -188,23 +189,43 @@ def compileDocumentImageList(records):
 def compute_total_size(local_file_paths, gcs_paths):
     """
     Compute total bytes of local files + google cloud images.
-    local_file_paths : list of paths
-    gcs_paths : dict list of paths
+    local_file_paths: list of paths
+    gcs_paths: dict or list of GCS blob paths
     """
     total_size = 0
 
+    # Local file sizes
     for file_path in local_file_paths or []:
         if os.path.isfile(file_path):
-            total_size += os.path.getsize(file_path)
+            try:
+                total_size += os.path.getsize(file_path)
+            except OSError as e:
+                _log.warning(f"Failed to get size of local file {file_path}: {e}")
+        else:
+            _log.warning(f"Local file not found: {file_path}")
 
-    storage_client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
-    )
-    bucket = storage_client.bucket(BUCKET_NAME)
-    for blob_name in gcs_paths:
-        blob = bucket.blob(blob_name)
-        blob.reload()  # fetch metadata from GCS
-        total_size += blob.size or 0
+    # GCS blob sizes
+    try:
+        storage_client = storage.Client.from_service_account_json(
+            f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+        )
+        bucket = storage_client.bucket(BUCKET_NAME)
+
+        for blob_name in gcs_paths or []:
+            try:
+                blob = bucket.blob(blob_name)
+                blob.reload()  # fetch metadata from GCS
+                if blob.size is not None:
+                    total_size += blob.size
+                else:
+                    _log.warning(f"GCS blob has no size info: {blob_name}")
+            except NotFound:
+                _log.warning(f"GCS blob not found: {blob_name}")
+            except Exception as e:
+                _log.error(f"Error retrieving GCS blob size for {blob_name}: {e}")
+
+    except Exception as e:
+        _log.error(f"Error initializing GCS client or bucket: {e}")
 
     return total_size
 
@@ -213,7 +234,7 @@ def compute_total_size(local_file_paths, gcs_paths):
 def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
     """
     Streams a ZIP file directly without writing to temp files.
-    Includes optional local files
+    Includes optional local files (JSON and/or csv), skips missing ones gracefully.
     """
     start_total = time.time()
     log_file = None
@@ -229,20 +250,23 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
 
     else:
         logg = _log.info
+
     if documents is None:
         documents = []
     logg(
-        f"downloading and zipping {len(documents)} images along with {local_file_paths}",
+        f"Downloading and zipping {len(documents)} images along with {local_file_paths}",
         level="info",
     )
 
     zs = zipstream.ZipFile(mode="w", compression=zipstream.ZIP_STORED, allowZip64=True)
 
-    # Add CSV and JSON first
+    # Add csv and/or json first
     if local_file_paths:
         for file_path in local_file_paths:
             if os.path.isfile(file_path):
                 zs.write(file_path, os.path.basename(file_path))
+            else:
+                logg(f"Local file not found, skipping: {file_path}", level="info")
 
     client = storage.Client.from_service_account_json(
         f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
@@ -260,14 +284,20 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
             logg(f"Starting download #{i}: {gcs_path} -> {arcname}")
             start_file = time.time()
             bytes_read = 0
-
-            with blob.open("rb") as f:
-                while True:
-                    chunk = f.read(65536)  # 64KB chunks
-                    if not chunk:
-                        break
-                    bytes_read += len(chunk)
-                    yield chunk
+            try:
+                with blob.open("rb") as f:
+                    while True:
+                        chunk = f.read(65536)  # 64KB
+                        if not chunk:
+                            break
+                        bytes_read += len(chunk)
+                        yield chunk
+            except NotFound:
+                logg(f"GCS blob not found, skipping: {gcs_path}", level="info")
+                return
+            except Exception as e:
+                logg(f"Error downloading {gcs_path}: {e}", level="info")
+                return
 
             elapsed_file = time.time() - start_file
             mb_size = bytes_read / (1024 * 1024)
@@ -276,19 +306,18 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
                 f"Downloaded #{i}: {mb_size:.2f} MB in {elapsed_file:.2f} s ({speed:.2f} MB/s)"
             )
 
-            ## Add text file to download
+            # Add log file to download at last iteration
             if i == len(gcs_paths):
-                if log_to_file:
-                    if os.path.isfile(log_to_file):
-                        elapsed_total = time.time() - start_total
-                        logg(
-                            f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds",
-                            level="none",
-                        )
-                        log_file.flush()
-                        zs.write(log_to_file, os.path.basename(log_to_file))
-                    else:
-                        _log.info(f"log text file is not file: {log_to_file}")
+                if log_to_file and os.path.isfile(log_to_file):
+                    elapsed_total = time.time() - start_total
+                    logg(
+                        f"FINISHED: {len(documents)} files streamed in {elapsed_total:.2f} seconds",
+                        level="none",
+                    )
+                    log_file.flush()
+                    zs.write(log_to_file, os.path.basename(log_to_file))
+                elif log_to_file:
+                    _log.info(f"Log text file is not found: {log_to_file}")
 
         zs.write_iter(arcname, gcs_yield_chunks(blob, arcname, gcs_path, i))
 
