@@ -189,14 +189,14 @@ class DataManager:
         except Exception as e:
             _log.error(f"error trying to lock record: {e}")
             return False
-        
+
     def getSchema(self, user_info):
         user = user_info.get("email")
         _log.info(f"{user} is fetching schema")
         schema = self.fetchSchema()
         schema["_id"] = str(schema.get("_id"))
         return schema
-        
+
     def updateSchema(self, schema_data, user_info):
         user = user_info.get("email")
         query = {"collaborator": self.collaborator}

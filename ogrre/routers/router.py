@@ -1110,7 +1110,8 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
             status_code=400,
             detail=f"Please provide an update and an email in the request body",
         )
-    
+
+
 @router.get("/get_schema")
 async def get_schema(user_info: dict = Depends(authenticate)):
     """Get schema
@@ -1140,7 +1141,7 @@ async def update_schema(request: Request, user_info: dict = Depends(authenticate
         iframeViewID: string
 
     Returns:
-        
+
     """
     if not data_manager.hasPermission(user_info["email"], "manage_schema"):
         raise HTTPException(
@@ -1155,10 +1156,12 @@ async def update_schema(request: Request, user_info: dict = Depends(authenticate
         "use_airtable",
         "AIRTABLE_API_TOKEN",
         "AIRTABLE_BASE_ID",
-        "AIRTABLE_IFRAME_VIEW_ID"
+        "AIRTABLE_IFRAME_VIEW_ID",
     ]
 
-    new_schema_data = {key: req.get(key) for key in request_fields if req.get(key) is not None}
+    new_schema_data = {
+        key: req.get(key) for key in request_fields if req.get(key) is not None
+    }
 
     return data_manager.updateSchema(new_schema_data, user_info)
 
