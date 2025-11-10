@@ -6,11 +6,6 @@ from ogrre.internal.util import remap_airtable_keys
 
 load_dotenv()
 
-# AIRTABLE_API_TOKEN = os.environ["AIRTABLE_API_TOKEN"]
-# AIRTABLE_BASE_ID = os.environ["AIRTABLE_BASE_ID"]
-# AIRTABLE_PROCESSORS_TABLE_ID = os.environ["AIRTABLE_PROCESSORS_TABLE_ID"]
-# AIRTABLE_PROCESSORS_TABLE_NAME = "Trained Models"
-
 
 def get_airtable_base(AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID):
     ## The api and base only need to be defined once, they will still detect changes made afterwards
