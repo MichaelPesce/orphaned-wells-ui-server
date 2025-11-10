@@ -196,7 +196,10 @@ class DataManager:
         user = user_info.get("email")
         _log.info(f"{user} is fetching schema")
         schema = self.fetchSchema()
-        schema["_id"] = str(schema.get("_id"))
+        if schema is not None:
+            schema["_id"] = str(schema.get("_id"))
+        else:
+            schema = {}
         return schema
 
     def updateSchema(self, schema_data, user_info):
