@@ -96,6 +96,8 @@ class DataManager:
         if airtable_keys:
             self.use_airtable = airtable_keys.get("use_airtable", False)
             _log.info(f"using airtable: {self.use_airtable}")
+        else:
+            self.use_airtable = False
         if self.use_airtable:
             processor_list = self.createAirtableProcessorsList(airtable_keys)
         else:
