@@ -29,8 +29,6 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_AIRTABLE = True
-
 
 class DataManager:
     """Manage the active data."""
@@ -57,7 +55,7 @@ class DataManager:
 
     @time_it
     def getProcessorById(self, google_id=None):
-        if USE_AIRTABLE:
+        if self.use_airtable:
             _log.info(f"getting processor using airtable")
             processor = airtable_api.get_processor_by_id(self.airtable_base, google_id)
         elif google_id is not None:
@@ -66,10 +64,8 @@ class DataManager:
         return processor
 
     def getAirtableIds(self):
-        ## TODO:
-        _log.info(f"getting airtable ids for {self.collaborator}")
         query = {"collaborator": self.collaborator}
-        airtable_data = list(self.db.airtable_data.find(query))
+        airtable_data = list(self.db.schema.find(query))
         if len(airtable_data) == 1:
             airtable_keys = airtable_data[0]
         elif len(airtable_data) > 0:
@@ -82,8 +78,8 @@ class DataManager:
 
         return airtable_keys
 
-    def createAirtableProcessorsList(self):
-        airtable_keys = self.getAirtableIds()
+    def createAirtableProcessorsList(self, airtable_keys):
+        # airtable_keys = self.getAirtableIds()
         if airtable_keys is None:
             _log.info(f"airtable_keys is none")
             return []
@@ -98,8 +94,12 @@ class DataManager:
 
     @time_it
     def createProcessorsList(self):
-        if USE_AIRTABLE:
-            processor_list = self.createAirtableProcessorsList()
+        airtable_keys = self.getAirtableIds()
+        if airtable_keys:
+            self.use_airtable = airtable_keys.get("use_airtable", False)
+            _log.info(f"using airtable: {self.use_airtable}")
+        if self.use_airtable:
+            processor_list = self.createAirtableProcessorsList(airtable_keys)
         else:
             processor_list = processor_api.get_processor_list(self.collaborator)
             if not processor_list:
