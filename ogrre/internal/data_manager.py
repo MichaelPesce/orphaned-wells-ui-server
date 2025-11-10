@@ -202,7 +202,7 @@ class DataManager:
     def updateSchema(self, schema_data, user_info):
         user = user_info.get("email")
         query = {"collaborator": self.collaborator}
-        resp = self.db.schema.update_one(query, {"$set": schema_data})
+        resp = self.db.schema.update_one(query, {"$set": schema_data}, upsert=True)
         self.recordHistory(
             user=user,
             action="updateSchema",
