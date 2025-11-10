@@ -1112,6 +1112,60 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
         )
 
 
+@router.get("/get_schema")
+async def get_schema(user_info: dict = Depends(authenticate)):
+    """Get schema
+
+    Args:
+
+    Returns:
+        schema: dict
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+        )
+    return data_manager.getSchema(user_info)
+
+
+@router.post("/update_schema")
+async def update_schema(request: Request, user_info: dict = Depends(authenticate)):
+    """Update schema
+
+    Args:
+        schema_name: string
+        useAirtable: boolean
+        baseID: string,
+        apiToken: string,
+        iframeViewID: string
+
+    Returns:
+
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+        )
+
+    req = await request.json()
+
+    request_fields = [
+        "schema_name",
+        "use_airtable",
+        "AIRTABLE_API_TOKEN",
+        "AIRTABLE_BASE_ID",
+        "AIRTABLE_IFRAME_VIEW_ID",
+    ]
+
+    new_schema_data = {
+        key: req.get(key) for key in request_fields if req.get(key) is not None
+    }
+
+    return data_manager.updateSchema(new_schema_data, user_info)
+
+
 @router.post("/update_default_team")
 async def update_default_team(
     request: Request, user_info: dict = Depends(authenticate)

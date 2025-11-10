@@ -29,8 +29,6 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_AIRTABLE = True
-
 
 class DataManager:
     """Manage the active data."""
@@ -57,7 +55,7 @@ class DataManager:
 
     @time_it
     def getProcessorById(self, google_id=None):
-        if USE_AIRTABLE:
+        if self.use_airtable:
             _log.info(f"getting processor using airtable")
             processor = airtable_api.get_processor_by_id(self.airtable_base, google_id)
         elif google_id is not None:
@@ -65,11 +63,9 @@ class DataManager:
             processor = processor_api.get_processor_by_id(self.collaborator, google_id)
         return processor
 
-    def getAirtableIds(self):
-        ## TODO:
-        _log.info(f"getting airtable ids for {self.collaborator}")
+    def fetchSchema(self):
         query = {"collaborator": self.collaborator}
-        airtable_data = list(self.db.airtable_data.find(query))
+        airtable_data = list(self.db.schema.find(query))
         if len(airtable_data) == 1:
             airtable_keys = airtable_data[0]
         elif len(airtable_data) > 0:
@@ -82,8 +78,7 @@ class DataManager:
 
         return airtable_keys
 
-    def createAirtableProcessorsList(self):
-        airtable_keys = self.getAirtableIds()
+    def createAirtableProcessorsList(self, airtable_keys):
         if airtable_keys is None:
             _log.info(f"airtable_keys is none")
             return []
@@ -94,12 +89,15 @@ class DataManager:
         )
         self.airtable_base = airtable_base
         return airtable_api.get_processor_list(airtable_base)
-        # AIRTABLE_PROCESSORS_TABLE_ID = airtable_keys.get("AIRTABLE_PROCESSORS_TABLE_ID")
 
     @time_it
     def createProcessorsList(self):
-        if USE_AIRTABLE:
-            processor_list = self.createAirtableProcessorsList()
+        airtable_keys = self.fetchSchema()
+        if airtable_keys:
+            self.use_airtable = airtable_keys.get("use_airtable", False)
+            _log.info(f"using airtable: {self.use_airtable}")
+        if self.use_airtable:
+            processor_list = self.createAirtableProcessorsList(airtable_keys)
         else:
             processor_list = processor_api.get_processor_list(self.collaborator)
             if not processor_list:
@@ -191,6 +189,25 @@ class DataManager:
         except Exception as e:
             _log.error(f"error trying to lock record: {e}")
             return False
+
+    def getSchema(self, user_info):
+        user = user_info.get("email")
+        _log.info(f"{user} is fetching schema")
+        schema = self.fetchSchema()
+        schema["_id"] = str(schema.get("_id"))
+        return schema
+
+    def updateSchema(self, schema_data, user_info):
+        user = user_info.get("email")
+        query = {"collaborator": self.collaborator}
+        resp = self.db.schema.update_one(query, {"$set": schema_data})
+        self.recordHistory(
+            user=user,
+            action="updateSchema",
+            query=schema_data,
+        )
+        self.createProcessorsList()
+        return "success"
 
     ## user functions
     def getUser(self, email):
