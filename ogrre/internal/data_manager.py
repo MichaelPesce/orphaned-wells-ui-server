@@ -51,6 +51,7 @@ class DataManager:
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
         self.using_default_processor = False
+        self.use_airtable = False
         self.createProcessorsList()
 
     def useAirtable(self):
