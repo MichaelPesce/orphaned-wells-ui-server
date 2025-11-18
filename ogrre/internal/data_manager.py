@@ -14,7 +14,7 @@ from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import generate_download_signed_url_v4
 import ogrre.internal.util as util
 from ogrre.internal.util import time_it
-from ogrre.internal import airtable_api
+# from ogrre.internal import airtable_api
 
 _log = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class DataManager:
     def getProcessorById(self, google_id=None):
         if self.useAirtable():
             _log.info(f"getting processor using airtable")
-            processor = airtable_api.get_processor_by_id(self.airtable_base, google_id)
+            # processor = airtable_api.get_processor_by_id(self.airtable_base, google_id)
         elif google_id is not None:
             _log.info(f"getting processor using processor_api")
             processor = processor_api.get_processor_by_id(self.collaborator, google_id)
@@ -89,17 +89,17 @@ class DataManager:
 
         return airtable_keys
 
-    def createAirtableProcessorsList(self, airtable_keys):
-        if airtable_keys is None:
-            _log.info(f"airtable_keys is none")
-            return []
-        AIRTABLE_API_TOKEN = airtable_keys.get("AIRTABLE_API_TOKEN")
-        AIRTABLE_BASE_ID = airtable_keys.get("AIRTABLE_BASE_ID")
-        airtable_base = airtable_api.get_airtable_base(
-            AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID
-        )
-        self.airtable_base = airtable_base
-        return airtable_api.get_processor_list(airtable_base)
+    # def createAirtableProcessorsList(self, airtable_keys):
+    #     if airtable_keys is None:
+    #         _log.info(f"airtable_keys is none")
+    #         return []
+    #     AIRTABLE_API_TOKEN = airtable_keys.get("AIRTABLE_API_TOKEN")
+    #     AIRTABLE_BASE_ID = airtable_keys.get("AIRTABLE_BASE_ID")
+    #     airtable_base = airtable_api.get_airtable_base(
+    #         AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID
+    #     )
+    #     self.airtable_base = airtable_base
+    #     return airtable_api.get_processor_list(airtable_base)
 
     @time_it
     def createProcessorsList(self):
