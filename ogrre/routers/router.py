@@ -168,8 +168,13 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
         user account information
     """
     email = user_info["email"]
+    db = os.environ.get("DB_CONNECTION", None)
+    if "staging" in db:
+        environment = "staging"
+    else:
+        environment = os.environ.get("ENVIRONMENT", None)
     user = data_manager.getUser(email)
-    return user
+    return {"user_data": user, "environment": environment}
 
 
 @router.post("/logout")
