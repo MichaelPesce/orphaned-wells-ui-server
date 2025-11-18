@@ -14,6 +14,7 @@ from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import generate_download_signed_url_v4
 import ogrre.internal.util as util
 from ogrre.internal.util import time_it
+
 # from ogrre.internal import airtable_api
 
 _log = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ class DataManager:
     def getSchema(self, user_info):
         user = user_info.get("email")
         _log.info(f"{user} is fetching schema")
-        schema = list(self.db.processors.find({}, projection={'_id': 0}))
+        schema = list(self.db.processors.find({}, projection={"_id": 0}))
         if len(schema) == 0:
             _log.info(f"no processors found")
         return schema
