@@ -212,15 +212,12 @@ class DataManager:
         if len(schema) == 0:
             _log.info(f"no processors found")
         return schema
-    
+
     def uploadProcessorSchema(self, file, schema_meta, user_info):
         _log.info(f"uploading schema:")
         _log.info(schema_meta)
         attributes_list = util.convert_csv_to_dict(file)
-        new_processor = {
-            **schema_meta,
-            "attributes": attributes_list
-        }
+        new_processor = {**schema_meta, "attributes": attributes_list}
         return new_processor
 
     def updateSchema(self, schema_data, user_info):

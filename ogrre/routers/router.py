@@ -1136,14 +1136,15 @@ async def get_schema(user_info: dict = Depends(authenticate)):
 
 @router.post("/upload_processor_schema")
 async def upload_processor_schema(
-        name: str = None,
-        displayName: str = None,
-        processorId: str = None,
-        modelId: str = None,
-        documentType: str = None,
-        img: str = None,
-        file: UploadFile = File(...),
-        user_info: dict = Depends(authenticate)):
+    name: str = None,
+    displayName: str = None,
+    processorId: str = None,
+    modelId: str = None,
+    documentType: str = None,
+    img: str = None,
+    file: UploadFile = File(...),
+    user_info: dict = Depends(authenticate),
+):
     """Upload Schema
 
     Args:
@@ -1162,7 +1163,13 @@ async def upload_processor_schema(
             403,
             detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
         )
-    if not name or not displayName or not processorId or not modelId or not documentType:
+    if (
+        not name
+        or not displayName
+        or not processorId
+        or not modelId
+        or not documentType
+    ):
         raise HTTPException(
             400,
             detail=f"Please provide each of the following as query parameters: name, displayName, processorId, modelId, documentType.",
@@ -1175,7 +1182,10 @@ async def upload_processor_schema(
         "documentType": documentType,
         "img": img,
     }
-    return data_manager.uploadProcessorSchema(file=file, schema_meta=schema_meta, user_info=user_info)
+    return data_manager.uploadProcessorSchema(
+        file=file, schema_meta=schema_meta, user_info=user_info
+    )
+
 
 @router.post("/update_schema")
 async def update_schema(request: Request, user_info: dict = Depends(authenticate)):

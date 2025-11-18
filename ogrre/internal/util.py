@@ -775,7 +775,7 @@ def csv_to_dict(upload_file):
     upload_file.file.seek(0)  # ensure start
     reader = csv.reader(upload_file.file.read().decode("utf-8").splitlines())
     headers = next(reader)
-    
+
     data = []
     for row in reader:
         item = dict(zip(headers, row))
