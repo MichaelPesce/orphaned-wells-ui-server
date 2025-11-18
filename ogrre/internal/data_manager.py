@@ -207,11 +207,9 @@ class DataManager:
     def getSchema(self, user_info):
         user = user_info.get("email")
         _log.info(f"{user} is fetching schema")
-        schema = self.fetchSchema()
-        if schema is not None:
-            schema["_id"] = str(schema.get("_id"))
-        else:
-            schema = {}
+        schema = list(self.db.processors.find({}, projection={'_id': 0}))
+        if len(schema) == 0:
+            _log.info(f"no processors found")
         return schema
 
     def updateSchema(self, schema_data, user_info):
@@ -653,7 +651,7 @@ class DataManager:
     ):
         records = []
 
-        pipeline = util.generate_mongo_pipeline(
+        pipeline = util.generate_mongo_records_pipeline(
             filter_by=filter_by,
             primary_sort=sort_by,
             records_per_page=records_per_page,
@@ -989,7 +987,7 @@ class DataManager:
             else document["_id"]
         )
 
-        pipeline = util.generate_mongo_pipeline(
+        pipeline = util.generate_mongo_records_pipeline(
             filter_by=filterBy,
             primary_sort=sortBy,
             for_ranking=True,

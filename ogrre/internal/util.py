@@ -524,7 +524,7 @@ def defaultJSONDumpHandler(obj):
         return str(obj)
 
 
-def generate_mongo_pipeline(
+def generate_mongo_records_pipeline(
     filter_by,
     primary_sort,
     records_per_page=None,
