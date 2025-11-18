@@ -788,25 +788,29 @@ def convert_to_target_format(data):
         "Plain text": "String",
         "Datetime": "Date",
     }
-    for item in data:
-        target_item = {
-            "name": item["Name"],
-            "data_type": data_types.get(
-                item["Google Data type"], item["Google Data type"]
-            ),
-            "google_data_type": item["Google Data type"],
-            "database_data_type": item["Database Data Type"],
-            "occurrence": item["Occurrence"],
-            "grouping": item["Grouping"],
-            "page_order_sort": int(item["Page Order Sort"]),
-            "cleaning_function": item["Cleaning Function"],
-            "accepted_range": item["Accepted Range"],
-            "field_specific_notes": item["Field Specific Notes"],
-        }
-        if item["Model Enabled"] == "":
-            target_item["model_enabled"] = "No"
-        else:
-            target_item["model_enabled"] = "Yes"
+
+    key_map = {
+        "Name": "name",
+        "Google Data Type": "data_type",
+        "Database Data Type": "database_data_type",
+        "Occurrence": "occurrence",
+        "Grouping": "grouping",
+        "Page Order Sort": "page_order_sort",
+        "Cleaning Function": "cleaning_function",
+        "Google Data Type": "data_type",
+    }
+
+    for row in data:
+        target_item = {}
+        for item_key in row:
+            item = row[item_key]
+            json_key = key_map.get(item_key, None)
+            if json_key:
+                target_item[json_key] = item
+            else:
+                ## TODO: we can add these if we want to, but it might just be a waste of space
+                # target_item[item_key] = item
+                _log.info(f"we dont have a matching key for: {item_key}")
         target_format.append(target_item)
     return target_format
 
