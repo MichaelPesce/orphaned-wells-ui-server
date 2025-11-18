@@ -783,12 +783,6 @@ def csv_to_dict(csv_file):
 
 def convert_to_target_format(data):
     target_format = []
-    data_types = {
-        "Checkbox": "Boolean",
-        "Plain text": "String",
-        "Datetime": "Date",
-    }
-
     key_map = {
         "Name": "name",
         "Google Data Type": "data_type",
@@ -797,7 +791,6 @@ def convert_to_target_format(data):
         "Grouping": "grouping",
         "Page Order Sort": "page_order_sort",
         "Cleaning Function": "cleaning_function",
-        "Google Data Type": "data_type",
     }
 
     for row in data:
