@@ -217,7 +217,9 @@ class DataManager:
         _log.info(f"uploading schema:")
         _log.info(schema_meta)
         attributes_list = util.convert_csv_to_dict(file)
-        new_processor = {**schema_meta, "attributes": attributes_list}
+        new_processor = {**schema_meta, "attributes": attributes_list, "lastUpdated": time.time()}
+        self.db.processors.insert_one(new_processor)
+        new_processor.pop("_id", None)
         return new_processor
 
     def updateSchema(self, schema_data, user_info):

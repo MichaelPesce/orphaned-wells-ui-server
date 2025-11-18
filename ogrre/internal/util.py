@@ -805,7 +805,7 @@ def convert_to_target_format(data):
             else:
                 ## TODO: we can add these if we want to, but it might just be a waste of space
                 # target_item[item_key] = item
-                _log.info(f"we dont have a matching key for: {item_key}")
+                _log.debug(f"we dont have a matching key for: {item_key}")
         target_format.append(target_item)
     return target_format
 
