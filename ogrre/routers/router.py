@@ -1134,6 +1134,49 @@ async def get_schema(user_info: dict = Depends(authenticate)):
     return data_manager.getSchema(user_info)
 
 
+@router.post("/upload_processor_schema")
+async def upload_processor_schema(
+        name: str = None,
+        displayName: str = None,
+        processorId: str = None,
+        modelId: str = None,
+        documentType: str = None,
+        img: str = None,
+        file: UploadFile = File(...),
+        user_info: dict = Depends(authenticate)):
+    """Upload Schema
+
+    Args:
+        name: processor name,
+        displayName: display name for processor,
+        processorId: google processor id,
+        modelId: google model id for primary model,
+        documentType: type of document,
+        csv_file
+
+    Returns:
+        schema: dict
+    """
+    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+        )
+    if not name or not displayName or not processorId or not modelId or not documentType:
+        raise HTTPException(
+            400,
+            detail=f"Please provide each of the following as query parameters: name, displayName, processorId, modelId, documentType.",
+        )
+    schema_meta = {
+        "name": name,
+        "displayName": displayName,
+        "processorId": processorId,
+        "modelId": modelId,
+        "documentType": documentType,
+        "img": img,
+    }
+    return data_manager.uploadProcessorSchema(file=file, schema_meta=schema_meta, user_info=user_info)
+
 @router.post("/update_schema")
 async def update_schema(request: Request, user_info: dict = Depends(authenticate)):
     """Update schema

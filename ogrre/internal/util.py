@@ -770,14 +770,16 @@ def remap_airtable_keys(original_dict):
     return new_dict
 
 
-def csv_to_dict(csv_file):
-    with open(csv_file, "r") as file:
-        reader = csv.reader(file)
-        headers = next(reader)
-        data = []
-        for row in reader:
-            item = dict(zip(headers, row))
-            data.append(item)
+def csv_to_dict(upload_file):
+    # upload_file.file is already a file-like object
+    upload_file.file.seek(0)  # ensure start
+    reader = csv.reader(upload_file.file.read().decode("utf-8").splitlines())
+    headers = next(reader)
+    
+    data = []
+    for row in reader:
+        item = dict(zip(headers, row))
+        data.append(item)
     return data
 
 
@@ -785,7 +787,7 @@ def convert_to_target_format(data):
     target_format = []
     key_map = {
         "Name": "name",
-        "Google Data Type": "data_type",
+        "Google Data type": "data_type",
         "Database Data Type": "database_data_type",
         "Occurrence": "occurrence",
         "Grouping": "grouping",
