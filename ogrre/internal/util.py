@@ -7,6 +7,8 @@ import sys
 import functools
 import zipstream
 from google.cloud import storage
+import csv
+import json
 from google.api_core.exceptions import NotFound
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
@@ -766,3 +768,50 @@ def remap_airtable_keys(original_dict):
         new_dict[new_key] = value
 
     return new_dict
+
+
+def csv_to_dict(csv_file):
+    with open(csv_file, "r") as file:
+        reader = csv.reader(file)
+        headers = next(reader)
+        data = []
+        for row in reader:
+            item = dict(zip(headers, row))
+            data.append(item)
+    return data
+
+
+def convert_to_target_format(data):
+    target_format = []
+    data_types = {
+        "Checkbox": "Boolean",
+        "Plain text": "String",
+        "Datetime": "Date",
+    }
+    for item in data:
+        target_item = {
+            "name": item["Name"],
+            "data_type": data_types.get(
+                item["Google Data type"], item["Google Data type"]
+            ),
+            "google_data_type": item["Google Data type"],
+            "database_data_type": item["Database Data Type"],
+            "occurrence": item["Occurrence"],
+            "grouping": item["Grouping"],
+            "page_order_sort": int(item["Page Order Sort"]),
+            "cleaning_function": item["Cleaning Function"],
+            "accepted_range": item["Accepted Range"],
+            "field_specific_notes": item["Field Specific Notes"],
+        }
+        if item["Model Enabled"] == "":
+            target_item["model_enabled"] = "No"
+        else:
+            target_item["model_enabled"] = "Yes"
+        target_format.append(target_item)
+    return target_format
+
+
+def convert_csv_to_dict(csv_file):
+    data = csv_to_dict(csv_file)
+    target_format = convert_to_target_format(data)
+    return target_format
