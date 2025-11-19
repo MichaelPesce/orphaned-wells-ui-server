@@ -1217,7 +1217,11 @@ async def upload_processor_schema(
 
 
 @router.post("/upload_sample_image/{processor_name}")
-async def upload_sample_image(processor_name: str, file: UploadFile = File(...), user_info: dict = Depends(authenticate)):
+async def upload_sample_image(
+    processor_name: str,
+    file: UploadFile = File(...),
+    user_info: dict = Depends(authenticate),
+):
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 

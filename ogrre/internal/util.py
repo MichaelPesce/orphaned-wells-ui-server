@@ -143,16 +143,13 @@ def generate_gcs_paths(documents):
             gcs_paths[blob_path] = arcname
     return gcs_paths
 
-def get_document_image(
-    rg_id, record_id, filename, bucket_name=BUCKET_NAME
-):
+
+def get_document_image(rg_id, record_id, filename, bucket_name=BUCKET_NAME):
     path = f"uploads/{rg_id}/{record_id}/{filename}"
     return generate_download_signed_url_v4(path, bucket_name=bucket_name)
 
 
-def generate_download_signed_url_v4(
-    path, bucket_name=BUCKET_NAME
-):
+def generate_download_signed_url_v4(path, bucket_name=BUCKET_NAME):
     """Generates a v4 signed URL for downloading a blob.
 
     Note that this method requires a service account key file. You can not use
@@ -823,7 +820,9 @@ def convert_csv_to_dict(csv_file):
     return target_format
 
 
-def upload_to_gcs(file_bytes: bytes, original_filename: str, processor_name: str) -> str:
+def upload_to_gcs(
+    file_bytes: bytes, original_filename: str, processor_name: str
+) -> str:
     """
     Uploads raw bytes to Google Cloud Storage and returns the public URL.
     """

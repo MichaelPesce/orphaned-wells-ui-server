@@ -188,7 +188,9 @@ class DataManager:
             _log.info(f"no processors found")
         for processor in schema:
             processorName = processor.get("name")
-            processor_img = util.generate_download_signed_url_v4(path=f"sample_images/{processorName}")
+            processor_img = util.generate_download_signed_url_v4(
+                path=f"sample_images/{processorName}"
+            )
             processor["img"] = processor_img
         return schema
 
