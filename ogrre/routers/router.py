@@ -1216,6 +1216,23 @@ async def upload_processor_schema(
     )
 
 
+@router.post("/upload_sample_image/{processor_name}")
+async def upload_sample_image(processor_name: str, file: UploadFile = File(...), user_info: dict = Depends(authenticate)):
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+
+    file_bytes = await file.read()
+    public_url = util.upload_to_gcs(file_bytes, file.filename, processor_name)
+
+    return {"url": public_url}
+
+
+@router.get("/get_image_url/{processor_name}")
+async def get_image_url(processor_name: str, user_info: dict = Depends(authenticate)):
+    url = util.generate_download_signed_url_v4(path=f"sample_images/{processor_name}")
+    return {"url": url}
+
+
 @router.post("/update_processor")
 async def update_processor(request: Request, user_info: dict = Depends(authenticate)):
     """Update processor

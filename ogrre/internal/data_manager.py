@@ -11,7 +11,7 @@ from pymongo import ASCENDING, DESCENDING, UpdateOne
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
-from ogrre.internal.util import generate_download_signed_url_v4
+from ogrre.internal.util import get_document_image
 import ogrre.internal.util as util
 from ogrre.internal.util import time_it
 
@@ -179,12 +179,17 @@ class DataManager:
             _log.error(f"error trying to lock record: {e}")
             return False
 
+    @time_it
     def getSchema(self, user_info):
         user = user_info.get("email")
         _log.info(f"{user} is fetching schema")
         schema = list(self.db.processors.find({}, projection={"_id": 0}))
         if len(schema) == 0:
             _log.info(f"no processors found")
+        for processor in schema:
+            processorName = processor.get("name")
+            processor_img = util.generate_download_signed_url_v4(path=f"sample_images/{processorName}")
+            processor["img"] = processor_img
         return schema
 
     def uploadProcessorSchema(self, file, schema_meta, user_info):
@@ -225,7 +230,7 @@ class DataManager:
             action="updateProcessor",
             query=processor_data,
         )
-        self.createProcessorsList()
+        # self.createProcessorsList()
         return "success"
 
     ## user functions
@@ -885,14 +890,14 @@ class DataManager:
         for image in document.get("image_files", []):
             if util.imageIsValid(image):
                 image_urls.append(
-                    generate_download_signed_url_v4(
+                    get_document_image(
                         document["record_group_id"], document["_id"], image
                     )
                 )
         if len(image_urls) == 0:
             if document.get("filename", False):
                 image_urls.append(
-                    generate_download_signed_url_v4(
+                    get_document_image(
                         document["record_group_id"],
                         document["_id"],
                         document["filename"],

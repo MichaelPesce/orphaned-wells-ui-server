@@ -143,9 +143,15 @@ def generate_gcs_paths(documents):
             gcs_paths[blob_path] = arcname
     return gcs_paths
 
+def get_document_image(
+    rg_id, record_id, filename, bucket_name=BUCKET_NAME
+):
+    path = f"uploads/{rg_id}/{record_id}/{filename}"
+    return generate_download_signed_url_v4(path, bucket_name=bucket_name)
+
 
 def generate_download_signed_url_v4(
-    rg_id, record_id, filename, bucket_name=BUCKET_NAME
+    path, bucket_name=BUCKET_NAME
 ):
     """Generates a v4 signed URL for downloading a blob.
 
@@ -159,19 +165,20 @@ def generate_download_signed_url_v4(
     storage_client = storage.Client.from_service_account_json(
         f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
     )
-
     # blob_name: path to file in google cloud bucket
-    blob_name = f"uploads/{rg_id}/{record_id}/{filename}"
+    blob_name = f"{path}"
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_name)
-
-    url = blob.generate_signed_url(
-        version="v4",
-        # This URL is valid for 15 minutes
-        expiration=datetime.timedelta(minutes=15),
-        # Allow GET requests using this URL.
-        method="GET",
-    )
+    try:
+        url = blob.generate_signed_url(
+            version="v4",
+            # This URL is valid for 15 minutes
+            expiration=datetime.timedelta(minutes=15),
+            # Allow GET requests using this URL.
+            method="GET",
+        )
+    except Exception as e:
+        _log.info(f"unable to get GCS image for path: {path}")
 
     return url
 
@@ -814,3 +821,23 @@ def convert_csv_to_dict(csv_file):
     data = csv_to_dict(csv_file)
     target_format = convert_to_target_format(data)
     return target_format
+
+
+def upload_to_gcs(file_bytes: bytes, original_filename: str, processor_name: str) -> str:
+    """
+    Uploads raw bytes to Google Cloud Storage and returns the public URL.
+    """
+
+    client = storage.Client.from_service_account_json(
+        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+    )
+    bucket = client.bucket(BUCKET_NAME)
+
+    extension = original_filename.split(".")[-1]
+    # blob_name = f"sample_images/{uuid.uuid4()}.{extension}"
+    blob_name = f"sample_images/{processor_name}"
+
+    blob = bucket.blob(blob_name)
+    blob.upload_from_string(file_bytes, content_type=f"image/{extension}")
+
+    return generate_download_signed_url_v4(blob_name)
