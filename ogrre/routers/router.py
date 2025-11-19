@@ -728,6 +728,34 @@ async def update_record(
     return update
 
 
+@router.post("/delete_processor/{processor_id}/{model_id}")
+async def delete_processor(
+    processor_id: str,
+    model_id: str,
+    user_info: dict = Depends(authenticate),
+):
+    """Delete processor.
+
+    Args:
+        processor_id: google processor id
+        model_id: model id
+
+    Returns:
+        Delete query
+    """
+    if not data_manager.hasPermission(user_info["email"], "delete"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to delete processors. Please contact a team lead or project manager.",
+        )
+    if not processor_id or not model_id:
+        raise HTTPException(
+            400,
+            detail=f"Please provide processor and model id.",
+        )
+    return data_manager.deleteProcessorSchema(processorId=processor_id, modelId=model_id, user_info=user_info)
+
+
 @router.post("/delete_project/{project_id}")
 async def delete_project(
     project_id: str,

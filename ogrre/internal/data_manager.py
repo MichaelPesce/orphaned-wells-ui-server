@@ -214,13 +214,34 @@ class DataManager:
         return schema
 
     def uploadProcessorSchema(self, file, schema_meta, user_info):
-        _log.info(f"uploading schema:")
-        _log.info(schema_meta)
         attributes_list = util.convert_csv_to_dict(file)
-        new_processor = {**schema_meta, "attributes": attributes_list, "lastUpdated": time.time()}
+        new_processor = {
+            **schema_meta,
+            "attributes": attributes_list,
+            "lastUpdated": time.time(),
+        }
         self.db.processors.insert_one(new_processor)
+        self.recordHistory(
+            user=user_info.get("email", None),
+            action="uploadProcessorSchema",
+            query=new_processor,
+        )
         new_processor.pop("_id", None)
         return new_processor
+    
+    def deleteProcessorSchema(self, processorId, modelId, user_info):
+        _log.info(f"deleting processor with processor id {processorId} and model id {modelId}")
+        query = {
+            "processorId": processorId,
+            "modelId": modelId
+        }
+        self.db.processors.delete_one(query)
+        self.recordHistory(
+            user=user_info.get("email", None),
+            action="deleteProcessorSchema",
+            query=query,
+        )
+        return query
 
     def updateSchema(self, schema_data, user_info):
         user = user_info.get("email")
@@ -1730,7 +1751,7 @@ class DataManager:
     def recordHistory(
         self,
         action,
-        user=None,
+        user: str = None,
         project_id=None,
         rg_id=None,
         record_id=None,
