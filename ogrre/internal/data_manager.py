@@ -30,6 +30,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
+USE_DB_PROCESSORS = True
 
 class DataManager:
     """Manage the active data."""
@@ -55,17 +56,39 @@ class DataManager:
         self.use_airtable = False
         self.createProcessorsList()
 
+    def getMongoProcessorByID(self, google_id):
+        projection = {"_id": 0}
+        query = {"processor_id": google_id}
+        processor = list(self.db.processors.find(query, projection=projection))
+        if len(processor) > 0:
+            return processor[0]
+        else:
+            return None 
+
     @time_it
     def getProcessorById(self, google_id=None):
-        if google_id is not None:
+        if USE_DB_PROCESSORS:
+            _log.info(f"getting processor using database")
+            processor = self.getMongoProcessorByID(google_id=google_id)
+        else:
             _log.info(f"getting processor using processor_api")
             processor = processor_api.get_processor_by_id(self.collaborator, google_id)
         return processor
 
+    def createProcessorsListFromDB(self):
+        projection = {"_id": 0, "attributes": 0}
+        projection = {"_id": 0}
+        processor_list = list(self.db.processors.find({}, projection=projection))
+        return processor_list
+
     @time_it
     def createProcessorsList(self):
-
-        processor_list = processor_api.get_processor_list(self.collaborator)
+        if USE_DB_PROCESSORS:
+            _log.info(f"creating processor list using db")
+            processor_list = self.createProcessorsListFromDB()
+        else:
+            _log.info(f"creating processor list using processor_api")
+            processor_list = processor_api.get_processor_list(self.collaborator)
         if not processor_list:
             _log.info(f"no processors found, using default extractor")
             processor_list = DEFAULT_PROCESSORS
