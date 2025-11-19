@@ -728,10 +728,9 @@ async def update_record(
     return update
 
 
-@router.post("/delete_processor/{processor_id}/{model_id}")
+@router.post("/delete_processor/{processor_name}")
 async def delete_processor(
-    processor_id: str,
-    model_id: str,
+    processor_name: str,
     user_info: dict = Depends(authenticate),
 ):
     """Delete processor.
@@ -748,13 +747,13 @@ async def delete_processor(
             403,
             detail=f"You are not authorized to delete processors. Please contact a team lead or project manager.",
         )
-    if not processor_id or not model_id:
+    if not processor_name:
         raise HTTPException(
             400,
-            detail=f"Please provide processor and model id.",
+            detail=f"Please provide processor name.",
         )
     return data_manager.deleteProcessorSchema(
-        processorId=processor_id, modelId=model_id, user_info=user_info
+        processorName=processor_name, user_info=user_info
     )
 
 
@@ -1217,16 +1216,12 @@ async def upload_processor_schema(
     )
 
 
-@router.post("/update_schema")
-async def update_schema(request: Request, user_info: dict = Depends(authenticate)):
-    """Update schema
+@router.post("/update_processor")
+async def update_processor(request: Request, user_info: dict = Depends(authenticate)):
+    """Update processor
 
     Args:
-        schema_name: string
-        useAirtable: boolean
-        baseID: string,
-        apiToken: string,
-        iframeViewID: string
+        processor: processor data
 
     Returns:
 
@@ -1240,18 +1235,19 @@ async def update_schema(request: Request, user_info: dict = Depends(authenticate
     req = await request.json()
 
     request_fields = [
-        "schema_name",
-        "use_airtable",
-        "AIRTABLE_API_TOKEN",
-        "AIRTABLE_BASE_ID",
-        "AIRTABLE_IFRAME_VIEW_ID",
+        "name",
+        "displayName",
+        "processorId",
+        "modelId",
+        "documentType",
+        "img",
     ]
 
     new_schema_data = {
         key: req.get(key) for key in request_fields if req.get(key) is not None
     }
 
-    return data_manager.updateSchema(new_schema_data, user_info)
+    return data_manager.updateProcessor(new_schema_data, user_info)
 
 
 @router.post("/update_default_team")

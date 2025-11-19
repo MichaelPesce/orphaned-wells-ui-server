@@ -55,65 +55,15 @@ class DataManager:
         self.use_airtable = False
         self.createProcessorsList()
 
-    def useAirtable(self):
-        ## DISABLE AIRTABLE FOR NOW:
-        return False
-        airtable_keys = self.fetchSchema()
-        if airtable_keys:
-            self.use_airtable = airtable_keys.get("use_airtable", False)
-        else:
-            self.use_airtable = False
-        return self.use_airtable
-
     @time_it
     def getProcessorById(self, google_id=None):
-        if self.useAirtable():
-            _log.info(f"getting processor using airtable")
-            # processor = airtable_api.get_processor_by_id(self.airtable_base, google_id)
-        elif google_id is not None:
+        if google_id is not None:
             _log.info(f"getting processor using processor_api")
             processor = processor_api.get_processor_by_id(self.collaborator, google_id)
         return processor
 
-    def fetchSchema(self):
-        query = {"collaborator": self.collaborator}
-        airtable_data = list(self.db.schema.find(query))
-        if len(airtable_data) == 1:
-            airtable_keys = airtable_data[0]
-        elif len(airtable_data) > 0:
-            _log.info(f"found MULTIPLE ENTRIES OF airtable data")
-            airtable_keys = airtable_data[0]
-        else:
-            _log.info(f"did not find airtable data")
-            airtable_keys = None
-            ## TODO: make call to get default?
-
-        return airtable_keys
-
-    # def createAirtableProcessorsList(self, airtable_keys):
-    #     if airtable_keys is None:
-    #         _log.info(f"airtable_keys is none")
-    #         return []
-    #     AIRTABLE_API_TOKEN = airtable_keys.get("AIRTABLE_API_TOKEN")
-    #     AIRTABLE_BASE_ID = airtable_keys.get("AIRTABLE_BASE_ID")
-    #     airtable_base = airtable_api.get_airtable_base(
-    #         AIRTABLE_API_TOKEN, AIRTABLE_BASE_ID
-    #     )
-    #     self.airtable_base = airtable_base
-    #     return airtable_api.get_processor_list(airtable_base)
-
     @time_it
     def createProcessorsList(self):
-        ## REMOVE AIRTABLE FUNCTIONALITY
-        # airtable_keys = self.fetchSchema()
-        # if airtable_keys:
-        #     self.use_airtable = airtable_keys.get("use_airtable", False)
-        #     _log.info(f"using airtable: {self.use_airtable}")
-        # else:
-        #     self.use_airtable = False
-        # if self.use_airtable:
-        #     processor_list = self.createAirtableProcessorsList(airtable_keys)
-        # else:
 
         processor_list = processor_api.get_processor_list(self.collaborator)
         if not processor_list:
@@ -229,11 +179,11 @@ class DataManager:
         new_processor.pop("_id", None)
         return new_processor
 
-    def deleteProcessorSchema(self, processorId, modelId, user_info):
+    def deleteProcessorSchema(self, processorName, user_info):
         _log.info(
-            f"deleting processor with processor id {processorId} and model id {modelId}"
+            f"deleting processor {processorName}"
         )
-        query = {"processorId": processorId, "modelId": modelId}
+        query = {"name": processorName}
         self.db.processors.delete_one(query)
         self.recordHistory(
             user=user_info.get("email", None),
@@ -242,14 +192,14 @@ class DataManager:
         )
         return query
 
-    def updateSchema(self, schema_data, user_info):
+    def updateProcessor(self, processor_data, user_info):
         user = user_info.get("email")
-        query = {"collaborator": self.collaborator}
-        resp = self.db.schema.update_one(query, {"$set": schema_data}, upsert=True)
+        query = {"name": processor_data.get("name")}
+        resp = self.db.processors.update_one(query, {"$set": processor_data})
         self.recordHistory(
             user=user,
-            action="updateSchema",
-            query=schema_data,
+            action="updateProcessor",
+            query=processor_data,
         )
         self.createProcessorsList()
         return "success"
