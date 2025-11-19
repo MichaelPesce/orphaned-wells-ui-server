@@ -59,7 +59,7 @@ class DataManager:
 
     def getMongoProcessorByID(self, google_id):
         projection = {"_id": 0}
-        query = {"processor_id": google_id}
+        query = {"processorId": google_id}
         processor = list(self.db.processors.find(query, projection=projection))
         if len(processor) > 0:
             return processor[0]
@@ -813,6 +813,8 @@ class DataManager:
                     ).next()
                     google_id = rg_document["processorId"]
                     processor = self.getProcessorByGoogleId(google_id)
+                    if processor is None:
+                        return None
                     for attr in processor["attributes"]:
                         columns.add(attr["name"])
                 except Exception as e:
@@ -828,6 +830,8 @@ class DataManager:
             rg_document["_id"] = _id
             google_id = rg_document["processorId"]
             processor = self.getProcessorByGoogleId(google_id)
+            if processor is None:
+                return None
             for attr in processor["attributes"]:
                 columns.append(attr["name"])
             return {"columns": columns, "obj": rg_document}
