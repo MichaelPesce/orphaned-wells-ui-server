@@ -32,6 +32,7 @@ DEFAULT_PROCESSORS = [
 
 USE_DB_PROCESSORS = True
 
+
 class DataManager:
     """Manage the active data."""
 
@@ -63,7 +64,7 @@ class DataManager:
         if len(processor) > 0:
             return processor[0]
         else:
-            return None 
+            return None
 
     @time_it
     def getProcessorById(self, google_id=None):
