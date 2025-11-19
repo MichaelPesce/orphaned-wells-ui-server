@@ -180,9 +180,7 @@ class DataManager:
         return new_processor
 
     def deleteProcessorSchema(self, processorName, user_info):
-        _log.info(
-            f"deleting processor {processorName}"
-        )
+        _log.info(f"deleting processor {processorName}")
         query = {"name": processorName}
         self.db.processors.delete_one(query)
         self.recordHistory(
