@@ -165,9 +165,7 @@ class DataManager:
 
     def uploadProcessorSchema(self, file, schema_meta, user_info):
         attributes_list = util.convert_csv_to_dict(file)
-        query = {
-            "name": schema_meta.get("name", "Default Processor Name")
-        }
+        query = {"name": schema_meta.get("name", "Default Processor Name")}
         new_processor = {
             **schema_meta,
             "attributes": attributes_list,
