@@ -165,12 +165,15 @@ class DataManager:
 
     def uploadProcessorSchema(self, file, schema_meta, user_info):
         attributes_list = util.convert_csv_to_dict(file)
+        query = {
+            "name": schema_meta.get("name", "Default Processor Name")
+        }
         new_processor = {
             **schema_meta,
             "attributes": attributes_list,
             "lastUpdated": time.time(),
         }
-        self.db.processors.insert_one(new_processor)
+        self.db.processors.update_one(query, {"$set": new_processor}, upsert=True)
         self.recordHistory(
             user=user_info.get("email", None),
             action="uploadProcessorSchema",
@@ -193,7 +196,8 @@ class DataManager:
     def updateProcessor(self, processor_data, user_info):
         user = user_info.get("email")
         query = {"name": processor_data.get("name")}
-        resp = self.db.processors.update_one(query, {"$set": processor_data})
+        processor_data["lastUpdated"] = time.time()
+        self.db.processors.update_one(query, {"$set": processor_data})
         self.recordHistory(
             user=user,
             action="updateProcessor",
