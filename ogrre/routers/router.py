@@ -1158,7 +1158,7 @@ async def get_schema(user_info: dict = Depends(authenticate)):
     if not data_manager.hasPermission(user_info["email"], "manage_schema"):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
         )
     return data_manager.getSchema(user_info)
 
@@ -1190,7 +1190,7 @@ async def upload_processor_schema(
     if not data_manager.hasPermission(user_info["email"], "manage_schema"):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
         )
     if (
         not name
@@ -1222,6 +1222,11 @@ async def upload_sample_image(
     file: UploadFile = File(...),
     user_info: dict = Depends(authenticate),
 ):
+    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
+        )
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 
@@ -1250,7 +1255,7 @@ async def update_processor(request: Request, user_info: dict = Depends(authentic
     if not data_manager.hasPermission(user_info["email"], "manage_schema"):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
         )
 
     req = await request.json()
