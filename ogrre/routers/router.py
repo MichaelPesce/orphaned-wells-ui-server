@@ -753,7 +753,9 @@ async def delete_processor(
             400,
             detail=f"Please provide processor and model id.",
         )
-    return data_manager.deleteProcessorSchema(processorId=processor_id, modelId=model_id, user_info=user_info)
+    return data_manager.deleteProcessorSchema(
+        processorId=processor_id, modelId=model_id, user_info=user_info
+    )
 
 
 @router.post("/delete_project/{project_id}")

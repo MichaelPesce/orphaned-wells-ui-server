@@ -228,13 +228,12 @@ class DataManager:
         )
         new_processor.pop("_id", None)
         return new_processor
-    
+
     def deleteProcessorSchema(self, processorId, modelId, user_info):
-        _log.info(f"deleting processor with processor id {processorId} and model id {modelId}")
-        query = {
-            "processorId": processorId,
-            "modelId": modelId
-        }
+        _log.info(
+            f"deleting processor with processor id {processorId} and model id {modelId}"
+        )
+        query = {"processorId": processorId, "modelId": modelId}
         self.db.processors.delete_one(query)
         self.recordHistory(
             user=user_info.get("email", None),
