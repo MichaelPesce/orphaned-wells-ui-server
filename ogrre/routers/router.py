@@ -427,7 +427,7 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
     return resp
 
 
-@router.get("/get_column_data/{location}/{_id}", response_model=dict)
+@router.get("/get_column_data/{location}/{_id}", response_model=dict or None)
 async def get_column_data(
     location: str, _id: str, user_info: dict = Depends(authenticate)
 ):
