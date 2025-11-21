@@ -65,7 +65,7 @@ class DataManager:
             return processor[0]
         else:
             return None
-        
+
     def getMongoProcessorsByIDs(self, google_ids):
         projection = {"_id": 0}
         query = {"processorId": {"$in": google_ids}}
