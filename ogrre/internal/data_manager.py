@@ -66,6 +66,12 @@ class DataManager:
         else:
             return None
 
+    def getMongoProcessorsByIDs(self, google_ids):
+        projection = {"_id": 0}
+        query = {"processorId": {"$in": google_ids}}
+        processors = list(self.db.processors.find(query, projection=projection))
+        return processors
+
     @time_it
     def getProcessorById(self, google_id=None):
         if USE_DB_PROCESSORS:
@@ -806,23 +812,23 @@ class DataManager:
                 for i in range(len(document["project_list"])):
                     document["project_list"][i] = str(document["project_list"][i])
                 record_groups = self.getTeamRecordGroupsList(_id)
-            for rg_id in record_groups:
-                try:
-                    rg_document = self.db.record_groups.find(
-                        {"_id": ObjectId(rg_id)}
-                    ).next()
-                    google_id = rg_document["processorId"]
-                    processor = self.getProcessorByGoogleId(google_id)
-                    if processor is None:
-                        return None
-                    for attr in processor["attributes"]:
-                        columns.add(attr["name"])
-                except Exception as e:
-                    _log.error(f"unable to get {rg_id}: {e}")
-            columns = list(columns)
+
+            rg_ids = []
+            for rg in record_groups:
+                rg_ids.append(ObjectId(rg))
+
+            rg_documents = list(self.db.record_groups.find({"_id": {"$in": rg_ids}}))
+            processor_ids = []
+            for doc in rg_documents:
+                google_id = doc["processorId"]
+                processor_ids.append(google_id)
+            processors = self.getMongoProcessorsByIDs(processor_ids)
+            for proc in processors:
+                for attr in proc.get("attributes"):
+                    columns.add(attr["name"])
             if "projects" in document:
                 del document["projects"]
-            return {"columns": columns, "obj": document}
+            return {"columns": list(columns), "obj": document}
 
         elif location == "record_group":
             columns = []
