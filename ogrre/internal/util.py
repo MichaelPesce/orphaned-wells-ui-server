@@ -47,6 +47,7 @@ def time_it(func):
 
     return wrapper
 
+
 def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
     if processor is None:
         _log.info(f"no processor found")
@@ -100,7 +101,9 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
                 )
     _log.info(f"found {obsolete_fields_amt} obsolete fields.")
     if obsolete_fields_amt >= 10:
-        _log.info(f"many obsolete fields found, this is probably a mistake. but what do we do?")
+        _log.info(
+            f"many obsolete fields found, this is probably a mistake. but what do we do?"
+        )
     elif obsolete_fields_amt > 0:
         requires_db_update = True
     return sorted_attributes, requires_db_update
