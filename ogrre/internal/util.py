@@ -60,7 +60,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
 
     ## we want to make sure that the frontend and backend are always in sync.
     ## for now, update the db with this sorted list every time before returning
-    requires_db_update = False
+    requires_db_update = len(processor_attributes) > 0
 
     ## match record attribute to each processor attribute
     sorted_attributes = []
@@ -101,11 +101,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
                 )
     _log.info(f"found {obsolete_fields_amt} obsolete fields.")
     if obsolete_fields_amt >= 10:
-        _log.info(
-            f"many obsolete fields found, this is probably a mistake. but what do we do?"
-        )
-    elif obsolete_fields_amt > 0:
-        requires_db_update = True
+        _log.info(f"many obsolete fields found, this is probably a mistake.")
     return sorted_attributes, requires_db_update
 
 
