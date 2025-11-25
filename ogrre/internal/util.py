@@ -47,7 +47,6 @@ def time_it(func):
 
     return wrapper
 
-
 def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
     if processor is None:
         _log.info(f"no processor found")
@@ -60,7 +59,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
 
     ## we want to make sure that the frontend and backend are always in sync.
     ## for now, update the db with this sorted list every time before returning
-    requires_db_update = len(processor_attributes) > 0
+    requires_db_update = False
 
     ## match record attribute to each processor attribute
     sorted_attributes = []
@@ -84,15 +83,26 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
                 sorted_attributes.append(new_attr)
                 requires_db_update = True
 
-    if keep_all_attributes:
-        ## obsolete fields will get removed automatically.
-        for attr in attributes:
-            attribute_name = attr["key"]
-            if attribute_name not in processor_attributes_dict:
+    obsolete_fields_amt = 0
+    ## obsolete fields will get removed automatically.
+    for attr in attributes:
+        attribute_name = attr["key"]
+        if attribute_name not in processor_attributes_dict:
+            if keep_all_attributes:
                 _log.info(
                     f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
                 )
                 sorted_attributes.append(attr)
+            else:
+                obsolete_fields_amt += 1
+                _log.info(
+                    f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
+                )
+    _log.info(f"found {obsolete_fields_amt} obsolete fields.")
+    if obsolete_fields_amt >= 10:
+        _log.info(f"many obsolete fields found, this is probably a mistake. but what do we do?")
+    elif obsolete_fields_amt > 0:
+        requires_db_update = True
     return sorted_attributes, requires_db_update
 
 

@@ -30,7 +30,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_DB_PROCESSORS = True
+USE_DB_PROCESSORS = False
 
 
 class DataManager:
@@ -119,7 +119,6 @@ class DataManager:
         _log.info(f"{user} releasing lock")
         self.LOCKED = False
 
-    @time_it
     def lockRecord(self, record_id, user, release_previous_record=True):
         _log.info(f"{user} locking {record_id}")
         if release_previous_record:
@@ -1030,7 +1029,6 @@ class DataManager:
 
         return document
 
-    @time_it
     def getProcessorByRecordGroupID(self, rg_id):
         _id = ObjectId(rg_id)
         try:
