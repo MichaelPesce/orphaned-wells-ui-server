@@ -848,7 +848,6 @@ class DataManager:
         return processor
 
     def fetchProcessors(self, user):
-        _log.info("fetching processors")
         processor_list = self.createProcessorsList()
         return {
             "USE_DB_PROCESSORS": USE_DB_PROCESSORS,
