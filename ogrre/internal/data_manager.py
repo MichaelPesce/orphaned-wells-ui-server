@@ -96,7 +96,7 @@ class DataManager:
         else:
             _log.info(f"creating processor list using processor_api")
             processor_list = processor_api.get_processor_list(self.collaborator)
-            
+
         if not processor_list:
             _log.info(f"no processors found, using default extractor")
             processor_list = DEFAULT_PROCESSORS
@@ -850,7 +850,10 @@ class DataManager:
     def fetchProcessors(self, user):
         _log.info("fetching processors")
         processor_list = self.createProcessorsList()
-        return { "USE_DB_PROCESSORS": USE_DB_PROCESSORS, "processor_list": processor_list}
+        return {
+            "USE_DB_PROCESSORS": USE_DB_PROCESSORS,
+            "processor_list": processor_list,
+        }
 
     def fetchRoles(self, role_categories):
         roles = []
