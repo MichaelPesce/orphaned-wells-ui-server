@@ -281,7 +281,7 @@ async def get_records(
     raise HTTPException(400, detail=f"unable to process record query")
 
 
-@router.get("/get_processors", response_model=list)
+@router.get("/get_processors", response_model=dict)
 async def get_processors(user_info: dict = Depends(authenticate)):
     """Fetch all processors for a given state/organization.
 
