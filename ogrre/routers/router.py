@@ -943,6 +943,8 @@ async def download_records(
             All document images for provided location
     """
     req = await request.json()
+
+    request_origin = request.headers.get("origin")
     # _log.info(req)
     selectedColumns = req.get("columns", [])
 
@@ -1002,6 +1004,7 @@ async def download_records(
                 selectedColumns=selectedColumns,
                 keep_all_columns=keep_all_columns,
                 output_filename=f"{output_name}_{output_file_id}",
+                request_origin=request_origin,
             )
             filepaths.append(csv_file)
         if export_json:

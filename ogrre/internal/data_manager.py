@@ -1587,6 +1587,7 @@ class DataManager:
         selectedColumns=[],
         keep_all_columns=False,
         output_filename=None,
+        request_origin="",
     ):
         user = user_info.get("email", None)
         ## TODO: check if user is a part of the team who owns this project
@@ -1633,13 +1634,14 @@ class DataManager:
                                     if subattribute_name not in subattributes:
                                         subattributes.append(subattribute_name)
                     record_attribute["file"] = document.get("filename", "")
+                    record_attribute["URL"] = f"{request_origin}/records/{document_id}"
                     record_attributes.append(record_attribute)
                 except Exception as e:
                     _log.info(f"unable to add {document_id}: {e}")
 
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=attributes + subattributes)
+                writer = csv.DictWriter(csvfile, fieldnames=attributes + subattributes + ["URL"])
                 writer.writeheader()
                 writer.writerows(record_attributes)
         else:
