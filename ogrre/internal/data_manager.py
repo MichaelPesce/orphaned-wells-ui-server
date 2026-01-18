@@ -1634,7 +1634,7 @@ class DataManager:
                                     if subattribute_name not in subattributes:
                                         subattributes.append(subattribute_name)
                     record_attribute["file"] = document.get("filename", "")
-                    record_attribute["URL"] = f"{request_origin}/records/{document_id}"
+                    record_attribute["URL"] = f"{request_origin}/record/{document_id}"
                     record_attributes.append(record_attribute)
                 except Exception as e:
                     _log.info(f"unable to add {document_id}: {e}")
