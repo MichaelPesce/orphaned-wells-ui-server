@@ -1641,7 +1641,9 @@ class DataManager:
 
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=attributes + subattributes + ["URL"])
+                writer = csv.DictWriter(
+                    csvfile, fieldnames=attributes + subattributes + ["URL"]
+                )
                 writer.writeheader()
                 writer.writerows(record_attributes)
         else:
