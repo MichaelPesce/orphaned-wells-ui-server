@@ -27,6 +27,7 @@ def read_requirements(path: Path):
         if line.startswith("-"):
             continue
         reqs.append(line)
+    print(f"reqs: {reqs}")
     return reqs
 
 
