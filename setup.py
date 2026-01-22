@@ -11,22 +11,24 @@ from pathlib import Path
 cwd = Path(__file__).parent
 long_description = (cwd / "README.md").read_text()
 
+
 def read_requirements(path: Path):
     reqs = []
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        
+
         if line.startswith("-r "):
             nested = line.split(maxsplit=1)[1]
             reqs.extend(read_requirements(cwd / nested))
             continue
-        
+
         if line.startswith("-"):
             continue
         reqs.append(line)
     return reqs
+
 
 setup(
     name="orphaned-wells-ui-server",
