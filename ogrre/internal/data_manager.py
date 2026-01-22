@@ -1513,12 +1513,14 @@ class DataManager:
 
         self.removeRecordGroupFromTeam(_id, team)
         return "success"
-    
+
     def deleteRecords(self, record_ids, user_info):
         _ids = [ObjectId(record_id) for record_id in record_ids]
         myquery = {"_id": {"$in": _ids}}
         self._deleteRecords(query=myquery, deletedBy=user_info)
-        self.recordHistory("deleteRecords", user=user_info.get("email", None), notes=myquery)
+        self.recordHistory(
+            "deleteRecords", user=user_info.get("email", None), notes=myquery
+        )
         return "success"
 
     def _deleteRecords(self, query, deletedBy):
@@ -1536,7 +1538,7 @@ class DataManager:
         ## Delete records associated with this project
         resp = self.db.records.delete_many(query)
         _log.info(f"delete resp = {resp}")
-        
+
         return "success"
 
     def deleteRecordGroups(self, record_groups, deletedBy):
