@@ -63,11 +63,15 @@ def _maybe_take_snapshot():
     return tracemalloc.take_snapshot()
 
 
-def _log_snapshot_diff(before, after, label):
+def _log_snapshot_diff(before, after, label, record_id=None):
     if not before or not after:
         return
+    pid = os.getpid()
+    prefix = f"pid={pid}"
+    if record_id:
+        prefix = f"{prefix} record_id={record_id}"
     stats = after.compare_to(before, "lineno")
-    _log.info(f"memory profile {label}: top {MEMORY_PROFILE_TOP}")
+    _log.info(f"memory profile {label} [{prefix}]: top {MEMORY_PROFILE_TOP}")
     for stat in stats[:MEMORY_PROFILE_TOP]:
         _log.info(f"{stat}")
 
@@ -408,7 +412,12 @@ def process_image(
         return
 
     snapshot_after_prepare = _maybe_take_snapshot()
-    _log_snapshot_diff(snapshot_start, snapshot_after_prepare, "after_prepare_request")
+    _log_snapshot_diff(
+        snapshot_start,
+        snapshot_after_prepare,
+        "after_prepare_request",
+        record_id=record_id,
+    )
 
     ## delete raw document and image_content to free up memory
     del image_content
@@ -436,7 +445,10 @@ def process_image(
 
     snapshot_after_process = _maybe_take_snapshot()
     _log_snapshot_diff(
-        snapshot_after_prepare, snapshot_after_process, "after_docai_process"
+        snapshot_after_prepare,
+        snapshot_after_process,
+        "after_docai_process",
+        record_id=record_id,
     )
     _log.info(f"processed document in doc_ai")
     document_object = result.document
@@ -619,13 +631,6 @@ def process_image(
 
     ## delete local files
     util.deleteFiles(filepaths=files_to_delete, sleep_time=0)
-
-    if undeployProcessor:
-        _log.info(f"attempting to undeploy")
-        start_time = time.time()
-        undeploy_processor_version(RESOURCE_NAME)
-        finish_time = time.time()
-        _log.info(f"took {finish_time-start_time} seconds to undeploy")
 
     _log.info(f"updated record in db: {record_id}")
 
