@@ -1726,13 +1726,10 @@ class DataManager:
         query = {
             "record_group_id": rg_id,
             "$expr": {
-                "$in": [
-                    { "$arrayElemAt": [{ "$split": ["$filename", "."] }, 0] },
-                    bases
-                ]
-            }
+                "$in": [{"$arrayElemAt": [{"$split": ["$filename", "."]}, 0]}, bases]
+            },
         }
-        
+
         record_cursor = self.db.records.find(query, {"filename": 1})
         duplicate_records = set()
         for document in record_cursor:
