@@ -15,16 +15,18 @@ import fitz
 import zipfile
 import mimetypes
 
+STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
+BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
+DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+
 from ogrre.internal.bulk_upload import upload_documents_from_directory
 from ogrre.internal import google_document_ai
 import ogrre.internal.util as util
 
 _log = logging.getLogger(__name__)
 
-STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
-BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
-DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+
 
 MEMORY_PROFILE = os.getenv("MEMORY_PROFILE", "").lower() in ("1", "true", "yes")
 MEMORY_PROFILE_RATE = int(os.getenv("MEMORY_PROFILE_RATE", "1"))
