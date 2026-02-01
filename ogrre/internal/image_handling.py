@@ -27,7 +27,6 @@ import ogrre.internal.util as util
 _log = logging.getLogger(__name__)
 
 
-
 MEMORY_PROFILE = os.getenv("MEMORY_PROFILE", "").lower() in ("1", "true", "yes")
 MEMORY_PROFILE_RATE = int(os.getenv("MEMORY_PROFILE_RATE", "1"))
 MEMORY_PROFILE_TOP = int(os.getenv("MEMORY_PROFILE_TOP", "10"))

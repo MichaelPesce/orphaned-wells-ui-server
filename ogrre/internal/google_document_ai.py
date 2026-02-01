@@ -25,7 +25,9 @@ if STORAGE_SERVICE_KEY:
 
 _client_options = None
 if LOCATION:
-    _client_options = ClientOptions(api_endpoint=f"{LOCATION}-documentai.googleapis.com")
+    _client_options = ClientOptions(
+        api_endpoint=f"{LOCATION}-documentai.googleapis.com"
+    )
 
 _docai_client = documentai.DocumentProcessorServiceClient(
     client_options=_client_options
