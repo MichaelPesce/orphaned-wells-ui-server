@@ -14,7 +14,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
 )
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 
 from ogrre.internal.data_manager import data_manager
