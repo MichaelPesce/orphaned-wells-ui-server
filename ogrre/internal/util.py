@@ -5,6 +5,7 @@ import datetime
 import functools
 import zipstream
 import csv
+import json
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 from ogrre.internal import storage_api
@@ -770,10 +771,79 @@ def convert_to_target_format(data):
 
 
 def convert_csv_to_dict(csv_file):
+    """
+    Docstring for convert_csv_to_dict
+    
+    :param csv_file: CSV file containing schema fields
+        Each field must contain:
+         - "Name"
+         - "Google Data type"
+         - "Database Data Type"
+         - "Occurrence"
+         - "Grouping"
+         - "Page Order Sort"
+         - "Cleaning Function"
+    """
     data = csv_to_dict(csv_file)
     target_format = convert_to_target_format(data)
     return target_format
 
+def format_schema_json(json_file):
+    """
+    Docstring for format_schema_json
+    
+    :param json file: JSON file containing schema fields
+        Each field must contain:
+         - "name"
+         - "data_type"
+         - "database_data_type"
+         - "occurrence"
+         - "grouping"
+         - "page_order_sort"
+         - "cleaning_function"
+    """
+    if hasattr(json_file, "file"):
+        json_file.file.seek(0)
+        raw = json_file.file.read()
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8")
+    elif hasattr(json_file, "read"):
+        raw = json_file.read()
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8")
+    else:
+        raw = json_file
+
+    data = json.loads(raw)
+    if not isinstance(data, list):
+        raise ValueError("schema json must be a list of objects")
+
+    allowed_keys = {
+        "name",
+        "data_type",
+        "database_data_type",
+        "occurrence",
+        "grouping",
+        "page_order_sort",
+        "cleaning_function",
+    }
+    data_type_aliases = {"google_data_type", "Google Data type"}
+
+    formatted = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        new_item = {}
+        for key in allowed_keys:
+            if key in item:
+                new_item[key] = item[key]
+        if "data_type" not in new_item:
+            for alias in data_type_aliases:
+                if alias in item:
+                    new_item["data_type"] = item[alias]
+                    break
+        formatted.append(new_item)
+    return formatted
 
 def upload_to_gcs(
     file_bytes: bytes, original_filename: str, processor_name: str
@@ -786,3 +856,117 @@ def upload_to_gcs(
         original_filename=original_filename,
         processor_name=processor_name,
     )
+
+def generate_record_group_stats(rg_ids):
+    ## pipeline for getting the following record group stats:
+    ## total amount, amount reviewed (reviewed or defected), amount containing cleaning errors
+    pipeline = [
+        {"$match": {"record_group_id": {"$in": rg_ids}}},
+        {
+            "$group": {
+                "_id": "$record_group_id",
+                "total_amt": {"$sum": 1},
+                "reviewed_amt": {
+                    "$sum": {
+                        "$cond": [
+                            {"$in": ["$review_status", ["defective", "reviewed"]]},
+                            1,
+                            0,
+                        ]
+                    }
+                },
+                "error_amt": {
+                    "$sum": {
+                        "$cond": [
+                            {
+                                "$or": [
+                                    {
+                                        "$anyElementTrue": {
+                                            "$map": {
+                                                "input": {
+                                                    "$ifNull": [
+                                                        "$attributesList",
+                                                        [],
+                                                    ]
+                                                },
+                                                "as": "attr",
+                                                "in": {
+                                                    "$and": [
+                                                        {
+                                                            "$ne": [
+                                                                "$$attr.cleaning_error",
+                                                                False,
+                                                            ]
+                                                        },
+                                                        {
+                                                            "$ne": [
+                                                                {
+                                                                    "$type": "$$attr.cleaning_error"
+                                                                },
+                                                                "missing",
+                                                            ]
+                                                        },
+                                                    ]
+                                                },
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "$anyElementTrue": {
+                                            "$map": {
+                                                "input": {
+                                                    "$reduce": {
+                                                        "input": {
+                                                            "$ifNull": [
+                                                                "$attributesList",
+                                                                [],
+                                                            ]
+                                                        },
+                                                        "initialValue": [],
+                                                        "in": {
+                                                            "$concatArrays": [
+                                                                "$$value",
+                                                                {
+                                                                    "$ifNull": [
+                                                                        "$$this.subattributes",
+                                                                        [],
+                                                                    ]
+                                                                },
+                                                            ]
+                                                        },
+                                                    }
+                                                },
+                                                "as": "sub",
+                                                "in": {
+                                                    "$and": [
+                                                        {
+                                                            "$ne": [
+                                                                "$$sub.cleaning_error",
+                                                                False,
+                                                            ]
+                                                        },
+                                                        {
+                                                            "$ne": [
+                                                                {
+                                                                    "$type": "$$sub.cleaning_error"
+                                                                },
+                                                                "missing",
+                                                            ]
+                                                        },
+                                                    ]
+                                                },
+                                            }
+                                        }
+                                    },
+                                ]
+                            },
+                            1,
+                            0,
+                        ]
+                    }
+                },
+            }
+        },
+    ]
+
+    return pipeline
