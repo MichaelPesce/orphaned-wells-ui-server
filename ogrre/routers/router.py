@@ -80,7 +80,13 @@ async def auth_login(request: Request):
         "grant_type": "authorization_code",
     }
     response = requests.post(token_uri, data=data)
+    if response.status_code != 200:
+        _log.info(f"token exchange failed: {response.status_code} {response.text}")
+        raise HTTPException(status_code=401, detail="unable to authenticate")
     user_tokens = response.json()
+    if not isinstance(user_tokens, dict) or "id_token" not in user_tokens:
+        _log.info(f"token exchange missing id_token: {user_tokens}")
+        raise HTTPException(status_code=401, detail="unable to authenticate")
     try:
         user_info = id_token.verify_oauth2_token(
             user_tokens["id_token"], google_requests.Request(), client_id
@@ -134,7 +140,13 @@ async def auth_refresh(request: Request):
         "grant_type": "refresh_token",
     }
     response = requests.post(token_uri, data=data)
+    if response.status_code != 200:
+        _log.info(f"token refresh failed: {response.status_code} {response.text}")
+        raise HTTPException(status_code=401, detail="unable to authenticate")
     user_tokens = response.json()
+    if not isinstance(user_tokens, dict) or "id_token" not in user_tokens:
+        _log.info(f"token refresh missing id_token: {user_tokens}")
+        raise HTTPException(status_code=401, detail="unable to authenticate")
     try:
         user_info = id_token.verify_oauth2_token(
             user_tokens["id_token"], google_requests.Request(), client_id
