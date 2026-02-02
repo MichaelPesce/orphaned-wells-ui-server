@@ -31,7 +31,8 @@ import ogrre.internal.auth as auth
 _log = logging.getLogger(__name__)
 
 token_uri, client_id, client_secret = auth.get_google_credentials()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("1", "true", "yes")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 router = APIRouter(
     prefix="",
@@ -50,6 +51,10 @@ async def authenticate(token: str = Depends(oauth2_scheme)):
     Returns:
         user account information
     """
+    if not REQUIRE_AUTH:
+        return {"email": "anonymous", "roles": {}, "anonymous": True}
+    if not token:
+        raise HTTPException(status_code=401, detail="missing authentication token")
     try:
         user_info = id_token.verify_oauth2_token(
             token, google_requests.Request(), client_id
@@ -71,6 +76,12 @@ async def auth_login(request: Request):
     Returns:
         user tokens (id_token, access_token, refresh_token)
     """
+    if not REQUIRE_AUTH:
+        return {
+            "id_token": "anonymous",
+            "access_token": "",
+            "refresh_token": "",
+        }
     code = await request.json()
     data = {
         "code": code,
@@ -132,6 +143,12 @@ async def auth_refresh(request: Request):
     Returns:
         user tokens (id_token, access_token, refresh_token)
     """
+    if not REQUIRE_AUTH:
+        return {
+            "id_token": "anonymous",
+            "access_token": "",
+            "refresh_token": "",
+        }
     refresh_token = await request.json()
     data = {
         "refresh_token": refresh_token,
@@ -186,6 +203,9 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
     else:
         environment = os.environ.get("ENVIRONMENT", None)
     user = data_manager.getUser(email)
+    if not REQUIRE_AUTH:
+        user = {"email": "anonymous", "roles": {}, "anonymous": True}
+    _log.info(f"check_auth returning: {user}")
     return {"user_data": user, "environment": environment}
 
 
@@ -215,7 +235,8 @@ async def get_projects(user_info: dict = Depends(authenticate)):
     Returns:
         List containing projects and metadata
     """
-    resp = data_manager.fetchProjects(user_info.get("email", ""))
+    # resp = data_manager.fetchProjects(user_info.get("email", ""))
+    resp = data_manager.fetchProjects(user_info)
     return resp
 
 
@@ -318,7 +339,7 @@ async def get_record_group_data(
         Dictionary containing record group data, list of records
     """
     project_document, rg_data = data_manager.fetchRecordGroupData(
-        rg_id, user_info.get("email", "")
+        rg_id, user_info
     )
     if rg_data is None:
         raise HTTPException(
