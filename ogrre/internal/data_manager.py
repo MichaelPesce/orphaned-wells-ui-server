@@ -28,7 +28,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_DB_PROCESSORS = False
+USE_DB_PROCESSORS = True
 
 
 class DataManager:

@@ -747,12 +747,12 @@ def convert_to_target_format(data):
     target_format = []
     key_map = {
         "Name": "name",
-        "Google Data type": "data_type",
         "Database Data Type": "database_data_type",
         "Occurrence": "occurrence",
         "Grouping": "grouping",
         "Page Order Sort": "page_order_sort",
         "Cleaning Function": "cleaning_function",
+        # "Data Type" OR "Google DataType" -> "data_type"
     }
 
     for row in data:
@@ -766,6 +766,10 @@ def convert_to_target_format(data):
                 ## TODO: we can add these if we want to, but it might just be a waste of space
                 # target_item[item_key] = item
                 _log.debug(f"we dont have a matching key for: {item_key}")
+        if "Data Type" in row:
+            target_item["data_type"] = row["Data Type"]
+        elif "Google Data Type" in row:
+            target_item["data_type"] = row["Google Data Type"]
         target_format.append(target_item)
     return target_format
 
