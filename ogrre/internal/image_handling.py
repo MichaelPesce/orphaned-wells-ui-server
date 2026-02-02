@@ -13,7 +13,7 @@ import mimetypes
 
 from ogrre.internal.bulk_upload import upload_documents_from_directory
 from ogrre.internal import storage_api
-from ogrre.internal import google_document_ai as document_ai_api
+from ogrre.internal import document_ai_api
 import ogrre.internal.util as util
 
 _log = logging.getLogger(__name__)

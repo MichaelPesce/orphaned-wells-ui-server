@@ -5,7 +5,6 @@ import datetime
 import functools
 import zipstream
 import csv
-import json
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 from ogrre.internal import storage_api

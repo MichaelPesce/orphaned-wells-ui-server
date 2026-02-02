@@ -1,9 +1,11 @@
+import base64
 import logging
 import os
 import sys
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import documentai
+import requests
 
 from ogrre.internal.google_processor_manager import (
     deploy_processor_version,
@@ -15,6 +17,9 @@ _log = logging.getLogger(__name__)
 LOCATION = os.getenv("LOCATION")
 PROJECT_ID = os.getenv("PROJECT_ID")
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
+DOCUMENT_AI_BACKEND = os.getenv("DOCUMENT_AI_BACKEND", "google").lower()
+DOCUMENT_AI_URL = os.getenv("DOCUMENT_AI_URL")
+DOCUMENT_AI_TIMEOUT = float(os.getenv("DOCUMENT_AI_TIMEOUT", "60"))
 
 if PROJECT_ID:
     os.environ["GCLOUD_PROJECT"] = PROJECT_ID
@@ -63,6 +68,15 @@ def process_document_content(
     model_id,
     using_default_processor=False,
 ):
+    if DOCUMENT_AI_BACKEND != "google":
+        return _process_document_content_custom(
+            image_content=image_content,
+            mime_type=mime_type,
+            processor_id=processor_id,
+            model_id=model_id,
+            using_default_processor=using_default_processor,
+        )
+
     resource_name = _docai_client.processor_version_path(
         PROJECT_ID, LOCATION, processor_id, model_id
     )
@@ -147,7 +161,38 @@ def process_document_content(
     return attributes_list
 
 
+def _process_document_content_custom(
+    image_content,
+    mime_type,
+    processor_id,
+    model_id,
+    using_default_processor=False,
+):
+    if not DOCUMENT_AI_URL:
+        raise ValueError("DOCUMENT_AI_URL is required when DOCUMENT_AI_BACKEND != google")
+
+    payload = {
+        "image_content_base64": base64.b64encode(image_content).decode("utf-8"),
+        "mime_type": mime_type,
+        "processor_id": processor_id,
+        "model_id": model_id,
+        "using_default_processor": using_default_processor,
+    }
+    response = requests.post(DOCUMENT_AI_URL, json=payload, timeout=DOCUMENT_AI_TIMEOUT)
+    response.raise_for_status()
+    data = response.json()
+    if isinstance(data, list):
+        return data
+    attributes_list = data.get("attributes_list")
+    if attributes_list is None:
+        raise ValueError("custom document ai response missing attributes_list")
+    return attributes_list
+
+
 def deploy_processor(rg_id, data_manager):
+    if DOCUMENT_AI_BACKEND != "google":
+        _log.info("custom document ai backend selected; skipping deploy")
+        return "DEPLOYED"
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
 
     resource_name = _docai_client.processor_version_path(
@@ -160,6 +205,9 @@ def deploy_processor(rg_id, data_manager):
 
 
 def undeploy_processor(rg_id, data_manager):
+    if DOCUMENT_AI_BACKEND != "google":
+        _log.info("custom document ai backend selected; skipping undeploy")
+        return True
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
 
     resource_name = _docai_client.processor_version_path(
@@ -170,6 +218,9 @@ def undeploy_processor(rg_id, data_manager):
 
 
 def check_if_processor_is_deployed(rg_id, data_manager):
+    if DOCUMENT_AI_BACKEND != "google":
+        _log.info("custom document ai backend selected; returning deployed")
+        return 1
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
 
     opts = None
