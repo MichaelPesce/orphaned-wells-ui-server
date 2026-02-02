@@ -21,12 +21,6 @@ DOCUMENT_AI_BACKEND = os.getenv("DOCUMENT_AI_BACKEND", "google").lower()
 DOCUMENT_AI_URL = os.getenv("DOCUMENT_AI_URL")
 DOCUMENT_AI_TIMEOUT = float(os.getenv("DOCUMENT_AI_TIMEOUT", "60"))
 
-if PROJECT_ID:
-    os.environ["GCLOUD_PROJECT"] = PROJECT_ID
-
-if STORAGE_SERVICE_KEY:
-    dirname, _ = os.path.split(os.path.abspath(sys.argv[0]))
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{dirname}/{STORAGE_SERVICE_KEY}"
 
 _client_options = None
 if LOCATION:
