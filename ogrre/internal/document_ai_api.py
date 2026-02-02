@@ -163,7 +163,9 @@ def _process_document_content_custom(
     using_default_processor=False,
 ):
     if not DOCUMENT_AI_URL:
-        raise ValueError("DOCUMENT_AI_URL is required when DOCUMENT_AI_BACKEND != google")
+        raise ValueError(
+            "DOCUMENT_AI_URL is required when DOCUMENT_AI_BACKEND != google"
+        )
 
     payload = {
         "image_content_base64": base64.b64encode(image_content).decode("utf-8"),
