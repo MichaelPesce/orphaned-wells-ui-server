@@ -1,27 +1,19 @@
 import os
-import sys
 import logging
 import time
 import aiofiles
-import aiohttp
 import multiprocessing
 import tracemalloc
 from PIL import Image
-from gcloud.aio.storage import Storage
-from google.cloud import storage
 
 from fastapi import HTTPException
 import fitz
 import zipfile
 import mimetypes
 
-STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
-BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
-DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
-
 from ogrre.internal.bulk_upload import upload_documents_from_directory
-from ogrre.internal import google_document_ai
+from ogrre.internal import storage_api
+from ogrre.internal import google_document_ai as document_ai_api
 import ogrre.internal.util as util
 
 _log = logging.getLogger(__name__)
@@ -198,7 +190,7 @@ def process_document(
     for output_path in output_paths:
         filepath = output_path.split("/")[-1]
         background_tasks.add_task(
-            upload_to_google_storage,
+            storage_api.upload_file,
             file_path=output_path,
             file_name=f"{filepath}",
             folder=f"uploads/{rg_id}/{new_record_id}",
@@ -360,7 +352,7 @@ def process_image(
 
     # Use the Document AI client to process the document
     try:
-        attributesList = google_document_ai.process_document_content(
+        attributesList = document_ai_api.process_document_content(
             image_content=image_content,
             mime_type=mime_type,
             processor_id=processor_id,
@@ -485,7 +477,7 @@ def process_image(
 def deployProcessor(rg_id, data_manager):
     _log.debug(f"attempting to deploy processor for record group {rg_id}")
     start_time = time.time()
-    deployment = google_document_ai.deploy_processor(rg_id, data_manager)
+    deployment = document_ai_api.deploy_processor(rg_id, data_manager)
     if deployment != "DEPLOYED":
         finish_time = time.time()
         _log.error(
@@ -500,7 +492,7 @@ def deployProcessor(rg_id, data_manager):
 def undeployProcessor(rg_id, data_manager):
     _log.debug(f"attempting to deploy processor for record group {rg_id}")
     start_time = time.time()
-    google_document_ai.undeploy_processor(rg_id, data_manager)
+    document_ai_api.undeploy_processor(rg_id, data_manager)
     finish_time = time.time()
     _log.debug(f"took {finish_time-start_time} seconds to undeploy")
     return True
@@ -508,36 +500,7 @@ def undeployProcessor(rg_id, data_manager):
 
 def check_if_processor_is_deployed(rg_id, data_manager):
     try:
-        return google_document_ai.check_if_processor_is_deployed(rg_id, data_manager)
+        return document_ai_api.check_if_processor_is_deployed(rg_id, data_manager)
     except Exception as e:
         print(f"unable to check processor status: {e}")
         return 10
-
-
-## Google Cloud Storage Functions
-async def async_upload_to_bucket(blob_name, file_obj, folder, bucket_name=BUCKET_NAME):
-    """Upload image file to bucket."""
-
-    async with aiohttp.ClientSession() as session:
-        storage = Storage(service_file=f"{DIRNAME}/creds.json", session=session)
-        status = await storage.upload(bucket_name, f"{folder}/{blob_name}", file_obj)
-        return status["selfLink"]
-
-
-async def upload_to_google_storage(file_path, file_name, folder="uploads"):
-    async with aiofiles.open(file_path, "rb") as afp:
-        f = await afp.read()
-    url = await async_upload_to_bucket(file_name, f, folder=folder)
-    _log.info(f"uploaded document to cloud storage: {url}")
-
-
-def delete_google_storage_directory(rg_id, bucket_name=BUCKET_NAME):
-    _log.info(f"deleting record group {rg_id} from google storage")
-    storage_client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
-    )
-    bucket = storage_client.get_bucket(bucket_name)
-    blobs = bucket.list_blobs(prefix=f"uploads/{rg_id}")
-    for blob in blobs:
-        _log.info(f"deleting {blob}")
-        blob.delete()

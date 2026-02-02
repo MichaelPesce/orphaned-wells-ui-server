@@ -1,17 +1,14 @@
 import time
 import os
 import logging
-from google.cloud import storage
 import datetime
-import sys
 import functools
 import zipstream
-from google.cloud import storage
 import csv
 import json
-from google.api_core.exceptions import NotFound
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
+from ogrre.internal import storage_api
 
 CLEANING_FUNCTIONS = {
     "clean_bool": OGRRE_cleaning_functions.clean_bool,
@@ -24,8 +21,6 @@ CLEANING_FUNCTIONS = {
 }
 
 _log = logging.getLogger(__name__)
-DIRNAME, FILENAME = os.path.split(os.path.abspath(sys.argv[0]))
-STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 
 
@@ -154,39 +149,13 @@ def generate_gcs_paths(documents):
 
 
 def get_document_image(rg_id, record_id, filename, bucket_name=BUCKET_NAME):
-    path = f"uploads/{rg_id}/{record_id}/{filename}"
-    return generate_download_signed_url_v4(path, bucket_name=bucket_name)
-
-
-def generate_download_signed_url_v4(path, bucket_name=BUCKET_NAME):
-    """Generates a v4 signed URL for downloading a blob.
-
-    Note that this method requires a service account key file. You can not use
-    this if you are using Application Default Credentials from Google Compute
-    Engine or from the Google Cloud SDK.
-    To generate STORAGE_SERVICE_KEY, follow steps here:
-    https://docs.gspread.org/en/latest/oauth2.html#for-bots-using-service-account
-    """
-
-    storage_client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+    return storage_api.get_document_image(
+        rg_id=rg_id, record_id=record_id, filename=filename, bucket_name=bucket_name
     )
-    # blob_name: path to file in google cloud bucket
-    blob_name = f"{path}"
-    bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(blob_name)
-    try:
-        url = blob.generate_signed_url(
-            version="v4",
-            # This URL is valid for 15 minutes
-            expiration=datetime.timedelta(minutes=15),
-            # Allow GET requests using this URL.
-            method="GET",
-        )
-    except Exception as e:
-        _log.info(f"unable to get GCS image for path: {path}")
 
-    return url
+
+def generate_file_url(path, bucket_name=BUCKET_NAME):
+    return storage_api.get_file_url(path, bucket_name=bucket_name)
 
 
 def compileDocumentImageList(records):
@@ -226,27 +195,12 @@ def compute_total_size(local_file_paths, gcs_paths):
             _log.warning(f"Local file not found: {file_path}")
 
     # GCS blob sizes
-    try:
-        storage_client = storage.Client.from_service_account_json(
-            f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
-        )
-        bucket = storage_client.bucket(BUCKET_NAME)
-
-        for blob_name in gcs_paths or []:
-            try:
-                blob = bucket.blob(blob_name)
-                blob.reload()  # fetch metadata from GCS
-                if blob.size is not None:
-                    total_size += blob.size
-                else:
-                    _log.warning(f"blob has no size info: {blob_name}")
-            except NotFound:
-                _log.warning(f"blob not found: {blob_name}")
-            except Exception as e:
-                _log.error(f"Error retrieving blob size for {blob_name}: {e}")
-
-    except Exception as e:
-        _log.error(f"Error initializing GCS client or bucket: {e}")
+    for blob_name in gcs_paths or []:
+        size = storage_api.get_file_size(blob_name, bucket_name=BUCKET_NAME)
+        if size is not None:
+            total_size += size
+        else:
+            _log.warning(f"blob has no size info or was not found: {blob_name}")
 
     return total_size
 
@@ -289,46 +243,27 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
             else:
                 logg(f"Local file not found, skipping: {file_path}", level="info")
 
-    client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
-    )
-    bucket = client.bucket(BUCKET_NAME)
-
     gcs_paths = generate_gcs_paths(documents)
     i = 0
     not_found_amt = 0
     for gcs_path in gcs_paths:
         i += 1
-        blob = bucket.blob(gcs_path)
         # check if blob exists before writing to ZIP
-        try:
-            if not blob.exists():
-                not_found_amt += 1
-                logg(f"image #{i} not found, skipping: {gcs_path}", level="info")
-                continue
-        except Exception as e:
-            logg(f"Error checking existence for {gcs_path}: {e}", level="info")
+        if not storage_api.file_exists(gcs_path, bucket_name=BUCKET_NAME):
+            not_found_amt += 1
+            logg(f"image #{i} not found, skipping: {gcs_path}", level="info")
             continue
         arcname = gcs_paths[gcs_path]
 
-        def gcs_yield_chunks(blob, arcname, gcs_path, i):
+        def gcs_yield_chunks(arcname, gcs_path, i):
             logg(f"Starting download #{i}: {gcs_path} -> {arcname}")
             start_file = time.time()
             bytes_read = 0
-            try:
-                with blob.open("rb") as f:
-                    while True:
-                        chunk = f.read(65536)  # 64KB
-                        if not chunk:
-                            break
-                        bytes_read += len(chunk)
-                        yield chunk
-            except NotFound:
-                logg(f"Exception, blob not found: {gcs_path}", level="info")
-                return
-            except Exception as e:
-                logg(f"Error downloading {gcs_path}: {e}", level="info")
-                return
+            for chunk in storage_api.iter_file_bytes(
+                gcs_path, bucket_name=BUCKET_NAME, chunk_size=65536
+            ):
+                bytes_read += len(chunk)
+                yield chunk
 
             elapsed_file = time.time() - start_file
             mb_size = bytes_read / (1024 * 1024)
@@ -350,7 +285,7 @@ def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt"):
                 elif log_to_file:
                     _log.info(f"Log text file is not found: {log_to_file}")
 
-        zs.write_iter(arcname, gcs_yield_chunks(blob, arcname, gcs_path, i))
+        zs.write_iter(arcname, gcs_yield_chunks(arcname, gcs_path, i))
 
     def streaming_generator():
         for chunk in zs:
@@ -847,17 +782,8 @@ def upload_to_gcs(
     """
     Uploads raw bytes to Google Cloud Storage and returns the public URL.
     """
-
-    client = storage.Client.from_service_account_json(
-        f"{DIRNAME}/{STORAGE_SERVICE_KEY}"
+    return storage_api.upload_sample_image(
+        file_bytes=file_bytes,
+        original_filename=original_filename,
+        processor_name=processor_name,
     )
-    bucket = client.bucket(BUCKET_NAME)
-
-    extension = original_filename.split(".")[-1]
-    # blob_name = f"sample_images/{uuid.uuid4()}.{extension}"
-    blob_name = f"sample_images/{processor_name}"
-
-    blob = bucket.blob(blob_name)
-    blob.upload_from_string(file_bytes, content_type=f"image/{extension}")
-
-    return generate_download_signed_url_v4(blob_name)

@@ -15,8 +15,6 @@ from ogrre.internal.util import get_document_image
 import ogrre.internal.util as util
 from ogrre.internal.util import time_it
 
-# from ogrre.internal import airtable_api
-
 _log = logging.getLogger(__name__)
 
 COLLABORATORS = ["isgs", "calgem", "osage"]
@@ -194,7 +192,7 @@ class DataManager:
             _log.info(f"no processors found")
         for processor in schema:
             processorName = processor.get("name")
-            processor_img = util.generate_download_signed_url_v4(
+            processor_img = util.generate_file_url(
                 path=f"sample_images/{processorName}"
             )
             processor["img"] = processor_img
