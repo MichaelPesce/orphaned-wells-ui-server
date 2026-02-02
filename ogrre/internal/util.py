@@ -773,7 +773,7 @@ def convert_to_target_format(data):
 def convert_csv_to_dict(csv_file):
     """
     Docstring for convert_csv_to_dict
-    
+
     :param csv_file: CSV file containing schema fields
         Each field must contain:
          - "Name"
@@ -788,10 +788,11 @@ def convert_csv_to_dict(csv_file):
     target_format = convert_to_target_format(data)
     return target_format
 
+
 def format_schema_json(json_file):
     """
     Docstring for format_schema_json
-    
+
     :param json file: JSON file containing schema fields
         Each field must contain:
          - "name"
@@ -845,6 +846,7 @@ def format_schema_json(json_file):
         formatted.append(new_item)
     return formatted
 
+
 def upload_to_gcs(
     file_bytes: bytes, original_filename: str, processor_name: str
 ) -> str:
@@ -856,6 +858,7 @@ def upload_to_gcs(
         original_filename=original_filename,
         processor_name=processor_name,
     )
+
 
 def generate_record_group_stats(rg_ids):
     ## pipeline for getting the following record group stats:
