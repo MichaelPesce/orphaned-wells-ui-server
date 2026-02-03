@@ -338,9 +338,7 @@ async def get_record_group_data(
     Returns:
         Dictionary containing record group data, list of records
     """
-    project_document, rg_data = data_manager.fetchRecordGroupData(
-        rg_id, user_info
-    )
+    project_document, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
     if rg_data is None:
         raise HTTPException(
             403,
