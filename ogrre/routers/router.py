@@ -205,7 +205,6 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
     user = data_manager.getUser(email)
     if not REQUIRE_AUTH:
         user = {"email": "anonymous", "roles": {}, "anonymous": True}
-    _log.info(f"check_auth returning: {user}")
     return {"user_data": user, "environment": environment}
 
 
