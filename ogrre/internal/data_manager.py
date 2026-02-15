@@ -29,7 +29,7 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_DB_PROCESSORS = False
+USE_DB_PROCESSORS = True
 
 
 class DataManager:
@@ -947,6 +947,8 @@ class DataManager:
                 processor_document = DEFAULT_PROCESSORS[0]
             processor_attributes = processor_document.get("attributes", None)
             model_id = processor_document.get("Model ID", None)
+            if model_id is None:
+                model_id = processor_document.get("modelId", None)
             return google_id, model_id, processor_attributes
         except Exception as e:
             _log.error(f"unable to find processor: {e}")
