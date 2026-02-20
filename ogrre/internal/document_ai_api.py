@@ -226,13 +226,10 @@ def check_if_processor_is_deployed(rg_id, data_manager):
     parent = client.processor_path(PROJECT_ID, LOCATION, processor_id)
 
     processor_versions = client.list_processor_versions(parent=parent)
-    # _log.info(f"processor_versions: {processor_versions}")
     for processor_version in processor_versions:
         processor_version_id = client.parse_processor_version_path(
             processor_version.name
         )["processor_version"]
-        # _log.info(f"{processor_version_id} == {model_id}")
-        # _log.info(processor_version)
         if processor_version_id == model_id:
             _log.debug(f"processor state == {processor_version.state}")
             return processor_version.state
