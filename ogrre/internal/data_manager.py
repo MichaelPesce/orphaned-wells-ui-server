@@ -29,7 +29,11 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_DB_PROCESSORS = os.getenv("USE_DB_PROCESSORS", "false").lower() in ("1", "true", "yes")
+USE_DB_PROCESSORS = os.getenv("USE_DB_PROCESSORS", "false").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 
 class DataManager:
