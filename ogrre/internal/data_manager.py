@@ -6,7 +6,7 @@ import json
 import re
 
 from bson import ObjectId
-from pymongo import ASCENDING, DESCENDING, UpdateOne
+from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne
 
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from ogrre.internal.mongodb_connection import connectToDatabase
@@ -1683,6 +1683,30 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to record history item: {e}")
 
+    def recordHistoryBulk(self, updates):
+        if not updates:
+            return
+        try:
+            ts = time.time()
+            history_ops = []
+            for update in updates:
+                history_item = {
+                    "action": update.get("action"),
+                    "user": update.get("user"),
+                    "project_id": update.get("project_id"),
+                    "record_group_id": update.get("record_group_id"),
+                    "record_id": update.get("record_id"),
+                    "notes": update.get("notes"),
+                    "query": update.get("query"),
+                    "previous_state": update.get("previous_state"),
+                    "calling_function": update.get("calling_function"),
+                    "timestamp": update.get("timestamp", ts),
+                }
+                history_ops.append(InsertOne(history_item))
+            self.db.history.bulk_write(history_ops, ordered=False)
+        except Exception as e:
+            _log.error(f"unable to record bulk history items: {e}")
+
     def cleanAttribute(self, attribute, record_id=None, rg_id=None):
         if record_id is None and rg_id is None:
             return None
@@ -1710,7 +1734,7 @@ class DataManager:
                 processor_attributes=processor_attributes, attribute=attribute
             )
 
-    def cleanCollection(self, location, _id):
+    def cleanCollection(self, location, _id, user_info):
         documents = []
         try:
             if location == "record":
@@ -1737,12 +1761,24 @@ class DataManager:
                 processor_attributes=processor_attributes, documents=documents
             )
             update_ops = []
+            history_ops = []
             for document in documents:
                 update_ops.append(
                     UpdateOne({"_id": document["_id"]}, {"$set": document})
                 )
+
+                history_item = {
+                    "user": user_info.get("email", None),
+                    "action": "cleanRecord",
+                    "record_id": str(document["_id"]),
+                }
+                if location == "record_group":
+                    history_item["record_group_id"] = _id
+                history_ops.append(history_item)
             _log.info(f"updateOps length {len(update_ops)}")
-            self.db.records.bulk_write(update_ops)
+            if update_ops:
+                self.db.records.bulk_write(update_ops)
+            self.recordHistoryBulk(history_ops)
         except Exception as e:
             _log.error(f"error on cleaning {location}: {e}")
 

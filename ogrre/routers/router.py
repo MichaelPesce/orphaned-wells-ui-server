@@ -1140,7 +1140,7 @@ async def run_cleaning_functions(
             detail=f"You are not authorized to run cleaning functions. Please contact a team lead or project manager.",
         )
 
-    data_manager.cleanCollection(location, _id)
+    data_manager.cleanCollection(location, _id, user_info)
 
     return _id
 
