@@ -989,7 +989,7 @@ def getPreviousAttributeOrSubattributeValue(key_parts, record_doc):
                 each = int(each)
                 _log.info(f"-> {each}")
             val = curr[each]
-            curr=val
+            curr = val
             if each != "attributesList":
                 _log.info(f"val: {val}")
 

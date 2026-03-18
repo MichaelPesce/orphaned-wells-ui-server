@@ -1161,7 +1161,6 @@ class DataManager:
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
-
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
                 ):
@@ -1196,7 +1195,9 @@ class DataManager:
                     previous_state = {}
                     for each in data_update:
                         if "attributesList." in each:
-                            next_prev = util.getPreviousAttributeOrSubattributeValue(update_key_parts, record_doc)
+                            next_prev = util.getPreviousAttributeOrSubattributeValue(
+                                update_key_parts, record_doc
+                            )
                             previous_state[each] = next_prev
                             # _log.info(f"next_prev: {next_prev}")
                         else:
