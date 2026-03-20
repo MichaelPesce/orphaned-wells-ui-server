@@ -872,7 +872,7 @@ class DataManager:
 
             if update_db and background_tasks:
                 ## after sorting, update the record list so frontend and backend are in sync
-                ## this shouldnt always be necessary, but for now do it every time
+                ## only persist when the stored list differs from the sorted result
                 background_tasks.add_task(
                     self.updateRecord,
                     record_id=document["_id"],
