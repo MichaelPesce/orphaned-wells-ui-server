@@ -244,9 +244,7 @@ class DataManager:
         # self.createProcessorsList()
         return "success"
 
-    def updateProcessorAttribute(
-        self, processor_name, field_name, updates, user_info
-    ):
+    def updateProcessorAttribute(self, processor_name, field_name, updates, user_info):
         user = user_info.get("email")
         query = {"name": processor_name, "attributes.name": field_name}
         set_updates = {"lastUpdated": time.time()}

@@ -1381,7 +1381,12 @@ async def update_processor_attribute(
     field_name = req.get("field_name")
     updates = req.get("updates")
 
-    if not processor_name or not field_name or not isinstance(updates, dict) or not updates:
+    if (
+        not processor_name
+        or not field_name
+        or not isinstance(updates, dict)
+        or not updates
+    ):
         raise HTTPException(
             400,
             detail="Please provide processor_name, field_name, and a non-empty updates object in the request body.",
