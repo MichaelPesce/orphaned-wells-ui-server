@@ -1241,6 +1241,17 @@ async def get_schema(user_info: dict = Depends(authenticate)):
     return data_manager.getSchema(user_info)
 
 
+@router.get("/get_cleaning_functions")
+async def get_cleaning_functions(user_info: dict = Depends(authenticate)):
+    """Get available cleaning function names."""
+    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
+        )
+    return {"cleaning_functions": list(util.CLEANING_FUNCTIONS.keys())}
+
+
 @router.post("/upload_processor_schema")
 async def upload_processor_schema(
     name: str = None,
