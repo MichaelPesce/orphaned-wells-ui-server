@@ -256,7 +256,9 @@ class DataManager:
         if operation == "add":
             new_field_name = updates.get("name") or field_name
             if not new_field_name:
-                raise ValueError("new processor field name is required for add operation")
+                raise ValueError(
+                    "new processor field name is required for add operation"
+                )
             if not updates.get("data_type"):
                 raise ValueError("data_type is required for add operation")
             if not updates.get("database_data_type"):
@@ -276,7 +278,9 @@ class DataManager:
                 )
 
             new_attribute = {
-                key: value for key, value in updates.items() if value is not None and value != ""
+                key: value
+                for key, value in updates.items()
+                if value is not None and value != ""
             }
             new_attribute["name"] = new_field_name
 
