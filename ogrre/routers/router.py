@@ -1379,17 +1379,19 @@ async def update_processor_attribute(
     req = await request.json()
     processor_name = req.get("processor_name")
     field_name = req.get("field_name")
-    updates = req.get("updates")
+    updates = req.get("updates", {})
+    operation = req.get("operation", "update")
 
-    if (
-        not processor_name
-        or not field_name
-        or not isinstance(updates, dict)
-        or not updates
-    ):
+    if operation not in {"update", "add", "delete"}:
         raise HTTPException(
             400,
-            detail="Please provide processor_name, field_name, and a non-empty updates object in the request body.",
+            detail="operation must be one of: update, add, delete",
+        )
+
+    if not processor_name:
+        raise HTTPException(
+            400,
+            detail="Please provide processor_name in the request body.",
         )
 
     allowed_update_fields = {
@@ -1400,11 +1402,51 @@ async def update_processor_attribute(
         "database_data_type",
         "page_order_sort",
     }
+    if not isinstance(updates, dict):
+        raise HTTPException(
+            400,
+            detail="updates must be an object when provided.",
+        )
+
     invalid_fields = set(updates.keys()) - allowed_update_fields
     if invalid_fields:
         raise HTTPException(
             400,
             detail=f"Unsupported processor attribute update fields: {sorted(invalid_fields)}",
+        )
+
+    if operation == "update":
+        if not field_name or not updates:
+            raise HTTPException(
+                400,
+                detail="Update operation requires field_name and a non-empty updates object.",
+            )
+    elif operation == "add":
+        if not updates:
+            raise HTTPException(
+                400,
+                detail="Add operation requires a non-empty updates object.",
+            )
+        if not updates.get("name") and not field_name:
+            raise HTTPException(
+                400,
+                detail="Add operation requires a field name in updates.name or field_name.",
+            )
+        missing_required_fields = [
+            key for key in ("data_type", "database_data_type") if not updates.get(key)
+        ]
+        if missing_required_fields:
+            raise HTTPException(
+                400,
+                detail=(
+                    "Add operation requires the following fields in updates: "
+                    f"{missing_required_fields}"
+                ),
+            )
+    elif operation == "delete" and not field_name:
+        raise HTTPException(
+            400,
+            detail="Delete operation requires field_name.",
         )
 
     try:
@@ -1413,6 +1455,7 @@ async def update_processor_attribute(
             field_name=field_name,
             updates=updates,
             user_info=user_info,
+            operation=operation,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
