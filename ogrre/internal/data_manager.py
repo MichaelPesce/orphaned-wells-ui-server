@@ -1769,6 +1769,44 @@ class DataManager:
         if rg is not None:
             return True
 
+    def _buildHistoryItem(
+        self,
+        action=None,
+        user: str = None,
+        project_id=None,
+        rg_id=None,
+        record_id=None,
+        notes=None,
+        query=None,
+        previous_state=None,
+        calling_function=None,
+        timestamp=None,
+        **kwargs,
+    ):
+        history_item = {
+            "action": action,
+            "user": user,
+            "project_id": project_id,
+            "record_group_id": rg_id,
+            "record_id": record_id,
+            "notes": notes,
+            "query": query,
+            "previous_state": previous_state,
+            "calling_function": calling_function,
+            "timestamp": timestamp if timestamp is not None else time.time(),
+        }
+
+        extra_fields = dict(kwargs)
+        if (
+            extra_fields.get("record_group_id") is None
+            and extra_fields.get("rg_id") is not None
+        ):
+            extra_fields["record_group_id"] = extra_fields["rg_id"]
+        extra_fields.pop("rg_id", None)
+
+        history_item.update(extra_fields)
+        return history_item
+
     def recordHistory(
         self,
         action,
@@ -1780,20 +1818,21 @@ class DataManager:
         query=None,
         previous_state=None,
         calling_function=None,
+        **kwargs,
     ):
         try:
-            history_item = {
-                "action": action,
-                "user": user,
-                "project_id": project_id,
-                "record_group_id": rg_id,
-                "record_id": record_id,
-                "notes": notes,
-                "query": query,
-                "previous_state": previous_state,
-                "calling_function": calling_function,
-                "timestamp": time.time(),
-            }
+            history_item = self._buildHistoryItem(
+                action=action,
+                user=user,
+                project_id=project_id,
+                rg_id=rg_id,
+                record_id=record_id,
+                notes=notes,
+                query=query,
+                previous_state=previous_state,
+                calling_function=calling_function,
+                **kwargs,
+            )
             self.db.history.insert_one(history_item)
         except Exception as e:
             _log.error(f"unable to record history item: {e}")
@@ -1805,20 +1844,15 @@ class DataManager:
             ts = time.time()
             history_ops = []
             for update in updates:
-                history_item = {
-                    "action": update.get("action"),
-                    "user": update.get("user"),
-                    "project_id": update.get("project_id"),
-                    "record_group_id": update.get("record_group_id"),
-                    "record_id": update.get("record_id"),
-                    "notes": update.get("notes"),
-                    "query": update.get("query"),
-                    "previous_state": update.get("previous_state"),
-                    "calling_function": update.get("calling_function"),
-                    "timestamp": update.get("timestamp", ts),
-                }
+                if not isinstance(update, dict):
+                    continue
+                history_item = self._buildHistoryItem(
+                    timestamp=update.get("timestamp", ts),
+                    **update,
+                )
                 history_ops.append(InsertOne(history_item))
-            self.db.history.bulk_write(history_ops, ordered=False)
+            if history_ops:
+                self.db.history.bulk_write(history_ops, ordered=False)
         except Exception as e:
             _log.error(f"unable to record bulk history items: {e}")
 
@@ -1872,7 +1906,7 @@ class DataManager:
             processor_attributes = util.convert_processor_attributes_to_dict(
                 processor_attributes
             )
-            util.cleanRecords(
+            attributes_list_before_and_after = util.cleanRecords(
                 processor_attributes=processor_attributes, documents=documents
             )
             update_ops = []
@@ -1881,11 +1915,14 @@ class DataManager:
                 update_ops.append(
                     UpdateOne({"_id": document["_id"]}, {"$set": document})
                 )
-
+                current_before_and_after = attributes_list_before_and_after.get(str(document["_id"]), {})
+                _log.info(f"history item: ")
                 history_item = {
                     "user": user_info.get("email", None),
                     "action": "cleanRecord",
                     "record_id": str(document["_id"]),
+                    "attributesList_before": current_before_and_after.get("attributesList_before"),
+                    "attributesList_after": current_before_and_after.get("attributesList_after"),
                 }
                 if location == "record_group":
                     history_item["record_group_id"] = _id

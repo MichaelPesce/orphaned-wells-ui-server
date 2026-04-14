@@ -6,6 +6,7 @@ import functools
 import zipstream
 import csv
 import json
+import copy
 
 import ogrre_data_cleaning.clean as OGRRE_cleaning_functions
 from ogrre.internal import storage_api
@@ -424,8 +425,14 @@ def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
 
 
 def cleanRecords(processor_attributes, documents):
+    # for record history
+    attributes_list_before_and_after = {}
+
     for doc in documents:
         attributes_list = doc["attributesList"]
+        current_attributes_list_before_and_after = {
+            "attributesList_before": copy.deepcopy(attributes_list),
+        }
         for attr in attributes_list:
             cleanRecordAttribute(
                 processor_attributes=processor_attributes, attribute=attr
@@ -441,8 +448,10 @@ def cleanRecords(processor_attributes, documents):
                         attribute=subattr,
                         subattributeKey=subattribute_identifier,
                     )
+        current_attributes_list_before_and_after["attributesList_after"] = copy.deepcopy(attributes_list)
+        attributes_list_before_and_after[str(doc.get("_id"))] = current_attributes_list_before_and_after
 
-    return documents
+    return attributes_list_before_and_after
 
 
 def createNewAttribute(
