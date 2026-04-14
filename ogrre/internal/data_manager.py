@@ -1916,7 +1916,6 @@ class DataManager:
                     UpdateOne({"_id": document["_id"]}, {"$set": document})
                 )
                 current_before_and_after = attributes_list_before_and_after.get(str(document["_id"]), {})
-                _log.info(f"history item: ")
                 history_item = {
                     "user": user_info.get("email", None),
                     "action": "cleanRecord",
