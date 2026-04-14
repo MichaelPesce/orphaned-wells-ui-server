@@ -1915,13 +1915,19 @@ class DataManager:
                 update_ops.append(
                     UpdateOne({"_id": document["_id"]}, {"$set": document})
                 )
-                current_before_and_after = attributes_list_before_and_after.get(str(document["_id"]), {})
+                current_before_and_after = attributes_list_before_and_after.get(
+                    str(document["_id"]), {}
+                )
                 history_item = {
                     "user": user_info.get("email", None),
                     "action": "cleanRecord",
                     "record_id": str(document["_id"]),
-                    "attributesList_before": current_before_and_after.get("attributesList_before"),
-                    "attributesList_after": current_before_and_after.get("attributesList_after"),
+                    "attributesList_before": current_before_and_after.get(
+                        "attributesList_before"
+                    ),
+                    "attributesList_after": current_before_and_after.get(
+                        "attributesList_after"
+                    ),
                 }
                 if location == "record_group":
                     history_item["record_group_id"] = _id

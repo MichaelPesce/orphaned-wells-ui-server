@@ -471,13 +471,23 @@ def cleanRecords(processor_attributes, documents):
                         "value": subattr.get("value"),
                         "subattribute_identifier": subattribute_identifier,
                     }
-                    attribute_before_cleaning["subattributes"].append(subattribute_before_cleaning)
-                    attribute_after_cleaning["subattributes"].append(subattribute_after_cleaning)
-            
-            current_attributes_list_before_and_after["attributesList_before"].append(attribute_before_cleaning)
-            current_attributes_list_before_and_after["attributesList_after"].append(attribute_after_cleaning)
+                    attribute_before_cleaning["subattributes"].append(
+                        subattribute_before_cleaning
+                    )
+                    attribute_after_cleaning["subattributes"].append(
+                        subattribute_after_cleaning
+                    )
+
+            current_attributes_list_before_and_after["attributesList_before"].append(
+                attribute_before_cleaning
+            )
+            current_attributes_list_before_and_after["attributesList_after"].append(
+                attribute_after_cleaning
+            )
         # current_attributes_list_before_and_after["attributesList_after"] = copy.deepcopy(attributes_list)
-        attributes_list_before_and_after[str(doc.get("_id"))] = current_attributes_list_before_and_after
+        attributes_list_before_and_after[
+            str(doc.get("_id"))
+        ] = current_attributes_list_before_and_after
 
     return attributes_list_before_and_after
 
