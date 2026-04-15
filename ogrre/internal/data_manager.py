@@ -1010,7 +1010,28 @@ class DataManager:
         history_cursor = self.db.history.find(
             {"record_id": record_id}, {"_id": 0}
         ).sort("timestamp", DESCENDING)
-        return list(history_cursor)
+        history_items = list(history_cursor)
+
+        for history_item in history_items:
+            action = history_item.get("action")
+
+            if action == "updateRecord":
+                query = history_item.get("query")
+                previous_state = history_item.get("previous_state")
+                if isinstance(query, (dict, list)):
+                    self._annotateHistoryPayloadNumericTypes(query)
+                if isinstance(previous_state, (dict, list)):
+                    self._annotateHistoryPayloadNumericTypes(previous_state)
+
+            if action == "cleanRecord":
+                before_attrs = history_item.get("attributesList_before")
+                after_attrs = history_item.get("attributesList_after")
+                if isinstance(before_attrs, (dict, list)):
+                    self._annotateHistoryPayloadNumericTypes(before_attrs)
+                if isinstance(after_attrs, (dict, list)):
+                    self._annotateHistoryPayloadNumericTypes(after_attrs)
+
+        return history_items
 
     @time_it
     def getRecordIndexes(self, document, filterBy, sortBy):
@@ -1769,6 +1790,59 @@ class DataManager:
         if rg is not None:
             return True
 
+    def _getHistoryNumericType(self, value):
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return "int"
+        if isinstance(value, float):
+            return "float"
+        return None
+
+    def _annotateHistoryAttributesNumericTypes(self, attributes):
+        if not isinstance(attributes, list):
+            return
+
+        for attribute in attributes:
+            if not isinstance(attribute, dict):
+                continue
+
+            numeric_type = self._getHistoryNumericType(attribute.get("value"))
+            if numeric_type is not None:
+                attribute["value_numeric_type"] = numeric_type
+
+            subattributes = attribute.get("subattributes")
+            if isinstance(subattributes, list):
+                self._annotateHistoryAttributesNumericTypes(subattributes)
+
+    def _annotateHistoryPayloadNumericTypes(self, payload):
+        if isinstance(payload, list):
+            self._annotateHistoryAttributesNumericTypes(payload)
+            for entry in payload:
+                if isinstance(entry, (dict, list)):
+                    self._annotateHistoryPayloadNumericTypes(entry)
+            return payload
+
+        if not isinstance(payload, dict):
+            return payload
+
+        if "key" in payload and "value" in payload:
+            numeric_type = self._getHistoryNumericType(payload.get("value"))
+            if numeric_type is not None:
+                payload["value_numeric_type"] = numeric_type
+
+        for key, value in payload.items():
+            if key == "attributesList" and isinstance(value, list):
+                self._annotateHistoryAttributesNumericTypes(value)
+                continue
+            if key.startswith("attributesList.") and isinstance(value, dict):
+                self._annotateHistoryPayloadNumericTypes(value)
+                continue
+            if isinstance(value, (dict, list)):
+                self._annotateHistoryPayloadNumericTypes(value)
+
+        return payload
+
     def _buildHistoryItem(
         self,
         action=None,
@@ -1803,7 +1877,6 @@ class DataManager:
         ):
             extra_fields["record_group_id"] = extra_fields["rg_id"]
         extra_fields.pop("rg_id", None)
-
         history_item.update(extra_fields)
         return history_item
 
