@@ -1253,7 +1253,7 @@ class DataManager:
             else:
                 # this data_update definition is required for internal backend calls (such as attributesList updates)
                 data_update = {update_type: new_data.get(update_type, None)}
-                
+
                 ## call cleaning functions
                 if field_to_clean:
                     attributeToClean = new_data["v"]
