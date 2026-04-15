@@ -1284,7 +1284,11 @@ class DataManager:
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
-                elif update_type == "insertField" or update_type == "deleteField" or update_type == "updateFieldCoordinates":
+                elif (
+                    update_type == "insertField"
+                    or update_type == "deleteField"
+                    or update_type == "updateFieldCoordinates"
+                ):
                     fieldID = new_data.get("fieldID")
                     parentAttribute = new_data.get("parentAttribute")
                     k = fieldID.get("key")
@@ -1389,18 +1393,30 @@ class DataManager:
                             data_update = {
                                 f"attributesList.{primaryIndex}.user_provided_coordinates": new_coordinates
                             }
-                            data_update[f"attributesList.{primaryIndex}.page"] = pageNumber
-                            data_update[f"attributesList.{primaryIndex}.lastUpdated"] = current_time
+                            data_update[
+                                f"attributesList.{primaryIndex}.page"
+                            ] = pageNumber
+                            data_update[
+                                f"attributesList.{primaryIndex}.lastUpdated"
+                            ] = current_time
                             data_update[f"attributesList.{primaryIndex}.edited"] = True
                         else:
                             data_update = {
                                 f"attributesList.{primaryIndex}.subattributes.{subIndex}.user_provided_coordinates": new_coordinates
                             }
-                            data_update[f"attributesList.{primaryIndex}.subattributes.{subIndex}.page"] = pageNumber
-                            data_update[f"attributesList.{primaryIndex}.lastUpdated"] = current_time
-                            data_update[f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdated"] = current_time
+                            data_update[
+                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.page"
+                            ] = pageNumber
+                            data_update[
+                                f"attributesList.{primaryIndex}.lastUpdated"
+                            ] = current_time
+                            data_update[
+                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdated"
+                            ] = current_time
                             data_update[f"attributesList.{primaryIndex}.edited"] = True
-                            data_update[f"attributesList.{primaryIndex}.subattributes.{subIndex}.edited"] = True
+                            data_update[
+                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.edited"
+                            ] = True
 
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
@@ -1443,7 +1459,11 @@ class DataManager:
                     ).next()
                     previous_state = {}
                     for each in data_update:
-                        if update_type == "insertField" or update_type == "deleteField" or update_type == "updateFieldCoordinates":
+                        if (
+                            update_type == "insertField"
+                            or update_type == "deleteField"
+                            or update_type == "updateFieldCoordinates"
+                        ):
                             continue
                         elif "attributesList." in each:
                             next_prev = util.getPreviousAttributeOrSubattributeValue(
@@ -1473,7 +1493,11 @@ class DataManager:
                 return_document=ReturnDocument.AFTER,
             )
             updated_record["_id"] = str(updated_record["_id"])
-            if update_type == "insertField" or update_type == "deleteField" or update_type == "updateFieldCoordinates":
+            if (
+                update_type == "insertField"
+                or update_type == "deleteField"
+                or update_type == "updateFieldCoordinates"
+            ):
                 return updated_record
 
             return data_update
