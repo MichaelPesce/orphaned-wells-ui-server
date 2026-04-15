@@ -6,7 +6,7 @@ import json
 import re
 
 from bson import ObjectId
-from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne
+from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
 
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from ogrre.internal.mongodb_connection import connectToDatabase
@@ -1284,6 +1284,68 @@ class DataManager:
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
+                elif update_type == "insertField":
+                    _log.info(f"insert field update")
+                    fieldID = new_data.get("fieldID")
+                    _log.info(f"fieldID: {fieldID}")
+                    parentAttribute = new_data.get("parentAttribute")
+                    k = fieldID.get("key")
+                    primaryIndex = fieldID.get("primaryIndex")
+                    isSubattribute = fieldID.get("isSubattribute")
+                    subIndex = fieldID.get("subIndex")
+                    if not isSubattribute:
+                        newIndex = primaryIndex+1
+                        newField = {
+                            "key": k,
+                            "ai_confidence": None,
+                            "confidence": None,
+                            "raw_text": None,
+                            "text_value": None,
+                            "value": "",
+                            "normalized_vertices": None,
+                            "normalized_value": None,
+                            "subattributes": None,
+                            "isSubattribute": False,
+                            "edited": False,
+                            "page": None,
+                            "user_added": True,
+                        }
+                        data_update = {
+                            "$push": {
+                                "attributesList": {
+                                    "$each": [ newField ],
+                                    "$position": newIndex,
+                                }
+                            }
+                        }
+                    else:
+                        newSubIndex = subIndex + 1
+                        newSubField = {
+                            "key": k,
+                            "ai_confidence": None,
+                            "confidence": None,
+                            "raw_text": None,
+                            "text_value": None,
+                            "value": "",
+                            "normalized_vertices": None,
+                            "normalized_value": None,
+                            "subattributes": None,
+                            "isSubattribute": True,
+                            "edited": False,
+                            "page": None,
+                            "user_added": True,
+                            "topLevelAttribute": parentAttribute,
+                        }
+                        data_update = {
+                            "$push": {
+                                f"attributesList.{primaryIndex}.subattributes": {
+                                    "$each": [ newSubField ],
+                                    "$position": newSubIndex,
+                                }
+                            }
+                        }
+
+
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
                 ):
@@ -1308,7 +1370,13 @@ class DataManager:
                     data_update["defective_description"] = new_data.get(
                         "defective_description", None
                     )
-                update_query = {"$set": data_update}
+                else:
+                    _log.info(f"invalid update type")
+                    return False
+                if update_type == "insertField":
+                    update_query = data_update
+                else:
+                    update_query = {"$set": data_update}
             if not forceUpdate:
                 ## fetch record's current data so we know what changed in the future
                 try:
@@ -1337,7 +1405,15 @@ class DataManager:
                     notes=notes,
                     calling_function=calling_function,
                 )
-            self.db.records.update_one(search_query, update_query)
+            # self.db.records.update_one(search_query, update_query)
+            updated_record = self.db.records.find_one_and_update(
+                search_query,
+                update_query,
+                return_document=ReturnDocument.AFTER,
+            )
+            updated_record["_id"] = str(updated_record["_id"])
+            if update_type == "insertField":
+                return updated_record
 
             return data_update
         else:
