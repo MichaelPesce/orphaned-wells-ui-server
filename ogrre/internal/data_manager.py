@@ -1229,6 +1229,11 @@ class DataManager:
         calling_function=None,
     ):
         # _log.info(f"new_data: {new_data}")
+        is_insert_delete_or_coordinates_update = (
+            update_type == "insertField"
+            or update_type == "deleteField"
+            or update_type == "updateFieldCoordinates"
+        )
         attained_lock = False
         user = None
         if user_info is None and not forceUpdate:
@@ -1284,11 +1289,7 @@ class DataManager:
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
-                elif (
-                    update_type == "insertField"
-                    or update_type == "deleteField"
-                    or update_type == "updateFieldCoordinates"
-                ):
+                elif is_insert_delete_or_coordinates_update:
                     fieldID = new_data.get("fieldID")
                     parentAttribute = new_data.get("parentAttribute")
                     k = fieldID.get("key")
@@ -1399,6 +1400,9 @@ class DataManager:
                             data_update[
                                 f"attributesList.{primaryIndex}.lastUpdated"
                             ] = current_time
+                            data_update[
+                                f"attributesList.{primaryIndex}.lastUpdatedUser"
+                            ] = user
                             data_update[f"attributesList.{primaryIndex}.edited"] = True
                         else:
                             data_update = {
@@ -1413,6 +1417,12 @@ class DataManager:
                             data_update[
                                 f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdated"
                             ] = current_time
+                            data_update[
+                                f"attributesList.{primaryIndex}.lastUpdatedUser"
+                            ] = user
+                            data_update[
+                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdatedUser"
+                            ] = user
                             data_update[f"attributesList.{primaryIndex}.edited"] = True
                             data_update[
                                 f"attributesList.{primaryIndex}.subattributes.{subIndex}.edited"
@@ -1459,11 +1469,7 @@ class DataManager:
                     ).next()
                     previous_state = {}
                     for each in data_update:
-                        if (
-                            update_type == "insertField"
-                            or update_type == "deleteField"
-                            or update_type == "updateFieldCoordinates"
-                        ):
+                        if is_insert_delete_or_coordinates_update:
                             continue
                         elif "attributesList." in each:
                             next_prev = util.getPreviousAttributeOrSubattributeValue(
@@ -1493,11 +1499,7 @@ class DataManager:
                 return_document=ReturnDocument.AFTER,
             )
             updated_record["_id"] = str(updated_record["_id"])
-            if (
-                update_type == "insertField"
-                or update_type == "deleteField"
-                or update_type == "updateFieldCoordinates"
-            ):
+            if is_insert_delete_or_coordinates_update:
                 return updated_record
 
             return data_update
