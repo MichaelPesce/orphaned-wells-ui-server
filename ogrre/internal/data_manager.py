@@ -1247,27 +1247,19 @@ class DataManager:
             _id = ObjectId(record_id)
             search_query = {"_id": _id}
             if update_type == "record":
+                # this initial block is only done by internal backend calls
                 data_update = new_data
                 update_query = {"$set": data_update}
             else:
-                # this is a little outdated. sometimes we provide update type as its own parameter,
-                # sometimes (when updating review status?) we pass it as part of the new data. TODO: clean this up
+                # this data_update definition is required for internal backend calls (such as attributesList updates)
                 data_update = {update_type: new_data.get(update_type, None)}
-                # print(f"initially making data_update: {data_update}")
+                
                 ## call cleaning functions
                 if field_to_clean:
                     attributeToClean = new_data["v"]
                     self.cleanAttribute(attributeToClean, record_id=record_id)
 
-                if update_type == "attributesList":
-                    ## if an attribute is updated and the record is unreviewed, automatically move review_status to incomplete
-                    new_review_status = new_data.get("review_status", None)
-                    if new_review_status == "unreviewed":
-                        data_update["review_status"] = "incomplete"
-                    elif new_review_status:
-                        data_update["review_status"] = new_review_status
-                    data_update["attributesList"] = new_data.get("attributesList")
-                elif update_type == "attribute":
+                if update_type == "attribute":
                     is_subattribute = new_data.get("isSubattribute", False)
                     idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
@@ -1492,7 +1484,6 @@ class DataManager:
                     calling_function=calling_function,
                     update_type=update_type,
                 )
-            # self.db.records.update_one(search_query, update_query)
             updated_record = self.db.records.find_one_and_update(
                 search_query,
                 update_query,
