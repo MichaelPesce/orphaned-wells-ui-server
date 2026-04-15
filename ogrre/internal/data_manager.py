@@ -1284,66 +1284,85 @@ class DataManager:
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
-                elif update_type == "insertField":
-                    _log.info(f"insert field update")
+                elif update_type == "insertField" or update_type == "deleteField":
                     fieldID = new_data.get("fieldID")
-                    _log.info(f"fieldID: {fieldID}")
                     parentAttribute = new_data.get("parentAttribute")
                     k = fieldID.get("key")
                     primaryIndex = fieldID.get("primaryIndex")
                     isSubattribute = fieldID.get("isSubattribute")
                     subIndex = fieldID.get("subIndex")
-                    if not isSubattribute:
-                        newIndex = primaryIndex+1
-                        newField = {
-                            "key": k,
-                            "ai_confidence": None,
-                            "confidence": None,
-                            "raw_text": None,
-                            "text_value": None,
-                            "value": "",
-                            "normalized_vertices": None,
-                            "normalized_value": None,
-                            "subattributes": None,
-                            "isSubattribute": False,
-                            "edited": False,
-                            "page": None,
-                            "user_added": True,
-                        }
-                        data_update = {
-                            "$push": {
+                    if update_type == "insertField":
+                        if not isSubattribute:
+                            newIndex = primaryIndex+1
+                            newField = {
+                                "key": k,
+                                "ai_confidence": None,
+                                "confidence": None,
+                                "raw_text": None,
+                                "text_value": None,
+                                "value": "",
+                                "normalized_vertices": None,
+                                "normalized_value": None,
+                                "subattributes": None,
+                                "isSubattribute": False,
+                                "edited": False,
+                                "page": None,
+                                "user_added": True,
+                            }
+                            data_update = {
+                                "$push": {
+                                    "attributesList": {
+                                        "$each": [ newField ],
+                                        "$position": newIndex,
+                                    }
+                                }
+                            }
+                        else:
+                            newSubIndex = subIndex + 1
+                            newSubField = {
+                                "key": k,
+                                "ai_confidence": None,
+                                "confidence": None,
+                                "raw_text": None,
+                                "text_value": None,
+                                "value": "",
+                                "normalized_vertices": None,
+                                "normalized_value": None,
+                                "subattributes": None,
+                                "isSubattribute": True,
+                                "edited": False,
+                                "page": None,
+                                "user_added": True,
+                                "topLevelAttribute": parentAttribute,
+                            }
+                            data_update = {
+                                "$push": {
+                                    f"attributesList.{primaryIndex}.subattributes": {
+                                        "$each": [ newSubField ],
+                                        "$position": newSubIndex,
+                                    }
+                                }
+                            }
+                    elif update_type == "deleteField":
+                        _log.info(f"delete field: {fieldID}")
+                        if not isSubattribute:
+                            data_update = {
                                 "attributesList": {
-                                    "$each": [ newField ],
-                                    "$position": newIndex,
+                                    "$concatArrays": [
+                                        { "$slice": ["$attributesList", primaryIndex] },
+                                        { "$slice": ["$attributesList", primaryIndex+1, { "$size": "$attributesList" }] }
+                                    ]
                                 }
                             }
-                        }
-                    else:
-                        newSubIndex = subIndex + 1
-                        newSubField = {
-                            "key": k,
-                            "ai_confidence": None,
-                            "confidence": None,
-                            "raw_text": None,
-                            "text_value": None,
-                            "value": "",
-                            "normalized_vertices": None,
-                            "normalized_value": None,
-                            "subattributes": None,
-                            "isSubattribute": True,
-                            "edited": False,
-                            "page": None,
-                            "user_added": True,
-                            "topLevelAttribute": parentAttribute,
-                        }
-                        data_update = {
-                            "$push": {
+                        else:
+                            data_update = {
                                 f"attributesList.{primaryIndex}.subattributes": {
-                                    "$each": [ newSubField ],
-                                    "$position": newSubIndex,
+                                    "$concatArrays": [
+                                        { "$slice": [f"$attributesList.{primaryIndex}.subattributes", subIndex] },
+                                        { "$slice": [f"$attributesList.{primaryIndex}.subattributes", subIndex+1, { "$size": f"$attributesList.{primaryIndex}.subattributes" }] }
+                                    ]
                                 }
                             }
-                        }
 
 
                 elif update_type == "verification_status" and new_data.get(
@@ -1375,6 +1394,8 @@ class DataManager:
                     return False
                 if update_type == "insertField":
                     update_query = data_update
+                elif update_type == "deleteField":
+                    update_query = [{"$set": data_update}]
                 else:
                     update_query = {"$set": data_update}
             if not forceUpdate:
@@ -1385,7 +1406,9 @@ class DataManager:
                     ).next()
                     previous_state = {}
                     for each in data_update:
-                        if "attributesList." in each:
+                        if update_type == "insertField" or update_type == "deleteField":
+                            continue
+                        elif "attributesList." in each:
                             next_prev = util.getPreviousAttributeOrSubattributeValue(
                                 update_key_parts, record_doc
                             )
@@ -1404,6 +1427,7 @@ class DataManager:
                     previous_state=previous_state,
                     notes=notes,
                     calling_function=calling_function,
+                    update_type=update_type,
                 )
             # self.db.records.update_one(search_query, update_query)
             updated_record = self.db.records.find_one_and_update(
@@ -1412,7 +1436,7 @@ class DataManager:
                 return_document=ReturnDocument.AFTER,
             )
             updated_record["_id"] = str(updated_record["_id"])
-            if update_type == "insertField":
+            if update_type == "insertField" or update_type == "deleteField":
                 return updated_record
 
             return data_update
