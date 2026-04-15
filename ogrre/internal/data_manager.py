@@ -1293,7 +1293,7 @@ class DataManager:
                     subIndex = fieldID.get("subIndex")
                     if update_type == "insertField":
                         if not isSubattribute:
-                            newIndex = primaryIndex+1
+                            newIndex = primaryIndex + 1
                             newField = {
                                 "key": k,
                                 "ai_confidence": None,
@@ -1312,7 +1312,7 @@ class DataManager:
                             data_update = {
                                 "$push": {
                                     "attributesList": {
-                                        "$each": [ newField ],
+                                        "$each": [newField],
                                         "$position": newIndex,
                                     }
                                 }
@@ -1338,7 +1338,7 @@ class DataManager:
                             data_update = {
                                 "$push": {
                                     f"attributesList.{primaryIndex}.subattributes": {
-                                        "$each": [ newSubField ],
+                                        "$each": [newSubField],
                                         "$position": newSubIndex,
                                     }
                                 }
@@ -1349,8 +1349,14 @@ class DataManager:
                             data_update = {
                                 "attributesList": {
                                     "$concatArrays": [
-                                        { "$slice": ["$attributesList", primaryIndex] },
-                                        { "$slice": ["$attributesList", primaryIndex+1, { "$size": "$attributesList" }] }
+                                        {"$slice": ["$attributesList", primaryIndex]},
+                                        {
+                                            "$slice": [
+                                                "$attributesList",
+                                                primaryIndex + 1,
+                                                {"$size": "$attributesList"},
+                                            ]
+                                        },
                                     ]
                                 }
                             }
@@ -1358,12 +1364,24 @@ class DataManager:
                             data_update = {
                                 f"attributesList.{primaryIndex}.subattributes": {
                                     "$concatArrays": [
-                                        { "$slice": [f"$attributesList.{primaryIndex}.subattributes", subIndex] },
-                                        { "$slice": [f"$attributesList.{primaryIndex}.subattributes", subIndex+1, { "$size": f"$attributesList.{primaryIndex}.subattributes" }] }
+                                        {
+                                            "$slice": [
+                                                f"$attributesList.{primaryIndex}.subattributes",
+                                                subIndex,
+                                            ]
+                                        },
+                                        {
+                                            "$slice": [
+                                                f"$attributesList.{primaryIndex}.subattributes",
+                                                subIndex + 1,
+                                                {
+                                                    "$size": f"$attributesList.{primaryIndex}.subattributes"
+                                                },
+                                            ]
+                                        },
                                     ]
                                 }
                             }
-
 
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
