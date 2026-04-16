@@ -1228,7 +1228,7 @@ class DataManager:
         notes=None,
         calling_function=None,
     ):
-        # _log.info(f"new_data: {new_data}")
+        # _log.info(f"updateRecord new_data: {new_data}")
         is_insert_delete_or_coordinates_update = (
             update_type == "insertField"
             or update_type == "deleteField"
@@ -1511,8 +1511,8 @@ class DataManager:
                     data_update["defective_description"] = new_data.get(
                         "defective_description", None
                     )
-                else:
-                    _log.info(f"invalid update type")
+                elif update_type != "attributesList":
+                    _log.info(f"invalid update type: {update_type}")
                     return False
                 if update_type == "insertField":
                     update_query = data_update
