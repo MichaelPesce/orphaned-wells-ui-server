@@ -1382,24 +1382,54 @@ class DataManager:
                             }
                         else:
                             data_update = {
-                                f"attributesList.{primaryIndex}.subattributes": {
-                                    "$concatArrays": [
-                                        {
-                                            "$slice": [
-                                                f"$attributesList.{primaryIndex}.subattributes",
-                                                subIndex,
-                                            ]
+                                "attributesList": {
+                                    "$let": {
+                                        "vars": {
+                                            "targetAttribute": {
+                                                "$arrayElemAt": ["$attributesList", primaryIndex]
+                                            }
                                         },
-                                        {
-                                            "$slice": [
-                                                f"$attributesList.{primaryIndex}.subattributes",
-                                                subIndex + 1,
+                                        "in": {
+                                            "$concatArrays": [
+                                                {"$slice": ["$attributesList", primaryIndex]},
+                                                [
+                                                    {
+                                                        "$mergeObjects": [
+                                                            "$$targetAttribute",
+                                                            {
+                                                                "subattributes": {
+                                                                    "$concatArrays": [
+                                                                        {
+                                                                            "$slice": [
+                                                                                "$$targetAttribute.subattributes",
+                                                                                subIndex,
+                                                                            ]
+                                                                        },
+                                                                        {
+                                                                            "$slice": [
+                                                                                "$$targetAttribute.subattributes",
+                                                                                subIndex + 1,
+                                                                                {
+                                                                                    "$size": "$$targetAttribute.subattributes"
+                                                                                },
+                                                                            ]
+                                                                        },
+                                                                    ]
+                                                                }
+                                                            },
+                                                        ]
+                                                    }
+                                                ],
                                                 {
-                                                    "$size": f"$attributesList.{primaryIndex}.subattributes"
+                                                    "$slice": [
+                                                        "$attributesList",
+                                                        primaryIndex + 1,
+                                                        {"$size": "$attributesList"},
+                                                    ]
                                                 },
                                             ]
                                         },
-                                    ]
+                                    }
                                 }
                             }
                     elif update_type == "updateFieldCoordinates":
