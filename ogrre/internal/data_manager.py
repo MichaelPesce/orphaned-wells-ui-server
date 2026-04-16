@@ -1346,7 +1346,9 @@ class DataManager:
                             )
                             _log.info(f"parent_attribute: {parent_attribute}")
                             if not parent_attribute:
-                                _log.info(f"Error: tried to insert child attribute to a parent attribute that doesn't exist")
+                                _log.info(
+                                    f"Error: tried to insert child attribute to a parent attribute that doesn't exist"
+                                )
                                 return False
                             subattributes = parent_attribute.get("subattributes")
                             if subattributes is not None:
@@ -1361,7 +1363,9 @@ class DataManager:
                             else:
                                 data_update = {
                                     "$set": {
-                                        f"attributesList.{primaryIndex}.subattributes": [newSubField]
+                                        f"attributesList.{primaryIndex}.subattributes": [
+                                            newSubField
+                                        ]
                                     }
                                 }
                     elif update_type == "deleteField":
@@ -1386,12 +1390,20 @@ class DataManager:
                                     "$let": {
                                         "vars": {
                                             "targetAttribute": {
-                                                "$arrayElemAt": ["$attributesList", primaryIndex]
+                                                "$arrayElemAt": [
+                                                    "$attributesList",
+                                                    primaryIndex,
+                                                ]
                                             }
                                         },
                                         "in": {
                                             "$concatArrays": [
-                                                {"$slice": ["$attributesList", primaryIndex]},
+                                                {
+                                                    "$slice": [
+                                                        "$attributesList",
+                                                        primaryIndex,
+                                                    ]
+                                                },
                                                 [
                                                     {
                                                         "$mergeObjects": [
@@ -1408,7 +1420,8 @@ class DataManager:
                                                                         {
                                                                             "$slice": [
                                                                                 "$$targetAttribute.subattributes",
-                                                                                subIndex + 1,
+                                                                                subIndex
+                                                                                + 1,
                                                                                 {
                                                                                     "$size": "$$targetAttribute.subattributes"
                                                                                 },
