@@ -97,6 +97,7 @@ def sortRecordAttributes(attributes, processor, keep_all_attributes=False):
         _log.info(f"many obsolete fields found, this is probably a mistake.")
     ## only persist when the stored list is actually different from the sorted list
     requires_db_update = sorted_attributes != attributes
+    _log.info(f"sorted attributes. requires_db_update: {requires_db_update}")
     return sorted_attributes, requires_db_update
 
 
