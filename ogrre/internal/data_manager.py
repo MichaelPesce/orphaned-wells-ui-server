@@ -1332,14 +1332,42 @@ class DataManager:
                                 "user_added": True,
                                 "topLevelAttribute": parentAttribute,
                             }
-                            data_update = {
-                                "$push": {
-                                    f"attributesList.{primaryIndex}.subattributes": {
-                                        "$each": [newSubField],
-                                        "$position": newSubIndex,
+                            parent_attribute_doc = self.db.records.find_one(
+                                {"_id": _id},
+                                {
+                                    "_id": 0,
+                                    "attributesList": {"$slice": [primaryIndex, 1]},
+                                },
+                            )
+                            parent_attribute = (
+                                parent_attribute_doc.get("attributesList", [None])[0]
+                                if parent_attribute_doc
+                                else None
+                            )
+                            _log.info(f"parent_attribute: {parent_attribute}")
+                            if not parent_attribute:
+                                _log.info(
+                                    f"Error: tried to insert child attribute to a parent attribute that doesn't exist"
+                                )
+                                return False
+                            subattributes = parent_attribute.get("subattributes")
+                            if subattributes is not None:
+                                data_update = {
+                                    "$push": {
+                                        f"attributesList.{primaryIndex}.subattributes": {
+                                            "$each": [newSubField],
+                                            "$position": newSubIndex,
+                                        }
                                     }
                                 }
-                            }
+                            else:
+                                data_update = {
+                                    "$set": {
+                                        f"attributesList.{primaryIndex}.subattributes": [
+                                            newSubField
+                                        ]
+                                    }
+                                }
                     elif update_type == "deleteField":
                         if not isSubattribute:
                             data_update = {
@@ -1358,24 +1386,63 @@ class DataManager:
                             }
                         else:
                             data_update = {
-                                f"attributesList.{primaryIndex}.subattributes": {
-                                    "$concatArrays": [
-                                        {
-                                            "$slice": [
-                                                f"$attributesList.{primaryIndex}.subattributes",
-                                                subIndex,
-                                            ]
+                                "attributesList": {
+                                    "$let": {
+                                        "vars": {
+                                            "targetAttribute": {
+                                                "$arrayElemAt": [
+                                                    "$attributesList",
+                                                    primaryIndex,
+                                                ]
+                                            }
                                         },
-                                        {
-                                            "$slice": [
-                                                f"$attributesList.{primaryIndex}.subattributes",
-                                                subIndex + 1,
+                                        "in": {
+                                            "$concatArrays": [
                                                 {
-                                                    "$size": f"$attributesList.{primaryIndex}.subattributes"
+                                                    "$slice": [
+                                                        "$attributesList",
+                                                        primaryIndex,
+                                                    ]
+                                                },
+                                                [
+                                                    {
+                                                        "$mergeObjects": [
+                                                            "$$targetAttribute",
+                                                            {
+                                                                "subattributes": {
+                                                                    "$concatArrays": [
+                                                                        {
+                                                                            "$slice": [
+                                                                                "$$targetAttribute.subattributes",
+                                                                                subIndex,
+                                                                            ]
+                                                                        },
+                                                                        {
+                                                                            "$slice": [
+                                                                                "$$targetAttribute.subattributes",
+                                                                                subIndex
+                                                                                + 1,
+                                                                                {
+                                                                                    "$size": "$$targetAttribute.subattributes"
+                                                                                },
+                                                                            ]
+                                                                        },
+                                                                    ]
+                                                                }
+                                                            },
+                                                        ]
+                                                    }
+                                                ],
+                                                {
+                                                    "$slice": [
+                                                        "$attributesList",
+                                                        primaryIndex + 1,
+                                                        {"$size": "$attributesList"},
+                                                    ]
                                                 },
                                             ]
                                         },
-                                    ]
+                                    }
                                 }
                             }
                     elif update_type == "updateFieldCoordinates":
