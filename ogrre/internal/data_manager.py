@@ -1657,7 +1657,7 @@ class DataManager:
             )
         record_doc = self.db.records.find(search_query).next()
         return record_doc.get("record_notes", [])
-    
+
     def create_record_group_processor_attribute_map(self):
         try:
             cursor = self.db.record_groups.find(
@@ -1677,14 +1677,14 @@ class DataManager:
 
                 processor_document = self.getProcessorById(google_id)
                 if not processor_document:
-                    print( "processor lookup returned no document for ")
+                    print("processor lookup returned no document for ")
                     rg_processor_attribute_map[rg_id] = {}
                     continue
 
                 processor_attributes = processor_document.get("attributes", None) or []
-                rg_processor_attribute_map[rg_id] = util.convert_processor_attributes_to_dict(
-                    processor_attributes
-                )
+                rg_processor_attribute_map[
+                    rg_id
+                ] = util.convert_processor_attributes_to_dict(processor_attributes)
             # _log.info(f"rg_processor_attribute_map: {rg_processor_attribute_map}")
             return rg_processor_attribute_map
         except Exception as e:
@@ -1911,7 +1911,9 @@ class DataManager:
                     for document_attribute in document.get("attributesList", []):
                         attribute_name = document_attribute["key"].replace(" ", "")
                         if attribute_name in selectedColumns or keep_all_columns:
-                            field_schema = rg_attribute_map.get(record_group_id, {}).get(attribute_name)
+                            field_schema = rg_attribute_map.get(
+                                record_group_id, {}
+                            ).get(attribute_name)
                             database_type = field_schema.get("database_data_type")
                             if str(database_type).lower() == "table":
                                 isParent = True
@@ -1919,7 +1921,10 @@ class DataManager:
                                 isParent = False
                             original_attribute_name = attribute_name
                             i = 2
-                            while attribute_name in current_attributes or attribute_name in current_parent_attributes:
+                            while (
+                                attribute_name in current_attributes
+                                or attribute_name in current_parent_attributes
+                            ):
                                 ## add a number to the end of the attribute so it (and its subattributes)
                                 ## is differentiable from other instances of the attribute
                                 attribute_name = f"{original_attribute_name}_{i}"
@@ -1942,7 +1947,7 @@ class DataManager:
                                 record_attribute[attribute_name] = document_attribute[
                                     "value"
                                 ]
-                            
+
                     record_attribute["file"] = document.get("filename", "")
                     record_attribute["URL"] = f"{request_origin}/record/{document_id}"
                     record_attributes.append(record_attribute)
