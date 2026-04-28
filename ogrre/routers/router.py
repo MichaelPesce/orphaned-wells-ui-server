@@ -578,11 +578,18 @@ async def upload_document(
         New document record identifier.
     """
     user_email = user_email.lower()
-    if not data_manager.hasPermission(user_email, "upload_document"):
+    if not REQUIRE_AUTH:
+        user_info = anonymous_user()
+    elif not data_manager.hasPermission(user_email, "upload_document"):
         raise HTTPException(
             403,
             detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
         )
+    else:
+        user_info = data_manager.getUserInfo(user_email)
+        if user_info is None:
+            raise HTTPException(404, detail=f"User not found")
+
     if preventDuplicates:
         record_exists = data_manager.checkIfRecordExists(file.filename, rg_id)
         if record_exists:
@@ -591,7 +598,6 @@ async def upload_document(
                 content={"message": f"{file.filename} exists for {rg_id}, returning"},
             )
 
-    user_info = data_manager.getUserInfo(user_email)
     project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
     if not project_is_valid:
         raise HTTPException(404, detail=f"Project not found")
