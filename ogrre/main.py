@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 import multiprocessing
 import logging
@@ -25,6 +26,7 @@ if STORAGE_SERVICE_KEY:
 _log = logging.getLogger(__name__)
 
 from ogrre.routers import router
+from ogrre.internal import storage_api
 
 app = FastAPI()
 
@@ -43,6 +45,14 @@ app.add_middleware(
 )
 
 app.include_router(router.router)
+
+if storage_api.STORAGE_BACKEND == "local":
+    os.makedirs(storage_api.LOCAL_STORAGE_ROOT, exist_ok=True)
+    app.mount(
+        "/local-storage",
+        StaticFiles(directory=storage_api.LOCAL_STORAGE_ROOT, check_dir=False),
+        name="local-storage",
+    )
 
 load_dotenv()
 
