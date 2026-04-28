@@ -35,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-            images: michaelpescelbl/fastapiwithnginx
+            images: michaelpescelbl/orphaned-wells-ui-server
     
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -43,7 +43,7 @@ jobs:
             context: .
             file: ./deployment/dockerfile
             push: true
-            tags: michaelpescelbl/fastapiwithnginx:latest
+            tags: michaelpescelbl/orphaned-wells-ui-server:latest
             labels: ${{ steps.meta.outputs.labels }}
 
   deploy_staging:

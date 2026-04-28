@@ -1,6 +1,6 @@
 services:
   web:
-    image: michaelpescelbl/fastapiwithnginx:latest
+    image: michaelpescelbl/orphaned-wells-ui-server:latest
     environment:
       - ENVIRONMENT=${ENVIRONMENT}
       - COLLABORATOR=${COLLABORATOR}
