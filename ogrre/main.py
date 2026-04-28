@@ -1,4 +1,3 @@
-import sys
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +19,7 @@ if PROJECT_ID:
     os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 
 if STORAGE_SERVICE_KEY:
-    dirname, _ = os.path.split(os.path.abspath(sys.argv[0]))
+    dirname = os.path.dirname(os.path.abspath(__file__))
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{dirname}/{STORAGE_SERVICE_KEY}"
 
 _log = logging.getLogger(__name__)
@@ -28,6 +27,12 @@ _log = logging.getLogger(__name__)
 from ogrre.routers import router
 
 app = FastAPI()
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 
 app.add_middleware(
     CORSMiddleware,
