@@ -597,10 +597,10 @@ class DataManager:
         return projects
 
     def getUserProjectList(self, user):
-        user_query = {"email": user}
-        user_cursor = self.db.users.find(user_query)
-        user_document = user_cursor.next()
-        default_team = user_document.get("default_team", None)
+        default_team = self.getDefaultTeamForUser(user)
+        if default_team is None:
+            _log.info(f"user {user} has no default team")
+            return []
         return self.getTeamProjectList(default_team)
 
     @time_it
@@ -659,7 +659,7 @@ class DataManager:
         projects = []
         if user.get("anonymous", False) and not REQUIRE_AUTH:
             _log.info(f"getting projects for anonymous user - default team")
-            user_projects = self.getTeamProjectList("default")
+            user_projects = self.getTeamProjectList(DEFAULT_UNAUTHENTICATED_TEAM["name"])
         else:
             _log.info(f"user is not anonymous")
             user_email = user.get("email", None)
