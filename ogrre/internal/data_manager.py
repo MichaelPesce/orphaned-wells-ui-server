@@ -659,7 +659,9 @@ class DataManager:
         projects = []
         if user.get("anonymous", False) and not REQUIRE_AUTH:
             _log.info(f"getting projects for anonymous user - default team")
-            user_projects = self.getTeamProjectList(DEFAULT_UNAUTHENTICATED_TEAM["name"])
+            user_projects = self.getTeamProjectList(
+                DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            )
         else:
             _log.info(f"user is not anonymous")
             user_email = user.get("email", None)
