@@ -657,14 +657,14 @@ class DataManager:
     @time_it
     def fetchProjects(self, user):
         projects = []
-        if user.get("anonymous", False):
-            _log.info(f"getting all projects for anonymous user")
-            cursor = self.db.projects.find({})
+        if user.get("anonymous", False) and not REQUIRE_AUTH:
+            _log.info(f"getting projects for anonymous user - default team")
+            user_projects = self.getTeamProjectList("default")
         else:
             _log.info(f"user is not anonymous")
             user_email = user.get("email", None)
             user_projects = self.getUserProjectList(user_email)
-            cursor = self.db.projects.find({"_id": {"$in": user_projects}})
+        cursor = self.db.projects.find({"_id": {"$in": user_projects}})
         for document in cursor:
             document["_id"] = str(document["_id"])
             projects.append(document)
