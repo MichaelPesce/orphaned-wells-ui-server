@@ -17,7 +17,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 
-from ogrre.internal.data_manager import data_manager
+from ogrre.internal.data_manager import DEFAULT_UNAUTHENTICATED_TEAM, data_manager
 from ogrre.internal.image_handling import (
     process_document,
     process_zip,
@@ -36,7 +36,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
 def anonymous_user():
-    return {"email": "anonymous", "roles": {}, "permissions": [], "anonymous": True}
+    return {
+        "email": "anonymous",
+        "roles": {},
+        "permissions": [],
+        "anonymous": True,
+        "default_team": DEFAULT_UNAUTHENTICATED_TEAM["name"],
+    }
 
 
 def require_authenticated_admin_route():
