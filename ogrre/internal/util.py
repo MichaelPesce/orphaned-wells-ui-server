@@ -426,7 +426,6 @@ def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
         else:
             _log.info(f"no cleaning function with name: {cleaning_function_name}")
 
-
         subattributes = attribute.get("subattributes", None)
         if subattributes:
             for subattribute in subattributes:
