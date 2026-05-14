@@ -1063,6 +1063,7 @@ async def download_records(
     keep_all_columns = False
     if len(selectedColumns) == 0:
         keep_all_columns = True
+    setsOfRecords = {}
     if location == "project":
         records, _ = data_manager.fetchRecordsByProject(
             user_info,
@@ -1072,6 +1073,7 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
+        setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(
             user_info,
@@ -1081,6 +1083,7 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
+        setsOfRecords[output_name] = records
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
             user_info,
@@ -1089,6 +1092,7 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
+        setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
     else:
         raise HTTPException(
             status_code=400, detail=f"Location must be project, record_group, or team"
@@ -1096,18 +1100,19 @@ async def download_records(
     try:
         filepaths = []
         if export_csv:
-            csv_file = data_manager.downloadRecords(
-                records,
-                "csv",
-                user_info,
-                _id,
-                location,
-                selectedColumns=selectedColumns,
-                keep_all_columns=keep_all_columns,
-                output_filename=f"{output_name}_{output_file_id}",
-                request_origin=request_origin,
-            )
-            filepaths.append(csv_file)
+            for set_identifier in setsOfRecords:
+                csv_file = data_manager.downloadRecords(
+                    setsOfRecords[set_identifier],
+                    "csv",
+                    user_info,
+                    _id,
+                    location,
+                    selectedColumns=selectedColumns,
+                    keep_all_columns=keep_all_columns,
+                    output_filename=f"{set_identifier}_{output_file_id}",
+                    request_origin=request_origin,
+                )
+                filepaths.append(csv_file)
         if export_json:
             json_file = data_manager.downloadRecords(
                 records,
