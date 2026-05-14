@@ -1991,7 +1991,7 @@ class DataManager:
                 )
                 writer.writeheader()
                 writer.writerows(record_attributes)
-        else:
+        else:  ## export type is JSON
             for document in records:
                 document_id = str(document["_id"])
                 try:
