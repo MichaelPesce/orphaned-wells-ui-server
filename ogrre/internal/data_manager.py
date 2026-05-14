@@ -1095,7 +1095,7 @@ class DataManager:
 
         return document
 
-    def getProcessorByRecordGroupID(self, rg_id, returnNameOnly = False):
+    def getProcessorByRecordGroupID(self, rg_id, returnNameOnly=False):
         _id = ObjectId(rg_id)
         try:
             cursor = self.db.record_groups.find({"_id": _id})
@@ -1918,13 +1918,14 @@ class DataManager:
             record_group_id = record.get("record_group_id")
             processor_name = rg_processor_map.get(record_group_id, None)
             if not processor_name:
-                processor_name = self.getProcessorByRecordGroupID(record_group_id, returnNameOnly=True)
+                processor_name = self.getProcessorByRecordGroupID(
+                    record_group_id, returnNameOnly=True
+                )
                 rg_processor_map[record_group_id] = processor_name
                 setsOfRecords[processor_name] = [record]
             else:
                 setsOfRecords[processor_name].append(record)
         return setsOfRecords
-
 
     ## miscellaneous functions
     def downloadRecords(

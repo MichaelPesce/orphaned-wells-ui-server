@@ -1054,7 +1054,13 @@ async def download_records(
 
     json_fields_to_include = {
         "topLevelFields": ["name", "filename", "image_files", "record_group_id"],
-        "attributesList": ["key", "value", "normalized_vertices", "subattributes", "page"],
+        "attributesList": [
+            "key",
+            "value",
+            "normalized_vertices",
+            "subattributes",
+            "page",
+        ],
         "subattributes": ["key", "value", "normalized_vertices", "page"],
     }
 
