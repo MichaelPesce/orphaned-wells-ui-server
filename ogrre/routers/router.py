@@ -1062,7 +1062,6 @@ async def download_records(
     keep_all_columns = False
     if len(selectedColumns) == 0:
         keep_all_columns = True
-
     if location == "project":
         records, _ = data_manager.fetchRecordsByProject(
             user_info,
