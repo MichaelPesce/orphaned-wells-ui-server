@@ -3,7 +3,7 @@ name: Deploy NEWTS Server
 
 on:
   push:
-    branches: [newts, add-newts]
+    branches: [newts]
 
 defaults:
   run:
