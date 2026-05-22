@@ -61,6 +61,60 @@ terraform destroy -var-file=terraform.tfvars
 
 > Note: this repository currently uses local state by default (`terraform.tfstate`). Do not delete or lose this file unless you intend to recreate the infrastructure.
 
+## Workspaces
+
+Terraform workspaces allow you to manage multiple state files for the same configuration. This is useful for separating environments (e.g., staging, production) or testing changes.
+
+List all workspaces:
+
+```bash
+terraform workspace list
+```
+
+Create a new workspace:
+
+```bash
+terraform workspace new <workspace_name>
+```
+
+Switch to a workspace:
+
+```bash
+terraform workspace select <workspace_name>
+```
+
+Show the currently active workspace:
+
+```bash
+terraform workspace show
+```
+
+Each workspace maintains its own state file and can have different variable values. When you switch workspaces, Terraform loads the associated state.
+
+## Targeting specific modules or resources
+
+To plan or apply changes to only a specific module, use the `-target` flag. This is useful when testing changes to one collaborator's infrastructure without affecting others.
+
+Plan changes for a specific collaborator module:
+
+```bash
+terraform plan -target="module.backend_vms[\"staging\"]" -var-file=terraform.tfvars
+```
+
+Apply changes for a specific collaborator module:
+
+```bash
+terraform apply -target="module.backend_vms[\"staging\"]" -var-file=terraform.tfvars
+```
+
+You can also target individual resources within a module:
+
+```bash
+terraform plan -target="module.backend_vms[\"staging\"].google_compute_instance.vm" -var-file=terraform.tfvars
+```
+
+> Caution: using `-target` modifies state tracking and should only be used for specific, isolated changes. Always review the plan output carefully before applying.
+
 ## Import existing infrastructure into Terraform state
 
 The import script is designed to import existing backend VM resources for collaborators that already exist in Google Cloud.

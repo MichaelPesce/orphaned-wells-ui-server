@@ -3,7 +3,7 @@ name: Deploy Docker Image, Staging Server
 
 on:
   push:
-    branches: [main, add-terraform]
+    branches: [main]
 
 defaults:
   run:
