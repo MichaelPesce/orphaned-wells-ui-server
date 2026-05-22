@@ -17,9 +17,30 @@ declare -A ZONES=(
   ["staging"]="us-central1-a"
 )
 
-COLLABORATORS=("isgs" "osage" "ca" "newts" "staging")
+COLLABORATORS_DEFAULT=(
+  "isgs"
+  "osage"
+  "ca"
+  "newts"
+  "staging"
+)
+
+# Optional input: collaborator name (e.g. ./import.sh staging)
+COLLABORATOR_INPUT="${1-}"
+
+if [[ -n "${COLLABORATOR_INPUT}" ]]; then
+  # (Assuming input is valid per your note, but still guard with a helpful message.)
+  if [[ -z "${ZONES[$COLLABORATOR_INPUT]+x}" ]]; then
+    echo "❌ Unknown collaborator: '${COLLABORATOR_INPUT}'. Available: ${!ZONES[*]}"
+    exit 1
+  fi
+  COLLABORATORS=("${COLLABORATOR_INPUT}")
+else
+  COLLABORATORS=("${COLLABORATORS_DEFAULT[@]}")
+fi
 
 echo "Starting Terraform imports (zone-aware)..."
+echo "Collaborators: ${COLLABORATORS[*]}"
 
 for c in "${COLLABORATORS[@]}"; do
   ZONE="${ZONES[$c]:-}"
