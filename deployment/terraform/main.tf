@@ -97,9 +97,14 @@ resource "google_compute_firewall" "backend_http_https" {
     ports    = ["80", "443"]
   }
 
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
   source_ranges = ["0.0.0.0/0"]
 
-  target_tags = ["backend"]
+  target_tags = ["backend", "http-server", "https-server"]
 
   lifecycle {
     prevent_destroy = true

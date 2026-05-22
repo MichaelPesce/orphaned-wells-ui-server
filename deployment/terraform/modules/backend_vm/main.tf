@@ -45,6 +45,9 @@ resource "google_compute_instance" "vm" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes = [
+      metadata["ssh-keys"],
+    ]
   }
 
   shielded_instance_config {
