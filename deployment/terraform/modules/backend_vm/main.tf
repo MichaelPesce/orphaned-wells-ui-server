@@ -40,7 +40,7 @@ resource "google_compute_instance" "vm" {
   }
 
   metadata = {
-    enable-oslogin = "TRUE"
+    enable-oslogin = "FALSE"
   }
 
   lifecycle {
