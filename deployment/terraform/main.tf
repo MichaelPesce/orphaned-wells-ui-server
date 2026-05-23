@@ -87,7 +87,6 @@ module "backend_vms" {
   enable_startup_script = each.value.enable_startup_script
 }
 
-
 resource "google_compute_firewall" "backend_http_https" {
   name    = "backend-http-https"
   network = "default"
@@ -97,12 +96,30 @@ resource "google_compute_firewall" "backend_http_https" {
     ports    = ["80", "443"]
   }
 
+  # Open to everyone
+  source_ranges = ["0.0.0.0/0"]
+
+  target_tags = ["backend"]
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "google_compute_firewall" "backend_ssh" {
+  name    = "backend-ssh"
+  network = "default"
+
   allow {
     protocol = "tcp"
     ports    = ["22"]
   }
 
-  source_ranges = ["0.0.0.0/0"]
+  # Restricted LBL VPN SSH source range
+  source_ranges = [
+    "128.3.0.0/16",
+    "131.243.0.0/16"
+  ]
 
   target_tags = ["backend"]
 
