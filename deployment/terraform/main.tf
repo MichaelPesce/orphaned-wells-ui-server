@@ -104,7 +104,7 @@ resource "google_compute_firewall" "backend_http_https" {
 
   source_ranges = ["0.0.0.0/0"]
 
-  target_tags = ["backend", "http-server", "https-server"]
+  target_tags = ["backend"]
 
   lifecycle {
     prevent_destroy = true
