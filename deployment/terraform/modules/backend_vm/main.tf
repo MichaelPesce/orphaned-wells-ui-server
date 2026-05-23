@@ -10,7 +10,7 @@ resource "google_compute_instance" "vm" {
   name         = "${var.collaborator}-uow-server"
   zone         = var.zone
 
-  tags = ["backend"]
+  tags = ["backend", "http-server", "https-server"]
 
   machine_type = var.machine_type
 
@@ -40,7 +40,7 @@ resource "google_compute_instance" "vm" {
   }
 
   metadata = {
-    enable-oslogin = "FALSE"
+    enable-osconfig = "TRUE"
   }
 
   lifecycle {
