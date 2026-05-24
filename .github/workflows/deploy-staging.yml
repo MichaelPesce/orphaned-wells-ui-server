@@ -3,7 +3,7 @@ name: Deploy Docker Image, Staging Server
 
 on:
   push:
-    branches: [main]
+    branches: [main, add-terraform]
 
 defaults:
   run:
@@ -17,7 +17,7 @@ env:
 jobs:
 
   docker_build_and_push:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Push docker image to Docker Hub
     runs-on: ubuntu-latest
     steps:
@@ -48,9 +48,9 @@ jobs:
             labels: ${{ steps.meta.outputs.labels }}
 
   deploy_staging:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     needs: [ docker_build_and_push ]
-    uses: CATALOG-Historic-Records/orphaned-wells-ui-server/.github/workflows/deploy.yml@main
+    uses: CATALOG-Historic-Records/orphaned-wells-ui-server/.github/workflows/deploy-dispatch.yml@main
     with:
       DEPLOY_ENV: staging
     secrets: inherit

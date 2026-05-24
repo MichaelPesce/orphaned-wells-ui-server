@@ -8,7 +8,7 @@ on:
 jobs:
   deploy_ca:
     if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
-    uses: CATALOG-Historic-Records/orphaned-wells-ui-server/.github/workflows/deploy.yml@main
+    uses: CATALOG-Historic-Records/orphaned-wells-ui-server/.github/workflows/deploy-dispatch.yml@main
     with:
       DEPLOY_ENV: ca
     secrets: inherit
