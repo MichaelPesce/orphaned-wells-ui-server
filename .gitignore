@@ -15,3 +15,5 @@ deployment/secrets/
 *.tfstate.*
 *.tfvars
 .terraform
+
+github-deploy-targets.json

@@ -3,7 +3,7 @@ name: Deploy Docker Image, Staging Server
 
 on:
   push:
-    branches: [main, add-terraform]
+    branches: [main]
 
 defaults:
   run:
@@ -48,8 +48,8 @@ jobs:
             labels: ${{ steps.meta.outputs.labels }}
 
   deploy_staging:
-    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
-    # needs: [ docker_build_and_push ]
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    needs: [ docker_build_and_push ]
     name: Deploy to Staging Compute Engine
     runs-on: ubuntu-latest
     steps:
