@@ -44,7 +44,7 @@ env:
 
 jobs:
   deploy:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy to ${{ inputs.DEPLOY_ENV }}
     runs-on: ubuntu-latest
     steps:
