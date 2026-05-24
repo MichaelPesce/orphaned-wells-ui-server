@@ -24,32 +24,32 @@ jobs:
       - name: Checkout the repository
         uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          ecr: auto
-          logout: true
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+      # - name: Login to Docker Hub
+      #   uses: docker/login-action@v3
+      #   with:
+      #     ecr: auto
+      #     logout: true
+      #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+      #     password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
-      - name: Extract metadata (labels, tags, etc.) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-            images: michaelpescelbl/orphaned-wells-ui-server
+      # - name: Extract metadata (labels, tags, etc.) for Docker
+      #   id: meta
+      #   uses: docker/metadata-action@v5
+      #   with:
+      #       images: michaelpescelbl/orphaned-wells-ui-server
     
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-            context: .
-            file: ./deployment/dockerfile
-            push: true
-            tags: michaelpescelbl/orphaned-wells-ui-server:latest
-            labels: ${{ steps.meta.outputs.labels }}
+      # - name: Build and push Docker image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #       context: .
+      #       file: ./deployment/dockerfile
+      #       push: true
+      #       tags: michaelpescelbl/orphaned-wells-ui-server:latest
+      #       labels: ${{ steps.meta.outputs.labels }}
 
   deploy_staging:
     # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
-    needs: [ docker_build_and_push ]
+    needs: docker_build_and_push
     uses: ./.github/workflows/deploy-dispatch.yml
     with:
       DEPLOY_ENV: staging
