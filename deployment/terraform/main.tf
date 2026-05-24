@@ -120,7 +120,6 @@ resource "google_compute_firewall" "backend_ssh" {
     "128.3.0.0/16",
     "131.243.0.0/16",
     "35.235.240.0/20",
-    "0.0.0.0/0",
   ]
 
   target_tags = ["backend"]
