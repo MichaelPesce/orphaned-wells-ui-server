@@ -13,6 +13,27 @@ on:
           - isgs
           - newts
           - osage
+  workflow_call:
+    inputs:
+      DEPLOY_ENV:
+        description: 'Environment to deploy to'
+        required: true
+        type: string
+    secrets:
+      DEPLOY_TARGETS:
+        required: true
+      CREDS_JSON:
+        required: true
+      SERVICE_KEY_JSON:
+        required: true
+      SSH_USERNAME:
+        required: true
+      PROJECT_ID:
+        required: true
+      DOCKERHUB_ACCESS_TOKEN:
+        required: true
+      DOCKERHUB_USERNAME:
+        required: true
 
 defaults:
   run:
