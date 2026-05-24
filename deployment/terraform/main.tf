@@ -118,7 +118,9 @@ resource "google_compute_firewall" "backend_ssh" {
   # Restricted LBL VPN SSH source range
   source_ranges = [
     "128.3.0.0/16",
-    "131.243.0.0/16"
+    "131.243.0.0/16",
+    "35.235.240.0/20",
+    "0.0.0.0/0",
   ]
 
   target_tags = ["backend"]
