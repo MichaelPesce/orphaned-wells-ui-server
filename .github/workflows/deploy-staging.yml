@@ -3,7 +3,7 @@ name: Deploy Docker Image, Staging Server
 
 on:
   push:
-    branches: [main]
+    branches: [main, add-terraform]
 
 defaults:
   run:
@@ -12,6 +12,7 @@ defaults:
 
 env:
   PIP_PROGRESS_BAR: "off"
+  DEPLOY_ENV: staging
 
 jobs:
 
@@ -47,13 +48,21 @@ jobs:
             labels: ${{ steps.meta.outputs.labels }}
 
   deploy_staging:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
-    needs: [ docker_build_and_push ]
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # needs: [ docker_build_and_push ]
     name: Deploy to Staging Compute Engine
     runs-on: ubuntu-latest
     steps:
         - name: Checkout code
           uses: actions/checkout@v4
+
+        - name: Parse deploy target
+          id: target
+          run: |
+            VM_NAME=$(echo '${{ secrets.DEPLOY_TARGETS }}' | jq -r '.${{ env.DEPLOY_ENV }}.vm_name')
+            ZONE=$(echo '${{ secrets.DEPLOY_TARGETS }}' | jq -r '.${{ env.DEPLOY_ENV }}.zone')
+            echo "vm_name=$VM_NAME" >> $GITHUB_OUTPUT
+            echo "zone=$ZONE" >> $GITHUB_OUTPUT
 
         - name: Prepare runtime secret directory
           run: mkdir -p deployment/secrets
@@ -63,20 +72,20 @@ jobs:
           uses: jsdaniell/create-json@v1.2.3
           with:
             name: "deployment/secrets/creds.json"
-            json: ${{ secrets.STAGING_CREDS_JSON }}
+            json: ${{ secrets.CREDS_JSON }}
 
         - name: Add runtime service key json file
           id: create-runtime-service-key-json
           uses: jsdaniell/create-json@v1.2.3
           with:
             name: "deployment/secrets/michael2-service-key.json"
-            json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
+            json: ${{ secrets.SERVICE_KEY_JSON }}
 
 
         - name: Authenticate to GCP
           uses: google-github-actions/auth@v2
           with:
-            credentials_json: ${{ secrets.STAGING_SERVICE_KEY_JSON }}
+            credentials_json: ${{ secrets.SERVICE_KEY_JSON }}
 
         - name: Set up gcloud
           uses: google-github-actions/setup-gcloud@v2
@@ -89,17 +98,17 @@ jobs:
               deployment/nginx/isgs/default.conf \
               deployment/secrets/creds.json \
               deployment/secrets/michael2-service-key.json \
-              ${{ secrets.SSH_USERNAME }}@${{ secrets.STAGING_INSTANCE_NAME }}:~/ \
+              ${{ secrets.SSH_USERNAME }}@${{ steps.target.outputs.vm_name }}:~/ \
               --tunnel-through-iap \
-              --zone=${{ secrets.STAGING_ZONE }} \
-              --project=${{ secrets.STAGING_PROJECT_ID }}
+              --zone=${{ steps.target.outputs.zone }} \
+              --project=${{ secrets.PROJECT_ID }}
 
         - name: Run docker-compose via IAP
           run: |
-            gcloud compute ssh ${{ secrets.SSH_USERNAME }}@${{ secrets.STAGING_INSTANCE_NAME }} \
+            gcloud compute ssh ${{ secrets.SSH_USERNAME }}@${{ steps.target.outputs.vm_name }} \
               --tunnel-through-iap \
-              --zone=${{ secrets.STAGING_ZONE }} \
-              --project=${{ secrets.STAGING_PROJECT_ID }} \
+              --zone=${{ steps.target.outputs.zone }} \
+              --project=${{ secrets.PROJECT_ID }} \
               --command="
                 if [ -s ~/creds.json ]; then
                   mkdir -p secrets
