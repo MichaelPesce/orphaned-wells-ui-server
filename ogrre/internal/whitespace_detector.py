@@ -178,6 +178,7 @@ def detect_whitespace(
 # Convenience wrappers for common use-cases
 # ---------------------------------------------------------------------------
 
+
 @time_it
 def is_mostly_whitespace(
     image_path: str,
@@ -193,6 +194,7 @@ def is_mostly_whitespace(
         channel_mode=channel_mode,
     )
     return result["meets_threshold"]
+
 
 @time_it
 def whitespace_pct(

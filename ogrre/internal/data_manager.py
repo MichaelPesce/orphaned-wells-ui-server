@@ -1273,15 +1273,10 @@ class DataManager:
         )
 
     @time_it
-    def updateRecordInternal(
-        self,
-        record_id,
-        field,
-        value
-    ):
+    def updateRecordInternal(self, record_id, field, value):
         _id = ObjectId(record_id)
         search_query = {"_id": _id}
-        
+
         update_query = {"$set": {field: value}}
         update_resp = self.db.records.update_one(
             search_query,

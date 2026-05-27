@@ -201,8 +201,9 @@ def process_document(
             output_paths, min_whitespace_pct=99.99
         )
 
-    data_manager.updateRecordInternal(new_record_id, "image_whitespace", image_whitespace)
-
+    data_manager.updateRecordInternal(
+        new_record_id, "image_whitespace", image_whitespace
+    )
 
     ## if original file was pdf, make sure to delete both image and pdf files
     files_to_delete = output_paths
