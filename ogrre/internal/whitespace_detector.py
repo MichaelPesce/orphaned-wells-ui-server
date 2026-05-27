@@ -178,7 +178,7 @@ def detect_whitespace(
 # Convenience wrappers for common use-cases
 # ---------------------------------------------------------------------------
 
-
+@time_it
 def is_mostly_whitespace(
     image_path: str,
     min_whitespace_pct: float = 50.0,
@@ -194,7 +194,7 @@ def is_mostly_whitespace(
     )
     return result["meets_threshold"]
 
-
+@time_it
 def whitespace_pct(
     image_path: str,
     threshold: int = 240,

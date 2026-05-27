@@ -20,7 +20,7 @@ from ogrre.internal.whitespace_detector import (
 )
 
 _log = logging.getLogger(__name__)
-DETECT_WHITESPACE = os.getenv("DETECT_WHITESPACE", "true").lower() in (
+DETECT_WHITESPACE = os.getenv("DETECT_WHITESPACE", "false").lower() in (
     "1",
     "true",
     "yes",
@@ -964,13 +964,17 @@ class DataManager:
                 image_urls.append(next_img_url)
         document["img_urls"] = image_urls
         if DETECT_WHITESPACE:
-            blank_pages = batch_is_mostly_whitespace(
-                image_urls, min_whitespace_pct=99.99
-            )
-            document["blank_pages"] = [
-                {image_files[i]: res.get("is_mostly_whitespace")}
-                for i, res in enumerate(blank_pages)
-            ]
+            if len(image_urls) > 1:
+                blank_pages = batch_is_mostly_whitespace(
+                    image_urls, min_whitespace_pct=99.99
+                )
+                document["blank_pages"] = [
+                    {image_files[i]: res.get("is_mostly_whitespace")}
+                    for i, res in enumerate(blank_pages)
+                ]
+            elif len(image_urls) == 1:
+                blank_page = is_mostly_whitespace(image_urls[0])
+                document["blank_pages"] = {image_files[0]: blank_page}
 
         ## get record group name
         rg = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
@@ -1267,6 +1271,23 @@ class DataManager:
             user_info,
             calling_function="updateRecordReviewStatus",
         )
+
+    @time_it
+    def updateRecordInternal(
+        self,
+        record_id,
+        field,
+        value
+    ):
+        _id = ObjectId(record_id)
+        search_query = {"_id": _id}
+        
+        update_query = {"$set": {field: value}}
+        update_resp = self.db.records.update_one(
+            search_query,
+            update_query,
+        )
+        return update_resp
 
     @time_it
     def updateRecord(
