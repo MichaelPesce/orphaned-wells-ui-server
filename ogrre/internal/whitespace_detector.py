@@ -26,6 +26,7 @@ from ogrre.internal.util import time_it
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _is_url(source: str) -> bool:
     """Return True if source looks like an HTTP/HTTPS URL."""
     return source.lower().startswith(("http://", "https://"))
@@ -49,7 +50,7 @@ def _open_image(source: str) -> Image.Image:
                 buf.write(chunk)
         buf.seek(0)
         img = Image.open(buf)
-        img.load()   # force full decode while buf is still in scope
+        img.load()  # force full decode while buf is still in scope
         buf.close()
         return img
     else:
@@ -177,6 +178,7 @@ def detect_whitespace(
 # Convenience wrappers for common use-cases
 # ---------------------------------------------------------------------------
 
+
 def is_mostly_whitespace(
     image_path: str,
     min_whitespace_pct: float = 50.0,
@@ -199,10 +201,9 @@ def whitespace_pct(
     channel_mode: str = "luma",
 ) -> float:
     """Return just the whitespace percentage as a float."""
-    return detect_whitespace(image_path, threshold=threshold, channel_mode=channel_mode)[
-        "whitespace_pct"
-    ]
-
+    return detect_whitespace(
+        image_path, threshold=threshold, channel_mode=channel_mode
+    )["whitespace_pct"]
 
 
 # ---------------------------------------------------------------------------
@@ -295,7 +296,9 @@ def batch_is_mostly_whitespace(
     # for slower ones ahead of them in the list.
     results_map = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_idx = {executor.submit(_process, src): i for i, src in enumerate(sources)}
+        future_to_idx = {
+            executor.submit(_process, src): i for i, src in enumerate(sources)
+        }
         for future in as_completed(future_to_idx):
             idx = future_to_idx[future]
             results_map[idx] = future.result()
