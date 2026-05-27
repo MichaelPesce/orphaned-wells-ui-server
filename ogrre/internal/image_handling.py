@@ -197,9 +197,9 @@ def process_document(
             file_name=f"{filepath}",
             folder=f"uploads/{rg_id}/{new_record_id}",
         )
-        image_whitespace = batch_is_mostly_whitespace(
-            output_paths, min_whitespace_pct=99.99
-        )
+    image_whitespace = batch_is_mostly_whitespace(
+        output_paths, min_whitespace_pct=99.99
+    )
 
     data_manager.updateRecordInternal(
         new_record_id, "image_whitespace", image_whitespace
