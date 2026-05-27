@@ -14,10 +14,11 @@ from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
 import ogrre.internal.util as util
 from ogrre.internal.util import time_it
+from ogrre.internal.whitespace_detector import is_mostly_whitespace, batch_is_mostly_whitespace
 
 _log = logging.getLogger(__name__)
+DETECT_WHITESPACE = os.getenv("DETECT_WHITESPACE", "true").lower() in ("1", "true", "yes")
 REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("1", "true", "yes")
-
 COLLABORATORS = ["isgs", "calgem", "osage"]
 DEFAULT_UNAUTHENTICATED_TEAM = {
     "name": "default",
@@ -917,6 +918,7 @@ class DataManager:
     def fetchRecordData(
         self, record_id, user_info, page_state=None, background_tasks=None
     ):
+        _log.info(f"fetch record data")
         user = user_info.get("email", "")
         _id = ObjectId(record_id)
         cursor = self.db.records.find({"_id": _id})
@@ -937,23 +939,27 @@ class DataManager:
         ## try to attain lock
         attained_lock = self.tryLockingRecord(record_id, user)
         image_urls = []
-        for image in document.get("image_files", []):
+        # blank_pages = {}
+        image_files = document.get("image_files", [])
+        for image in image_files:
             if util.imageIsValid(image):
-                image_urls.append(
-                    get_document_image(
-                        document["record_group_id"], document["_id"], image
-                    )
+                next_img_url = get_document_image(
+                    document["record_group_id"],
+                    document["_id"], image
                 )
+                image_urls.append(next_img_url)
         if len(image_urls) == 0:
             if document.get("filename", False):
-                image_urls.append(
-                    get_document_image(
+                next_img_url = get_document_image(
                         document["record_group_id"],
                         document["_id"],
                         document["filename"],
                     )
-                )
+                image_urls.append(next_img_url)
         document["img_urls"] = image_urls
+        if DETECT_WHITESPACE:
+            blank_pages = batch_is_mostly_whitespace(image_urls, min_whitespace_pct=99.99)
+            document["blank_pages"] = [{image_files[i]: res.get("is_mostly_whitespace")} for i, res in enumerate(blank_pages)]
 
         ## get record group name
         rg = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
