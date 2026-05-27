@@ -29,7 +29,7 @@ import ogrre.internal.util as util
 
 _log = logging.getLogger(__name__)
 
-
+DETECT_WHITESPACE = os.getenv("DETECT_WHITESPACE", "true").lower() in ("1", "true", "yes")
 MEMORY_PROFILE = os.getenv("MEMORY_PROFILE", "").lower() in ("1", "true", "yes")
 MEMORY_PROFILE_RATE = int(os.getenv("MEMORY_PROFILE_RATE", "1"))
 MEMORY_PROFILE_TOP = int(os.getenv("MEMORY_PROFILE_TOP", "10"))
@@ -217,12 +217,16 @@ def process_document(
         )
 
     file_names = [output_path.split("/")[-1] for output_path in output_paths]
+    if DETECT_WHITESPACE:
+        callback = on_all_bytes_read
+    else:
+        callback = None
     background_tasks.add_task(
         storage_api.upload_files,
         file_paths=output_paths,
         file_names=file_names,
         folder=f"uploads/{rg_id}/{new_record_id}",
-        on_all_bytes_read=on_all_bytes_read,
+        on_all_bytes_read=callback,
     )
 
     ## if original file was pdf, make sure to delete both image and pdf files
