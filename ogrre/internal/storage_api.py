@@ -85,7 +85,9 @@ async def upload_file(file_path, file_name, folder="uploads", on_bytes_read=None
     return url
 
 
-async def upload_files(file_paths, file_names, folder="uploads", on_all_bytes_read=None):
+async def upload_files(
+    file_paths, file_names, folder="uploads", on_all_bytes_read=None
+):
     """
     Uploads multiple files and optionally calls on_all_bytes_read with a list
     of all files' bytes once every file has been read, before uploading.

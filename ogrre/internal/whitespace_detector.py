@@ -307,6 +307,7 @@ def batch_is_mostly_whitespace(
 
     return [results_map[i] for i in range(len(sources))]
 
+
 def detect_whitespace_from_bytes(
     image_bytes: bytes,
     threshold: int = 240,

@@ -202,15 +202,19 @@ def process_document(
         whitespace_results = []
         for file_bytes in all_file_bytes:
             result = detect_whitespace_from_bytes(file_bytes, min_whitespace_pct=99.99)
-            whitespace_results.append({
-                "is_mostly_whitespace": result.get("meets_threshold"),
-                "whitespace_pct": result.get("whitespace_pct"),
-                "threshold": result.get("threshold"),
-                "total_pixels": result.get("total_pixels"),
-                "white_pixels": result.get("white_pixels"),
-                "error": None,
-            })
-        data_manager.updateRecordInternal(new_record_id, "image_whitespace", whitespace_results)
+            whitespace_results.append(
+                {
+                    "is_mostly_whitespace": result.get("meets_threshold"),
+                    "whitespace_pct": result.get("whitespace_pct"),
+                    "threshold": result.get("threshold"),
+                    "total_pixels": result.get("total_pixels"),
+                    "white_pixels": result.get("white_pixels"),
+                    "error": None,
+                }
+            )
+        data_manager.updateRecordInternal(
+            new_record_id, "image_whitespace", whitespace_results
+        )
 
     file_names = [output_path.split("/")[-1] for output_path in output_paths]
     background_tasks.add_task(
