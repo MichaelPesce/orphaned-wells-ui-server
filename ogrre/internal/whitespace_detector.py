@@ -163,8 +163,8 @@ def detect_whitespace(
         "total_pixels": total_pixels,
         "white_pixels": white_pixels,
         "threshold": threshold,
-        "channel_mode": channel_mode,
-        "source_type": source_type,
+        # "channel_mode": channel_mode,
+        # "source_type": source_type,
     }
 
     if min_whitespace_pct is not None:
@@ -280,13 +280,13 @@ def batch_is_mostly_whitespace(
                 min_whitespace_pct=min_whitespace_pct,
                 channel_mode=channel_mode,
             )
-            result["source"] = source
+            # result["source"] = source
             result["is_mostly_whitespace"] = result["meets_threshold"]
             result["error"] = None
             return result
         except Exception as exc:
             return {
-                "source": source,
+                # "source": source,
                 "is_mostly_whitespace": None,
                 "error": str(exc),
             }
