@@ -2,6 +2,7 @@ import os
 import logging
 import aiofiles
 import requests
+import secrets
 from fastapi import (
     Request,
     APIRouter,
@@ -44,6 +45,8 @@ COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() in (
 COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
 ACCESS_COOKIE = "ogrre_session"
 REFRESH_COOKIE = "ogrre_refresh_session"
+CSRF_COOKIE = "ogrre_csrf"
+CSRF_HEADER = "X-CSRF-Token"
 COOKIE_MAX_AGE_SECONDS = int(os.getenv("SESSION_COOKIE_MAX_AGE_SECONDS", "3600"))
 REFRESH_COOKIE_MAX_AGE_SECONDS = int(
     os.getenv("REFRESH_COOKIE_MAX_AGE_SECONDS", "2592000")
@@ -100,20 +103,57 @@ def _set_auth_cookies(
             domain=COOKIE_DOMAIN,
             path="/",
         )
+    response.set_cookie(
+        key=CSRF_COOKIE,
+        value=secrets.token_urlsafe(32),
+        httponly=False,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
 
 
 def _clear_auth_cookies(response: JSONResponse):
     # Clear cookies with and without domain to cover host-only and domain cookies.
     response.delete_cookie(ACCESS_COOKIE, domain=COOKIE_DOMAIN, path="/")
     response.delete_cookie(REFRESH_COOKIE, domain=COOKIE_DOMAIN, path="/")
+    response.delete_cookie(CSRF_COOKIE, domain=COOKIE_DOMAIN, path="/")
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
+    response.delete_cookie(CSRF_COOKIE, path="/")
+
+
+def _is_csrf_exempt_path(path: str) -> bool:
+    return path in {"/auth_login"}
+
+
+async def csrf_protect(request: Request):
+    if not REQUIRE_AUTH:
+        return
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        return
+    if _is_csrf_exempt_path(request.url.path):
+        return
+
+    csrf_cookie = request.cookies.get(CSRF_COOKIE)
+    csrf_header = request.headers.get(CSRF_HEADER)
+    if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "csrf_validation_failed",
+                "message": "Missing or invalid CSRF token.",
+            },
+        )
 
 
 router = APIRouter(
     prefix="",
     tags=["uow"],
     responses={404: {"description": "route not found"}},
+    dependencies=[Depends(csrf_protect)],
 )
 
 
