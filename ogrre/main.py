@@ -38,7 +38,9 @@ async def health():
 
 allowed_origins = auth.parse_allowed_origins()
 if not allowed_origins:
-    _log.warning("ALLOWED_ORIGINS is empty; cross-origin browser access will be blocked.")
+    _log.warning(
+        "ALLOWED_ORIGINS is empty; cross-origin browser access will be blocked."
+    )
 
 app.add_middleware(
     CORSMiddleware,

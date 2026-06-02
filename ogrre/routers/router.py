@@ -36,7 +36,11 @@ REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("1", "true", "yes")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 identity_provider = build_identity_provider()
 COOKIE_DOMAIN = os.getenv("SESSION_COOKIE_DOMAIN") or None
-COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() in ("1", "true", "yes")
+COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
 ACCESS_COOKIE = "ogrre_session"
 REFRESH_COOKIE = "ogrre_refresh_session"
@@ -149,9 +153,9 @@ async def auth_login(request: Request):
     if not REQUIRE_AUTH:
         response = JSONResponse(
             {
-            "id_token": "anonymous",
-            "access_token": "",
-            "refresh_token": "",
+                "id_token": "anonymous",
+                "access_token": "",
+                "refresh_token": "",
             }
         )
         _set_auth_cookies(response, "anonymous", "")
@@ -213,9 +217,9 @@ async def auth_refresh(request: Request):
     if not REQUIRE_AUTH:
         response = JSONResponse(
             {
-            "id_token": "anonymous",
-            "access_token": "",
-            "refresh_token": "",
+                "id_token": "anonymous",
+                "access_token": "",
+                "refresh_token": "",
             }
         )
         _set_auth_cookies(response, "anonymous", "")

@@ -63,7 +63,11 @@ class GoogleIdentityProvider(BaseIdentityProvider):
     name = "google"
 
     def __init__(self) -> None:
-        self.token_uri, self.client_id, self.client_secret = auth.get_google_credentials()
+        (
+            self.token_uri,
+            self.client_id,
+            self.client_secret,
+        ) = auth.get_google_credentials()
 
     def _validate_configuration(self):
         missing = []
@@ -171,4 +175,3 @@ def get_bearer_or_session_token(request, bearer_token: Optional[str]) -> Optiona
     if bearer_token and bearer_token not in {"null", "undefined", "None"}:
         return bearer_token
     return None
-
