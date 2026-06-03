@@ -20,6 +20,7 @@ CILOGON_ISSUER = "https://cilogon.org"
 # Ideally instantiate this once and reuse it — it caches keys internally
 jwks_client = PyJWKClient(CILOGON_JWKS_URI)
 
+
 @dataclass
 class AuthResult:
     """
@@ -160,6 +161,7 @@ class GoogleIdentityProvider(BaseIdentityProvider):
             user_info=user_info,
             provider=self.name,
         )
+
 
 class CilogonIdentityProvider(BaseIdentityProvider):
     """
