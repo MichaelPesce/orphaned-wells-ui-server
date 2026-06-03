@@ -13,7 +13,7 @@ services:
       - PROJECT_ID=${PROJECT_ID}
       - STORAGE_SERVICE_KEY=${STORAGE_SERVICE_KEY}
       - STORAGE_BUCKET_NAME=${STORAGE_BUCKET_NAME}
-      - ALLOW_ORIGINS=${ALLOW_ORIGINS}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - token_uri=${token_uri}
       - client_id=${client_id}
       - client_secret=${client_secret}
