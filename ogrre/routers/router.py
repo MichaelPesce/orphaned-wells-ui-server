@@ -208,6 +208,18 @@ async def auth_login(request: Request):
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
     email = user_info["email"]
+
+    if email is None or email == "":
+        _log.info(f"User account does not provide email")
+        data_manager.recordHistory("login", user=user, notes="denied access")
+        raise HTTPException(
+            status_code=403,
+            detail=_build_auth_failure(
+                "account_not_registered",
+                "Your identity is not associated with an email. Please add an email to your account and make it available to access OGRRE.",
+            ),
+        )
+
     user = data_manager.getUser(email)
     if user is None:
         _log.info(f"user {email} is not found in database")
