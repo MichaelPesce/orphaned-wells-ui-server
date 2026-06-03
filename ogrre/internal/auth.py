@@ -12,6 +12,11 @@ def get_google_credentials():
     client_secret = os.getenv("client_secret")
     return token_uri, client_id, client_secret
 
+def get_cilogon_credentials():
+    token_uri = os.getenv("cilogon_token_uri")
+    client_id = os.getenv("cilogon_client_id")
+    client_secret = os.getenv("cilogon_client_secret")
+    return token_uri, client_id, client_secret
 
 def parse_allowed_origins():
     """
