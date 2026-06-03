@@ -14,6 +14,9 @@ services:
       - STORAGE_SERVICE_KEY=${STORAGE_SERVICE_KEY}
       - STORAGE_BUCKET_NAME=${STORAGE_BUCKET_NAME}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - SESSION_COOKIE_DOMAIN=${SESSION_COOKIE_DOMAIN}
+      - SESSION_COOKIE_SAMESITE=${SESSION_COOKIE_SAMESITE}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE}
       - token_uri=${token_uri}
       - client_id=${client_id}
       - client_secret=${client_secret}
