@@ -53,7 +53,7 @@ env:
 
 jobs:
   deploy:
-    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
+    # if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy ${{ inputs.DEPLOY_ENV }} to GKE
     runs-on: ubuntu-latest
     permissions:
