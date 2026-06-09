@@ -15,10 +15,14 @@ The existing VM module still owns the current primary DNS records, such as `stag
 
 ## What GitHub Actions does
 
+The staging workflow `.github/workflows/deploy-k8s-staging.yml`:
+
+- builds the Docker image from `main`
+- pushes `michaelpescelbl/orphaned-wells-ui-server:latest`
+
 The reusable workflow `.github/workflows/deploy-k8s-dispatch.yml`:
 
-- builds the Docker image from the branch being deployed
-- pushes two Docker Hub tags: `<env>-<commit-sha>` and `<env>-latest`
+- deploys an existing Docker image tag, defaulting to `latest`
 - creates or updates the Kubernetes namespace
 - creates a Docker Hub pull secret
 - creates a `backend-runtime` Kubernetes Secret from the environment secret plus `creds.json` and `michael2-service-key.json`
