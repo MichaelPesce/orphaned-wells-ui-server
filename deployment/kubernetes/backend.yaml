@@ -58,7 +58,7 @@ spec:
               containerPort: 8001
           envFrom:
             - secretRef:
-                name: backend-runtime
+                name: backend-runtime-env
           env:
             - name: ENVIRONMENT
               value: ${DEPLOY_ENV}
@@ -100,11 +100,11 @@ spec:
             - name: backend-data
               mountPath: /data
               subPath: data
-            - name: backend-runtime
+            - name: backend-runtime-files
               mountPath: /code/ogrre/creds.json
               subPath: creds.json
               readOnly: true
-            - name: backend-runtime
+            - name: backend-runtime-files
               mountPath: /code/ogrre/michael2-service-key.json
               subPath: michael2-service-key.json
               readOnly: true
@@ -112,9 +112,9 @@ spec:
         - name: backend-data
           persistentVolumeClaim:
             claimName: backend-data
-        - name: backend-runtime
+        - name: backend-runtime-files
           secret:
-            secretName: backend-runtime
+            secretName: backend-runtime-files
 ---
 apiVersion: v1
 kind: Service

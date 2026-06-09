@@ -260,8 +260,11 @@ jobs:
             --docker-password="$DOCKERHUB_ACCESS_TOKEN" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          kubectl -n "$NAMESPACE" create secret generic backend-runtime \
+          kubectl -n "$NAMESPACE" create secret generic backend-runtime-env \
             --from-env-file=deployment/secrets/runtime.k8s.env \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl -n "$NAMESPACE" create secret generic backend-runtime-files \
             --from-file=creds.json=deployment/secrets/creds.json \
             --from-file=michael2-service-key.json=deployment/secrets/michael2-service-key.json \
             --dry-run=client -o yaml | kubectl apply -f -

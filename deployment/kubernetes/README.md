@@ -25,7 +25,7 @@ The reusable workflow `.github/workflows/deploy-k8s-dispatch.yml`:
 - deploys an existing Docker image tag, defaulting to `latest`
 - creates or updates the Kubernetes namespace
 - creates a Docker Hub pull secret
-- creates a `backend-runtime` Kubernetes Secret from the environment secret plus `creds.json` and `michael2-service-key.json`
+- creates `backend-runtime-env` from the environment secret and `backend-runtime-files` from `creds.json` plus `michael2-service-key.json`
 - renders `deployment/kubernetes/backend.yaml`
 - applies the manifest and waits for the Deployment rollout
 
