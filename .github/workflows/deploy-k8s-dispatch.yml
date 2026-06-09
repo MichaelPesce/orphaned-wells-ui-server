@@ -119,11 +119,23 @@ jobs:
           persistent_disk_size="$(field persistent_disk_size)"
 
           : "${replicas:=1}"
-          : "${cpu_request:=500m}"
-          : "${memory_request:=1Gi}"
+          : "${cpu_request:=2}"
+          : "${memory_request:=6Gi}"
           : "${cpu_limit:=2}"
-          : "${memory_limit:=4Gi}"
+          : "${memory_limit:=6Gi}"
           : "${persistent_disk_size:=20Gi}"
+
+          # Older K8S_DEPLOY_TARGETS outputs requested only 1Gi, which lets
+          # GKE Autopilot place the pod on nodes too small for this 8-worker app.
+          if [ "$cpu_request" = "500m" ]; then
+            cpu_request="2"
+          fi
+          if [ "$memory_request" = "1Gi" ]; then
+            memory_request="6Gi"
+          fi
+          if [ "$memory_limit" = "4Gi" ]; then
+            memory_limit="6Gi"
+          fi
 
           required=(
             "cluster_name:$cluster_name"
@@ -294,6 +306,26 @@ jobs:
           NAMESPACE: ${{ steps.target.outputs.namespace }}
         run: |
           kubectl apply -f deployment/kubernetes/rendered/backend.yaml
-          kubectl -n "$NAMESPACE" rollout status deployment/backend --timeout=10m
+          if ! kubectl -n "$NAMESPACE" rollout status deployment/backend --timeout=10m; then
+            echo "::group::Deployment"
+            kubectl -n "$NAMESPACE" get deployment backend -o wide
+            kubectl -n "$NAMESPACE" describe deployment backend
+            echo "::endgroup::"
+
+            echo "::group::Pods"
+            kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=orphaned-wells-ui-server -o wide
+            kubectl -n "$NAMESPACE" describe pods -l app.kubernetes.io/name=orphaned-wells-ui-server
+            echo "::endgroup::"
+
+            echo "::group::Events"
+            kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp
+            echo "::endgroup::"
+
+            echo "::group::Backend logs"
+            kubectl -n "$NAMESPACE" logs deployment/backend --all-containers=true --tail=200 || true
+            echo "::endgroup::"
+
+            exit 1
+          fi
           kubectl -n "$NAMESPACE" get ingress backend
           kubectl -n "$NAMESPACE" get managedcertificate backend-cert

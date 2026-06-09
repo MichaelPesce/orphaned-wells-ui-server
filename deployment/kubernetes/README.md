@@ -207,7 +207,8 @@ ENABLE_GKE_OSAGE_DEPLOY=true
 
 ## Notes
 
-- The Kubernetes Deployment uses `strategy: Recreate` because it mounts a `ReadWriteOnce` persistent volume for `/logs` and `/data`. This matches the single-VM deployment model and avoids multi-attach issues.
+- The Kubernetes Deployment uses pod-local `emptyDir` volumes for `/logs` and `/data`. The deployed backend should continue using Google Cloud Storage for real document storage; GKE captures stdout logs centrally.
+- The default GKE backend resources request 2 CPU and 6 GiB memory. The original 1 GiB memory request was too low for the current 8-worker container startup and caused GKE node-pressure evictions.
 - The app still receives `creds.json` and `michael2-service-key.json` at `/code/ogrre/...`, matching the current Docker Compose paths.
 - GKE replaces VM nginx/certbot with GKE Ingress, `ManagedCertificate`, `FrontendConfig`, and `BackendConfig`.
 - The backend timeout is configured to 180 seconds through `BackendConfig`, matching the current nginx timeout.

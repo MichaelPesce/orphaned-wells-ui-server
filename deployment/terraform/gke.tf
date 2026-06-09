@@ -12,10 +12,10 @@ locals {
       test_hostname        = "${name}-k8s-server.uow-carbon.org"
       static_ip_name       = "${name}-uow-gke-ip"
       replicas             = 1
-      cpu_request          = "500m"
-      memory_request       = "1Gi"
+      cpu_request          = "2"
+      memory_request       = "6Gi"
       cpu_limit            = "2"
-      memory_limit         = "4Gi"
+      memory_limit         = "6Gi"
       persistent_disk_size = name == "ca" ? "10Gi" : "20Gi"
     }
   }

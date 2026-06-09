@@ -6,22 +6,6 @@ metadata:
     app.kubernetes.io/name: orphaned-wells-ui-server
     app.kubernetes.io/part-of: uow-backends
     uow.lbl.gov/environment: ${DEPLOY_ENV}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: backend-data
-  namespace: ${NAMESPACE}
-  labels:
-    app.kubernetes.io/name: orphaned-wells-ui-server
-    uow.lbl.gov/environment: ${DEPLOY_ENV}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: ${PERSISTENT_DISK_SIZE}
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -94,12 +78,10 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: backend-data
+            - name: backend-logs
               mountPath: /logs
-              subPath: logs
             - name: backend-data
               mountPath: /data
-              subPath: data
             - name: backend-runtime-files
               mountPath: /code/ogrre/creds.json
               subPath: creds.json
@@ -109,9 +91,10 @@ spec:
               subPath: michael2-service-key.json
               readOnly: true
       volumes:
+        - name: backend-logs
+          emptyDir: {}
         - name: backend-data
-          persistentVolumeClaim:
-            claimName: backend-data
+          emptyDir: {}
         - name: backend-runtime-files
           secret:
             secretName: backend-runtime-files
