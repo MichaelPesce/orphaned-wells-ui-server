@@ -310,6 +310,7 @@ jobs:
         env:
           CPU_LIMIT: ${{ steps.target.outputs.cpu_limit }}
           CPU_REQUEST: ${{ steps.target.outputs.cpu_request }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
           DEPLOY_ENV: ${{ inputs.DEPLOY_ENV }}
           HOSTNAME: ${{ steps.target.outputs.host }}
           IMAGE: ${{ steps.image.outputs.image }}
@@ -324,6 +325,15 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y gettext-base
           fi
+          RUNTIME_CONFIG_SHA="$(
+            shasum -a 256 \
+              deployment/secrets/runtime.k8s.env \
+              deployment/secrets/creds.json \
+              deployment/secrets/michael2-service-key.json \
+              | shasum -a 256 \
+              | awk '{print $1}'
+          )"
+          export RUNTIME_CONFIG_SHA
           envsubst < deployment/kubernetes/backend.yaml > deployment/kubernetes/rendered/backend.yaml
 
       - name: Apply Kubernetes manifest
@@ -352,5 +362,6 @@ jobs:
 
             exit 1
           fi
+          kubectl -n "$NAMESPACE" exec deployment/backend -- python -c 'import os; keys=["ENVIRONMENT","BACKEND_URL","ALLOWED_ORIGINS","REQUIRE_AUTH","AUTH_PROVIDER","SESSION_COOKIE_DOMAIN","SESSION_COOKIE_SAMESITE","SESSION_COOKIE_SECURE"]; print({k: os.getenv(k) for k in keys})'
           kubectl -n "$NAMESPACE" get ingress backend
           kubectl -n "$NAMESPACE" get managedcertificate backend-cert

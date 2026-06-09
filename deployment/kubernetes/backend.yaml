@@ -26,6 +26,9 @@ spec:
       uow.lbl.gov/environment: ${DEPLOY_ENV}
   template:
     metadata:
+      annotations:
+        uow.lbl.gov/deploy-run: ${DEPLOY_RUN_ID}
+        uow.lbl.gov/runtime-config-sha: ${RUNTIME_CONFIG_SHA}
       labels:
         app.kubernetes.io/name: orphaned-wells-ui-server
         app.kubernetes.io/component: api
