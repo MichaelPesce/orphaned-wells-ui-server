@@ -82,6 +82,7 @@ def _build_auth_failure(detail_key: str, message: str):
 def _set_auth_cookies(
     response: JSONResponse, id_token_value: str, refresh_token_value: Optional[str]
 ):
+    csrf_token = secrets.token_urlsafe(32)
     response.set_cookie(
         key=ACCESS_COOKIE,
         value=id_token_value,
@@ -105,7 +106,7 @@ def _set_auth_cookies(
         )
     response.set_cookie(
         key=CSRF_COOKIE,
-        value=secrets.token_urlsafe(32),
+        value=csrf_token,
         httponly=False,
         secure=COOKIE_SECURE,
         samesite=COOKIE_SAMESITE,
@@ -113,6 +114,7 @@ def _set_auth_cookies(
         domain=COOKIE_DOMAIN,
         path="/",
     )
+    response.headers[CSRF_HEADER] = csrf_token
 
 
 def _clear_auth_cookies(response: JSONResponse):
@@ -126,7 +128,7 @@ def _clear_auth_cookies(response: JSONResponse):
 
 
 def _is_csrf_exempt_path(path: str) -> bool:
-    return path in {"/auth_login", "/check_auth"}
+    return path in {"/token", "/auth_login", "/auth_refresh", "/check_auth", "/logout"}
 
 
 async def csrf_protect(request: Request):
