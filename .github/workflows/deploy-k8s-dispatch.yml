@@ -220,7 +220,7 @@ jobs:
               value="${value:1:${#value}-2}"
             fi
             case "$key" in
-              ENVIRONMENT|BACKEND_URL|LOG_DIR|LOCAL_STORAGE_ROOT|LOCAL_STORAGE_URL_BASE)
+              ENVIRONMENT|LOG_DIR|LOCAL_STORAGE_ROOT|LOCAL_STORAGE_URL_BASE)
                 continue
                 ;;
             esac
@@ -234,6 +234,31 @@ jobs:
             echo "LOCAL_STORAGE_ROOT=/data/local-storage"
             echo "LOCAL_STORAGE_URL_BASE=https://$HOSTNAME/local-storage"
           } >> "$k8s_env_file"
+
+          required_runtime_keys=(
+            ALLOWED_ORIGINS
+            REQUIRE_AUTH
+            AUTH_PROVIDER
+            SESSION_COOKIE_DOMAIN
+            SESSION_COOKIE_SAMESITE
+            SESSION_COOKIE_SECURE
+          )
+          missing_keys=()
+          for key in "${required_runtime_keys[@]}"; do
+            if ! grep -Eq "^${key}=" "$k8s_env_file"; then
+              missing_keys+=("$key")
+            fi
+          done
+
+          if [ "${#missing_keys[@]}" -gt 0 ]; then
+            echo "::error::${DEPLOY_ENV^^}_ENV did not provide required runtime key(s): ${missing_keys[*]}"
+            echo "Runtime keys produced for Kubernetes:"
+            cut -d= -f1 "$k8s_env_file" | sort
+            exit 1
+          fi
+
+          echo "Runtime keys produced for Kubernetes:"
+          cut -d= -f1 "$k8s_env_file" | sort
 
       - name: Set deployment image
         id: image

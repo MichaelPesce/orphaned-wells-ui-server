@@ -126,7 +126,7 @@ def _clear_auth_cookies(response: JSONResponse):
 
 
 def _is_csrf_exempt_path(path: str) -> bool:
-    return path in {"/auth_login"}
+    return path in {"/auth_login", "/check_auth"}
 
 
 async def csrf_protect(request: Request):
