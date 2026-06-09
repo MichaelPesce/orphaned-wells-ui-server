@@ -128,7 +128,14 @@ def _clear_auth_cookies(response: JSONResponse):
 
 
 def _is_csrf_exempt_path(path: str) -> bool:
-    return path in {"/token", "/auth_login", "/auth_refresh", "/check_auth", "/logout"}
+    normalized_path = path.rstrip("/") or "/"
+    return normalized_path in {
+        "/token",
+        "/auth_login",
+        "/auth_refresh",
+        "/check_auth",
+        "/logout",
+    }
 
 
 async def csrf_protect(request: Request):
