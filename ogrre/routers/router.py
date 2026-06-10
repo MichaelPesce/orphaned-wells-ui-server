@@ -79,10 +79,25 @@ def _build_auth_failure(detail_key: str, message: str):
     }
 
 
+def _set_csrf_cookie(response: JSONResponse, csrf_token: Optional[str] = None) -> str:
+    csrf_token = csrf_token or secrets.token_urlsafe(32)
+    response.set_cookie(
+        key=CSRF_COOKIE,
+        value=csrf_token,
+        httponly=False,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
+    response.headers[CSRF_HEADER] = csrf_token
+    return csrf_token
+
+
 def _set_auth_cookies(
     response: JSONResponse, id_token_value: str, refresh_token_value: Optional[str]
 ):
-    csrf_token = secrets.token_urlsafe(32)
     response.set_cookie(
         key=ACCESS_COOKIE,
         value=id_token_value,
@@ -104,27 +119,33 @@ def _set_auth_cookies(
             domain=COOKIE_DOMAIN,
             path="/",
         )
-    response.set_cookie(
-        key=CSRF_COOKIE,
-        value=csrf_token,
-        httponly=False,
-        secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
-        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
-        domain=COOKIE_DOMAIN,
-        path="/",
-    )
-    response.headers[CSRF_HEADER] = csrf_token
+    _set_csrf_cookie(response)
 
 
-def _clear_auth_cookies(response: JSONResponse):
-    # Clear cookies with and without domain to cover host-only and domain cookies.
-    response.delete_cookie(ACCESS_COOKIE, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(REFRESH_COOKIE, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(CSRF_COOKIE, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(ACCESS_COOKIE, path="/")
-    response.delete_cookie(REFRESH_COOKIE, path="/")
-    response.delete_cookie(CSRF_COOKIE, path="/")
+def _cookie_delete_domains(request: Optional[Request] = None) -> list[str]:
+    domains: list[str] = []
+    if COOKIE_DOMAIN:
+        domains.append(COOKIE_DOMAIN)
+
+    request_host = request.url.hostname if request else None
+    if request_host:
+        domains.append(request_host)
+        if request_host.endswith(".uow-carbon.org"):
+            domains.extend([".uow-carbon.org", "uow-carbon.org"])
+
+    unique_domains: list[str] = []
+    for domain in domains:
+        if domain and domain not in unique_domains:
+            unique_domains.append(domain)
+    return unique_domains
+
+
+def _clear_auth_cookies(response: JSONResponse, request: Optional[Request] = None):
+    # Clear host-only cookies and the domain cookies we may have used during rollout.
+    for cookie_name in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE):
+        response.delete_cookie(cookie_name, path="/")
+        for domain in _cookie_delete_domains(request):
+            response.delete_cookie(cookie_name, domain=domain, path="/")
 
 
 def _is_csrf_exempt_path(path: str) -> bool:
@@ -323,7 +344,9 @@ async def auth_refresh(request: Request):
 
 
 @router.post("/check_auth")
-async def check_authorization(user_info: dict = Depends(authenticate)):
+async def check_authorization(
+    request: Request, user_info: dict = Depends(authenticate)
+):
     """Ensure user is authorized.
 
     Args:
@@ -350,7 +373,9 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
                     "Your identity is valid, but this account is not registered for this application.",
                 ),
             )
-    return {"user_data": user, "environment": environment}
+    response = JSONResponse({"user_data": user, "environment": environment})
+    _set_csrf_cookie(response, request.cookies.get(CSRF_COOKIE))
+    return response
 
 
 @router.post("/logout")
@@ -364,6 +389,16 @@ async def logout(request: Request):
         response code
     """
     refresh_token = request.cookies.get(REFRESH_COOKIE)
+    cookie_delete_domains = _cookie_delete_domains(request)
+    _log.info(
+        "logout requested; session_cookie_present=%s refresh_cookie_present=%s csrf_cookie_present=%s configured_cookie_domain=%s delete_domains=%s origin=%s",
+        bool(request.cookies.get(ACCESS_COOKIE)),
+        bool(refresh_token),
+        bool(request.cookies.get(CSRF_COOKIE)),
+        COOKIE_DOMAIN,
+        cookie_delete_domains,
+        request.headers.get("origin"),
+    )
     logout_status = 200
     if refresh_token:
         response = requests.post(
@@ -373,7 +408,7 @@ async def logout(request: Request):
         )
         logout_status = response.status_code
     json_response = JSONResponse({"logout_status": logout_status})
-    _clear_auth_cookies(json_response)
+    _clear_auth_cookies(json_response, request)
     return json_response
 
 
