@@ -252,13 +252,8 @@ jobs:
 
           if [ "${#missing_keys[@]}" -gt 0 ]; then
             echo "::error::${DEPLOY_ENV^^}_ENV did not provide required runtime key(s): ${missing_keys[*]}"
-            echo "Runtime keys produced for Kubernetes:"
-            cut -d= -f1 "$k8s_env_file" | sort
             exit 1
           fi
-
-          echo "Runtime keys produced for Kubernetes:"
-          cut -d= -f1 "$k8s_env_file" | sort
 
       - name: Set deployment image
         id: image
@@ -362,7 +357,5 @@ jobs:
 
             exit 1
           fi
-          kubectl -n "$NAMESPACE" exec deployment/backend -- python -c 'import os; keys=["ENVIRONMENT","BACKEND_URL","ALLOWED_ORIGINS","REQUIRE_AUTH","AUTH_PROVIDER","SESSION_COOKIE_DOMAIN","SESSION_COOKIE_SAMESITE","SESSION_COOKIE_SECURE"]; print({k: os.getenv(k) for k in keys})'
-          kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=orphaned-wells-ui-server -o jsonpath='{range .items[*]}{.metadata.name}{" image="}{.spec.containers[0].image}{" imageID="}{.status.containerStatuses[0].imageID}{"\n"}{end}'
           kubectl -n "$NAMESPACE" get ingress backend
           kubectl -n "$NAMESPACE" get managedcertificate backend-cert

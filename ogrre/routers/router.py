@@ -143,9 +143,20 @@ def _cookie_delete_domains(request: Optional[Request] = None) -> list[str]:
 def _clear_auth_cookies(response: JSONResponse, request: Optional[Request] = None):
     # Clear host-only cookies and the domain cookies we may have used during rollout.
     for cookie_name in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE):
-        response.delete_cookie(cookie_name, path="/")
+        response.delete_cookie(
+            cookie_name,
+            path="/",
+            secure=COOKIE_SECURE,
+            samesite=COOKIE_SAMESITE,
+        )
         for domain in _cookie_delete_domains(request):
-            response.delete_cookie(cookie_name, domain=domain, path="/")
+            response.delete_cookie(
+                cookie_name,
+                domain=domain,
+                path="/",
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE,
+            )
 
 
 def _is_csrf_exempt_path(path: str) -> bool:
@@ -389,16 +400,6 @@ async def logout(request: Request):
         response code
     """
     refresh_token = request.cookies.get(REFRESH_COOKIE)
-    cookie_delete_domains = _cookie_delete_domains(request)
-    _log.info(
-        "logout requested; session_cookie_present=%s refresh_cookie_present=%s csrf_cookie_present=%s configured_cookie_domain=%s delete_domains=%s origin=%s",
-        bool(request.cookies.get(ACCESS_COOKIE)),
-        bool(refresh_token),
-        bool(request.cookies.get(CSRF_COOKIE)),
-        COOKIE_DOMAIN,
-        cookie_delete_domains,
-        request.headers.get("origin"),
-    )
     logout_status = 200
     if refresh_token:
         response = requests.post(
