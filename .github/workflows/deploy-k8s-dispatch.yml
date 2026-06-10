@@ -237,7 +237,6 @@ jobs:
 
           required_runtime_keys=(
             ALLOWED_ORIGINS
-            REQUIRE_AUTH
             AUTH_PROVIDER
             SESSION_COOKIE_DOMAIN
             SESSION_COOKIE_SAMESITE
