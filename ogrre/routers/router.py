@@ -1801,7 +1801,7 @@ async def rotate_record_images(
             "message": "Images rotated successfully",
             "newImageFiles": new_image_files,
             "rotatedUrls": rotated_urls,
-            "new_image_urls": new_image_urls
+            "new_image_urls": new_image_urls,
         }
     except HTTPException:
         raise
