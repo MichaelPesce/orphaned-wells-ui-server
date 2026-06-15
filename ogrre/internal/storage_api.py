@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, unquote
 
 import aiofiles
 import aiohttp
@@ -303,6 +303,9 @@ def list_files(prefix, bucket_name=None, storage_service_key=None):
 
 
 def download_file_bytes(key, bucket_name=None, storage_service_key=None):
+    _log.info(f"download_file_bytes")
+    _log.info(f"key: {key}")
+    _log.info(f"bucket_name: {bucket_name}")
     if _is_local():
         with open(_storage_path(key), "rb") as f:
             return f.read()
@@ -330,25 +333,46 @@ def _require_pillow():
 
 def parse_gcs_url(url: str) -> GCSLocation:
     """
-    Parse a GCS URL into its bucket name and blob path.
+    Parse a GCS URL into bucket + blob_path, ignoring query params.
 
     Supports:
-        gs://bucket-name/path/to/file.jpg
-        https://storage.googleapis.com/bucket-name/path/to/file.jpg
+      - gs://bucket/path/to/file.jpg
+      - https://storage.googleapis.com/bucket/path/to/file.jpg
+      - signed URLs like:
+        https://storage.googleapis.com/bucket/path/to/file.png?X-Goog-...
     """
-    gs_match = re.match(r"^gs://([^/]+)/(.+)$", url)
-    if gs_match:
-        return GCSLocation(bucket=gs_match.group(1), blob_path=gs_match.group(2))
+    parsed = urlparse(url)
 
-    https_match = re.match(r"^https://storage\.googleapis\.com/([^/]+)/(.+)$", url)
-    if https_match:
-        return GCSLocation(bucket=https_match.group(1), blob_path=https_match.group(2))
+    # gs://bucket/path/to/object
+    if parsed.scheme == "gs":
+        bucket = parsed.netloc
+        blob_path = unquote(parsed.path.lstrip("/"))
+        return GCSLocation(bucket=bucket, blob_path=blob_path)
+
+    # https://storage.googleapis.com/bucket/path/to/object
+    if parsed.scheme in ("http", "https") and parsed.netloc == "storage.googleapis.com":
+        # parsed.path is "/bucket/path/to/object"
+        path = unquote(parsed.path.lstrip("/"))
+        bucket, _, blob_path = path.partition("/")
+        if not bucket or not blob_path:
+            raise ValueError(f"Invalid GCS URL format: {url!r}")
+        return GCSLocation(bucket=bucket, blob_path=blob_path)
+
+    # https://{bucket}.storage.googleapis.com/path/to/object
+    m = re.match(r"^([^.]+)\.storage\.googleapis\.com$", parsed.netloc)
+    if parsed.scheme in ("http", "https") and m:
+        bucket = m.group(1)
+        blob_path = unquote(parsed.path.lstrip("/"))
+        if not blob_path:
+            raise ValueError(f"Invalid GCS URL format: {url!r}")
+        return GCSLocation(bucket=bucket, blob_path=blob_path)
 
     raise ValueError(
         f"Unrecognised GCS URL format: {url!r}. "
         "Expected 'gs://bucket/path' or "
         "'https://storage.googleapis.com/bucket/path'."
     )
+
 
 
 def rotate_image(image, degrees: float, expand: bool = True):
@@ -420,7 +444,7 @@ def rotate_images_in_storage(
     image_keys_or_urls: list[str],
     degrees: float,
     *,
-    overwrite: bool = False,
+    overwrite: bool = True,
     destination_suffix: str = "_rotated",
     expand: bool = True,
     bucket_name: str = BUCKET_NAME,
@@ -492,6 +516,6 @@ def rotate_images_in_storage(
         dest_url = get_file_url(dest_key, bucket_name=src_bucket)
         results[original] = dest_url
 
-        _log.info(f"[rotate_images_in_storage]   ✓ Saved to: {dest_url}")
+        _log.info(f"[rotate_images_in_storage]   Saved to: {dest_url}")
 
     return results
