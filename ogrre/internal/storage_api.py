@@ -3,13 +3,18 @@ storage_api.py
 
 Handles the file storage for uploaded documents through OGRRE.
 Supports configurations for google cloud storage and local file storage.
+
+Also includes utilities for rotating images stored in either backend.
 """
 
 import datetime
+import io
 import logging
 import os
+import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import quote
 
 import aiofiles
@@ -17,6 +22,11 @@ import aiohttp
 from gcloud.aio.storage import Storage
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
 
 _log = logging.getLogger(__name__)
 
@@ -302,3 +312,186 @@ def download_file_bytes(key, bucket_name=None, storage_service_key=None):
     )
     blob = bucket.blob(key)
     return blob.download_as_bytes()
+
+
+# ------------------------------------------------------------------------------
+# Image rotation
+# ------------------------------------------------------------------------------
+
+class GCSLocation(NamedTuple):
+    bucket: str
+    blob_path: str
+
+
+def _require_pillow():
+    if Image is None:  # pragma: no cover
+        raise ImportError("Pillow is required for rotating images.")
+
+
+def parse_gcs_url(url: str) -> GCSLocation:
+    """
+    Parse a GCS URL into its bucket name and blob path.
+
+    Supports:
+        gs://bucket-name/path/to/file.jpg
+        https://storage.googleapis.com/bucket-name/path/to/file.jpg
+    """
+    gs_match = re.match(r"^gs://([^/]+)/(.+)$", url)
+    if gs_match:
+        return GCSLocation(bucket=gs_match.group(1), blob_path=gs_match.group(2))
+
+    https_match = re.match(r"^https://storage\.googleapis\.com/([^/]+)/(.+)$", url)
+    if https_match:
+        return GCSLocation(bucket=https_match.group(1), blob_path=https_match.group(2))
+
+    raise ValueError(
+        f"Unrecognised GCS URL format: {url!r}. "
+        "Expected 'gs://bucket/path' or "
+        "'https://storage.googleapis.com/bucket/path'."
+    )
+
+
+def rotate_image(image, degrees: float, expand: bool = True):
+    """
+    Rotate a PIL Image by the given number of degrees.
+    """
+    _require_pillow()
+    return image.rotate(degrees, expand=expand)
+
+
+def _build_destination_path(blob_path: str, suffix: str) -> str:
+    """
+    Insert *suffix* before the file extension of *blob_path*.
+
+    Example:
+        "photos/beach.jpg", "_rotated"  →  "photos/beach_rotated.jpg"
+    """
+    # Keep same behavior as the incoming rotator
+    filename = blob_path.rsplit("/", 1)[-1]
+    if "." in filename:
+        base, ext = blob_path.rsplit(".", 1)
+        return f"{base}{suffix}.{ext}"
+    return f"{blob_path}{suffix}"
+
+
+def _guess_format_and_content_type(key: str):
+    ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
+    pil_format_map = {
+        "jpg": "JPEG",
+        "jpeg": "JPEG",
+        "png": "PNG",
+        "gif": "GIF",
+        "webp": "WEBP",
+        "bmp": "BMP",
+        "tif": "TIFF",
+        "tiff": "TIFF",
+    }
+    pil_format = pil_format_map.get(ext, "JPEG")
+
+    content_type_map = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "bmp": "image/bmp",
+        "tif": "image/tiff",
+        "tiff": "image/tiff",
+    }
+    content_type = content_type_map.get(ext, "image/jpeg")
+    return pil_format, content_type
+
+
+def _load_pil_image_from_bytes(image_bytes: bytes):
+    _require_pillow()
+    image = Image.open(io.BytesIO(image_bytes))
+    image.load()  # ensure fully decoded
+    return image
+
+
+def _save_pil_image_to_bytes(image, pil_format: str) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format=pil_format)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def rotate_images_in_storage(
+    image_keys_or_urls: list[str],
+    degrees: float,
+    *,
+    overwrite: bool = False,
+    destination_suffix: str = "_rotated",
+    expand: bool = True,
+    bucket_name: str = BUCKET_NAME,
+    storage_service_key: str | None = None,
+) -> dict[str, str]:
+    """
+    Rotate images stored in either local filesystem storage or Google Cloud Storage.
+
+    Inputs may be either:
+      - Storage keys (e.g. "uploads/rg1/rec1/image.jpg")
+      - GCS URLs (gs://... or https://storage.googleapis.com/... )
+
+    Returns:
+        A dict mapping each input to the destination URL (local URL for local backend,
+        and signed URL for cloud backend).
+    """
+    results: dict[str, str] = {}
+
+    for original in image_keys_or_urls:
+        _log.info(f"[rotate_images_in_storage] Processing: {original}")
+
+        if original.startswith("gs://") or original.startswith(
+            "https://storage.googleapis.com/"
+        ):
+            loc = parse_gcs_url(original)
+            src_bucket = loc.bucket
+            src_key = loc.blob_path
+        else:
+            src_bucket = bucket_name
+            src_key = original
+
+        dest_key = src_key if overwrite else _build_destination_path(
+            src_key, destination_suffix
+        )
+
+        # Download bytes using existing storage API read helper
+        if _is_local():
+            src_bytes = download_file_bytes(src_key)
+        else:
+            src_bytes = download_file_bytes(
+                src_key, bucket_name=src_bucket, storage_service_key=storage_service_key
+            )
+
+        image = _load_pil_image_from_bytes(src_bytes)
+
+        rotated = rotate_image(image, degrees, expand=expand)
+
+        pil_format, content_type = _guess_format_and_content_type(dest_key)
+
+        # JPEG cannot represent alpha
+        if pil_format == "JPEG" and rotated.mode in ("RGBA", "LA", "P"):
+            rotated = rotated.convert("RGB")
+
+        rotated_bytes = _save_pil_image_to_bytes(rotated, pil_format=pil_format)
+
+        # Upload back to the appropriate storage backend
+        if _is_local():
+            destination = _storage_path(dest_key)
+            _ensure_local_dir(destination)
+            with open(destination, "wb") as f:
+                f.write(rotated_bytes)
+        else:
+            _, dest_bucket = _get_bucket(
+                bucket_name=src_bucket, storage_service_key=storage_service_key
+            )
+            blob = dest_bucket.blob(dest_key)
+            blob.upload_from_string(rotated_bytes, content_type=content_type)
+
+        dest_url = get_file_url(dest_key, bucket_name=src_bucket)
+        results[original] = dest_url
+
+        _log.info(f"[rotate_images_in_storage]   ✓ Saved to: {dest_url}")
+
+    return results
