@@ -303,9 +303,6 @@ def list_files(prefix, bucket_name=None, storage_service_key=None):
 
 
 def download_file_bytes(key, bucket_name=None, storage_service_key=None):
-    _log.info(f"download_file_bytes")
-    _log.info(f"key: {key}")
-    _log.info(f"bucket_name: {bucket_name}")
     if _is_local():
         with open(_storage_path(key), "rb") as f:
             return f.read()
