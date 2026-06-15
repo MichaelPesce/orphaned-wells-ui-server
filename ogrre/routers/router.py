@@ -1738,7 +1738,6 @@ async def fetch_teams(user_info: dict = Depends(authenticate)):
     return resp
 
 
-
 @router.post("/rotate_images/{record_id}")
 async def rotate_record_images(
     record_id: str, request: Request, user_info: dict = Depends(authenticate)
@@ -1767,9 +1766,7 @@ async def rotate_record_images(
         rg_id = req.get("recordGroupId")
 
         if not selected_image_indices or not rg_id:
-            raise HTTPException(
-                status_code=400, detail="Missing required parameters"
-            )
+            raise HTTPException(status_code=400, detail="Missing required parameters")
 
         # Get the current image URLs
         image_urls = data_manager.getRecordImageUrls(record_id, rg_id)

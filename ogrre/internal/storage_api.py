@@ -321,6 +321,7 @@ def download_file_bytes(key, bucket_name=None, storage_service_key=None):
 # Image rotation
 # ------------------------------------------------------------------------------
 
+
 class GCSLocation(NamedTuple):
     bucket: str
     blob_path: str
@@ -372,7 +373,6 @@ def parse_gcs_url(url: str) -> GCSLocation:
         "Expected 'gs://bucket/path' or "
         "'https://storage.googleapis.com/bucket/path'."
     )
-
 
 
 def rotate_image(image, degrees: float, expand: bool = True):
@@ -476,8 +476,10 @@ def rotate_images_in_storage(
             src_bucket = bucket_name
             src_key = original
 
-        dest_key = src_key if overwrite else _build_destination_path(
-            src_key, destination_suffix
+        dest_key = (
+            src_key
+            if overwrite
+            else _build_destination_path(src_key, destination_suffix)
         )
 
         # Download bytes using existing storage API read helper
