@@ -1785,19 +1785,23 @@ async def rotate_record_images(
 
         # Extract the filenames from the URLs and build the new image_files list
         # Keep the old filenames for non-rotated images
+        new_image_urls = []
         new_image_files = []
         for idx, (filename, url) in enumerate(image_urls):
             if idx in selected_image_indices:
                 # For rotated images, keep the original filename
                 new_image_files.append(filename)
+                new_image_urls.append(url)
             else:
                 new_image_files.append(filename)
+                new_image_urls.append(url)
 
         return {
             "success": True,
             "message": "Images rotated successfully",
             "newImageFiles": new_image_files,
             "rotatedUrls": rotated_urls,
+            "new_image_urls": new_image_urls
         }
     except HTTPException:
         raise
