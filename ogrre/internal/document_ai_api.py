@@ -201,9 +201,7 @@ def batch_process_gcs_documents(
             for document in gcs_documents
         ]
     )
-    input_config = documentai.BatchDocumentsInputConfig(
-        gcs_documents=input_documents
-    )
+    input_config = documentai.BatchDocumentsInputConfig(gcs_documents=input_documents)
     output_config = documentai.DocumentOutputConfig(
         gcs_output_config=documentai.DocumentOutputConfig.GcsOutputConfig(
             gcs_uri=gcs_output_uri

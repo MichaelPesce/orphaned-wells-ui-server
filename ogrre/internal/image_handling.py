@@ -419,7 +419,9 @@ def _prepare_document_record(
             original_output_path, output_directory, filename
         )
     elif normalized_ext == ".pdf":
-        output_paths = convert_pdf_file(original_output_path, output_directory, filename)
+        output_paths = convert_pdf_file(
+            original_output_path, output_directory, filename
+        )
     else:
         output_paths = [original_output_path]
 
@@ -598,9 +600,11 @@ def process_document(
         mime_type=mime_type,
     )
 
-    processor_id, model_id, processor_attributes = (
-        data_manager.getProcessorByRecordGroupID(rg_id)
-    )
+    (
+        processor_id,
+        model_id,
+        processor_attributes,
+    ) = data_manager.getProcessorByRecordGroupID(rg_id)
     _schedule_document_ai_processing(
         prepared_document=prepared_document,
         background_tasks=background_tasks,
@@ -812,9 +816,11 @@ def process_local_documents_batch(
     _cleanup_local_files(files_to_cleanup)
 
     if prepared_documents:
-        processor_id, model_id, processor_attributes = (
-            data_manager.getProcessorByRecordGroupID(rg_id)
-        )
+        (
+            processor_id,
+            model_id,
+            processor_attributes,
+        ) = data_manager.getProcessorByRecordGroupID(rg_id)
         background_tasks.add_task(
             process_document_batch,
             prepared_documents=prepared_documents,
@@ -841,8 +847,7 @@ def process_local_documents_batch(
 
 def _can_use_document_ai_batch():
     return (
-        document_ai_api.supports_batch_processing()
-        and storage_api.is_google_storage()
+        document_ai_api.supports_batch_processing() and storage_api.is_google_storage()
     )
 
 
@@ -1030,13 +1035,17 @@ def _process_documents_with_google_batch(
     finally:
         if DOCUMENT_AI_BATCH_CLEANUP:
             try:
-                storage_api.delete_gcs_uri_prefix(storage_api.make_gcs_uri(input_prefix))
+                storage_api.delete_gcs_uri_prefix(
+                    storage_api.make_gcs_uri(input_prefix)
+                )
                 storage_api.delete_gcs_uri_prefix(output_gcs_uri)
             except Exception as e:
                 _log.info(f"unable to clean Document AI batch staging files: {e}")
 
 
-def _attributes_from_output_destination(output_gcs_destination, using_default_processor):
+def _attributes_from_output_destination(
+    output_gcs_destination, using_default_processor
+):
     if not output_gcs_destination:
         raise ValueError("Document AI did not provide an output destination")
 
