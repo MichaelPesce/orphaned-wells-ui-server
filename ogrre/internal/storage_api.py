@@ -65,6 +65,64 @@ def _is_local():
     return STORAGE_BACKEND == "local"
 
 
+def is_google_storage():
+    return not _is_local()
+
+
+def parse_gcs_uri(gcs_uri):
+    parsed = urlparse(gcs_uri)
+    if parsed.scheme != "gs" or not parsed.netloc:
+        raise ValueError(f"Invalid GCS URI: {gcs_uri}")
+    return parsed.netloc, unquote(parsed.path.lstrip("/"))
+
+
+def make_gcs_uri(key, bucket_name=BUCKET_NAME):
+    if not bucket_name:
+        raise ValueError("STORAGE_BUCKET_NAME is required to build a GCS URI")
+    return f"gs://{bucket_name}/{quote(key, safe='/')}"
+
+
+def upload_file_to_gcs(file_path, key, content_type=None, bucket_name=BUCKET_NAME):
+    if _is_local():
+        raise ValueError("GCS upload requested while STORAGE_BACKEND is local")
+    _, bucket = _get_bucket(bucket_name=bucket_name)
+    blob = bucket.blob(key)
+    blob.upload_from_filename(file_path, content_type=content_type)
+    return make_gcs_uri(key, bucket_name=bucket_name)
+
+
+def upload_bytes(file_bytes, file_name, folder="uploads", content_type=None):
+    key = f"{folder}/{file_name}" if folder else file_name
+    if _is_local():
+        destination = _storage_path(key)
+        _ensure_local_dir(destination)
+        with open(destination, "wb") as f:
+            f.write(file_bytes)
+        _log.info(f"uploaded document to local storage: {destination}")
+        return destination
+
+    _, bucket = _get_bucket(bucket_name=BUCKET_NAME)
+    blob = bucket.blob(key)
+    blob.upload_from_string(file_bytes, content_type=content_type)
+    _log.info(f"uploaded document to cloud storage: {key}")
+    return blob.self_link
+
+
+def list_gcs_uri(gcs_uri):
+    bucket_name, prefix = parse_gcs_uri(gcs_uri)
+    return list_files(prefix=prefix, bucket_name=bucket_name)
+
+
+def download_gcs_uri_bytes(gcs_uri):
+    bucket_name, key = parse_gcs_uri(gcs_uri)
+    return download_file_bytes(key=key, bucket_name=bucket_name)
+
+
+def delete_gcs_uri_prefix(gcs_uri):
+    bucket_name, prefix = parse_gcs_uri(gcs_uri)
+    return delete_directory(prefix=prefix, bucket_name=bucket_name)
+
+
 async def upload_file(file_path, file_name, folder="uploads", on_bytes_read=None):
     key = f"{folder}/{file_name}" if folder else file_name
     if _is_local():

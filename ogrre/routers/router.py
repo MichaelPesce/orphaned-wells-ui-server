@@ -1,6 +1,5 @@
 import os
 import logging
-import aiofiles
 import requests
 import secrets
 from fastapi import (
@@ -14,11 +13,12 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
-from typing import Optional
+from typing import List, Optional
 
 from ogrre.internal.data_manager import DEFAULT_UNAUTHENTICATED_TEAM, data_manager
 from ogrre.internal.image_handling import (
-    process_document,
+    process_single_file,
+    process_upload_files_batch,
     process_zip,
     deployProcessor,
     undeployProcessor,
@@ -780,38 +780,74 @@ async def upload_document(
         backend_url = str(request.base_url)
         output_dir = f"{data_manager.app_settings.img_dir}"
         return process_zip(
-            rg_id, user_info, background_tasks, file, output_dir, filename, backend_url
+            rg_id,
+            user_info,
+            background_tasks,
+            file,
+            output_dir,
+            filename,
+            backend_url,
+            data_manager=data_manager,
+            preventDuplicates=preventDuplicates,
+            reprocessed=reprocessed,
+            run_cleaning_functions=run_cleaning_functions,
+            undeployProcessor=undeployProcessor,
         )
 
+    return await process_single_file(
+        rg_id=rg_id,
+        user_info=user_info,
+        background_tasks=background_tasks,
+        file=file,
+        data_manager=data_manager,
+        reprocessed=reprocessed,
+        run_cleaning_functions=run_cleaning_functions,
+        undeployProcessor=undeployProcessor,
+    )
+
+
+@router.post("/upload_documents_batch/{rg_id}/{user_email}")
+async def upload_documents_batch(
+    rg_id: str,
+    user_email: str,
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    reprocessed: bool = False,
+    preventDuplicates: bool = False,
+    run_cleaning_functions: bool = True,
+    undeployProcessor: bool = True,
+):
+    """Upload a directory-sized group of documents for batch processing."""
+    user_email = user_email.lower()
+    if not REQUIRE_AUTH:
+        user_info = anonymous_user()
+    elif not data_manager.hasPermission(user_email, "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
     else:
-        original_output_path = f"{data_manager.app_settings.img_dir}/{file.filename}"
-        mime_type = file.content_type
-        ## read document file
-        try:
-            async with aiofiles.open(original_output_path, "wb") as out_file:
-                chunk_size = 1024 * 1024
-                while True:
-                    chunk = await file.read(chunk_size)
-                    if not chunk:
-                        break
-                    await out_file.write(chunk)
-            return process_document(
-                rg_id,
-                user_info,
-                background_tasks,
-                original_output_path,
-                file_ext,
-                filename,
-                data_manager,
-                mime_type,
-                doc_ai_input_path=original_output_path,
-                reprocessed=reprocessed,
-                run_cleaning_functions=run_cleaning_functions,
-                undeployProcessor=undeployProcessor,
-            )
-        except Exception as e:
-            _log.error(f"unable to read image file: {e}")
-            raise HTTPException(400, detail=f"Unable to process image file: {e}")
+        user_info = data_manager.getUserInfo(user_email)
+        if user_info is None:
+            raise HTTPException(404, detail=f"User not found")
+
+    project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
+    if not project_is_valid:
+        raise HTTPException(404, detail=f"Project not found")
+    if not files:
+        raise HTTPException(400, detail="No files uploaded")
+
+    return await process_upload_files_batch(
+        rg_id=rg_id,
+        user_info=user_info,
+        background_tasks=background_tasks,
+        files=files,
+        data_manager=data_manager,
+        preventDuplicates=preventDuplicates,
+        reprocessed=reprocessed,
+        run_cleaning_functions=run_cleaning_functions,
+        undeployProcessor=undeployProcessor,
+    )
 
 
 @router.post("/deploy_processor/{rg_id}")

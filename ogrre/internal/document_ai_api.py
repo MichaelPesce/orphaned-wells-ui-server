@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import sys
+from typing import Dict, List
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import documentai
@@ -80,8 +81,12 @@ def process_document_content(
     raw_document = documentai.RawDocument(content=image_content, mime_type=mime_type)
     request = documentai.ProcessRequest(name=resource_name, raw_document=raw_document)
     result = docai_client.process_document(request=request)
-    document_object = result.document
+    return document_to_attributes_list(
+        result.document, using_default_processor=using_default_processor
+    )
 
+
+def document_to_attributes_list(document_object, using_default_processor=False):
     document_entities = document_object.entities
     if using_default_processor:
         if not document_entities:
@@ -155,6 +160,83 @@ def process_document_content(
         attributes_list.append(new_attribute)
 
     return attributes_list
+
+
+def attributes_from_document_json(document_bytes, using_default_processor=False):
+    document_object = documentai.Document.from_json(
+        document_bytes, ignore_unknown_fields=True
+    )
+    return document_to_attributes_list(
+        document_object, using_default_processor=using_default_processor
+    )
+
+
+def supports_batch_processing():
+    return DOCUMENT_AI_BACKEND == "google" and bool(PROJECT_ID) and bool(LOCATION)
+
+
+def batch_process_gcs_documents(
+    gcs_documents: List[Dict[str, str]],
+    processor_id,
+    model_id,
+    gcs_output_uri,
+    timeout=3600,
+):
+    if DOCUMENT_AI_BACKEND != "google":
+        raise ValueError("Document AI batch processing requires the google backend")
+    if not gcs_documents:
+        return []
+
+    docai_client = _get_docai_client()
+    resource_name = docai_client.processor_version_path(
+        PROJECT_ID, LOCATION, processor_id, model_id
+    )
+
+    input_documents = documentai.GcsDocuments(
+        documents=[
+            documentai.GcsDocument(
+                gcs_uri=document["gcs_uri"],
+                mime_type=document["mime_type"],
+            )
+            for document in gcs_documents
+        ]
+    )
+    input_config = documentai.BatchDocumentsInputConfig(
+        gcs_documents=input_documents
+    )
+    output_config = documentai.DocumentOutputConfig(
+        gcs_output_config=documentai.DocumentOutputConfig.GcsOutputConfig(
+            gcs_uri=gcs_output_uri
+        )
+    )
+    request = documentai.BatchProcessRequest(
+        name=resource_name,
+        input_documents=input_config,
+        document_output_config=output_config,
+    )
+
+    operation = docai_client.batch_process_documents(request=request)
+    _log.info(f"waiting for Document AI batch operation {operation.operation.name}")
+    operation.result(timeout=timeout)
+
+    metadata = operation.metadata
+    if not isinstance(metadata, documentai.BatchProcessMetadata):
+        metadata = documentai.BatchProcessMetadata(metadata)
+    if metadata.state != documentai.BatchProcessMetadata.State.SUCCEEDED:
+        raise ValueError(f"Batch Process Failed: {metadata.state_message}")
+
+    statuses = []
+    for process_status in metadata.individual_process_statuses:
+        status = process_status.status
+        statuses.append(
+            {
+                "input_gcs_source": process_status.input_gcs_source,
+                "status_code": getattr(status, "code", 0),
+                "status_message": getattr(status, "message", ""),
+                "output_gcs_destination": process_status.output_gcs_destination,
+            }
+        )
+    return statuses
 
 
 def _process_document_content_custom(
