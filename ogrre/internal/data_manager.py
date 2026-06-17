@@ -2094,22 +2094,19 @@ class DataManager:
 
     @time_it
     def checkIfRecordExists(self, filename, rg_id):
-        ## remove file extension
-        filename = filename.split(".")[0]
-
-        ## query database
-        query = {"filename": {"$regex": f"^{filename}$"}, "record_group_id": rg_id}
-        found_document = self.db.records.count_documents(query)
-        if found_document > 0:
-            return True
-        else:
-            return False
+        return len(self.checkIfRecordsExist([filename], rg_id)) > 0
 
     @time_it
     def checkIfRecordsExist(self, filenames, rg_id):
-        # Convert filenames into regex patterns
-
-        bases = [f.split(".")[0] for f in filenames]
+        bases = sorted(
+            {
+                os.path.basename(str(filename)).split(".")[0]
+                for filename in filenames
+                if filename
+            }
+        )
+        if not bases:
+            return []
 
         query = {
             "record_group_id": rg_id,
@@ -2121,8 +2118,10 @@ class DataManager:
         record_cursor = self.db.records.find(query, {"filename": 1})
         duplicate_records = set()
         for document in record_cursor:
-            duplicate_records.add(document["filename"].split(".")[0])
-        return list(duplicate_records)
+            duplicate_records.add(
+                os.path.basename(document["filename"]).split(".")[0]
+            )
+        return sorted(duplicate_records)
 
     def checkRecordGroupValidity(self, rg_id):
         try:

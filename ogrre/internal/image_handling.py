@@ -137,6 +137,29 @@ def _dedupe_filename(filename: str, used_names: set) -> str:
     return candidate
 
 
+def _duplicate_record_key(filename: str) -> str:
+    return os.path.basename(filename).split(".")[0]
+
+
+def _find_duplicate_candidate_filenames(candidates, data_manager, rg_id):
+    if not candidates:
+        return set()
+
+    existing_record_keys = set(
+        data_manager.checkIfRecordsExist(
+            [candidate["filename"] for candidate in candidates], rg_id
+        )
+    )
+    if not existing_record_keys:
+        return set()
+
+    return {
+        candidate["filename"]
+        for candidate in candidates
+        if _duplicate_record_key(candidate["filename"]) in existing_record_keys
+    }
+
+
 def _make_processing_dir(image_dir: str, prefix: str = "upload_") -> str:
     os.makedirs(image_dir, exist_ok=True)
     return tempfile.mkdtemp(prefix=prefix, dir=image_dir)
@@ -315,53 +338,134 @@ def _update_record_with_attributes(
     return record_id
 
 
-def _upload_record_images(prepared_document: PreparedDocument, data_manager):
+def _get_record_image_uploads(prepared_document: PreparedDocument):
+    uploads = []
+    for output_path, file_name in zip(
+        prepared_document.output_paths, prepared_document.image_file_names
+    ):
+        uploads.append(
+            {
+                "file_path": output_path,
+                "key": (
+                    f"uploads/{prepared_document.rg_id}/"
+                    f"{prepared_document.record_id}/{file_name}"
+                ),
+                "content_type": _get_supported_mime_type(file_name),
+            }
+        )
+    return uploads
+
+
+def _detect_record_image_whitespace(prepared_document: PreparedDocument):
     whitespace_results = []
     for output_path, file_name in zip(
         prepared_document.output_paths, prepared_document.image_file_names
     ):
+        if not DETECT_WHITESPACE:
+            continue
+
         with open(output_path, "rb") as file_handle:
             file_bytes = file_handle.read()
 
-        if DETECT_WHITESPACE:
-            try:
-                result = detect_whitespace_from_bytes(
-                    file_bytes, min_whitespace_pct=99.99
-                )
-                whitespace_results.append(
-                    {
-                        "is_mostly_whitespace": result.get("meets_threshold"),
-                        "whitespace_pct": result.get("whitespace_pct"),
-                        "threshold": result.get("threshold"),
-                        "total_pixels": result.get("total_pixels"),
-                        "white_pixels": result.get("white_pixels"),
-                        "error": None,
-                    }
-                )
-            except Exception as e:
-                whitespace_results.append(
-                    {
-                        "is_mostly_whitespace": None,
-                        "whitespace_pct": None,
-                        "threshold": None,
-                        "total_pixels": None,
-                        "white_pixels": None,
-                        "error": str(e),
-                    }
-                )
-
-        storage_api.upload_bytes(
-            file_bytes=file_bytes,
-            file_name=file_name,
-            folder=f"uploads/{prepared_document.rg_id}/{prepared_document.record_id}",
-            content_type=_get_supported_mime_type(file_name),
-        )
+        try:
+            result = detect_whitespace_from_bytes(
+                file_bytes, min_whitespace_pct=99.99
+            )
+            whitespace_results.append(
+                {
+                    "is_mostly_whitespace": result.get("meets_threshold"),
+                    "whitespace_pct": result.get("whitespace_pct"),
+                    "threshold": result.get("threshold"),
+                    "total_pixels": result.get("total_pixels"),
+                    "white_pixels": result.get("white_pixels"),
+                    "error": None,
+                }
+            )
+        except Exception as e:
+            whitespace_results.append(
+                {
+                    "is_mostly_whitespace": None,
+                    "whitespace_pct": None,
+                    "threshold": None,
+                    "total_pixels": None,
+                    "white_pixels": None,
+                    "error": str(e),
+                }
+            )
         del file_bytes
+    return whitespace_results
+
+
+def _raise_for_upload_failures(upload_results):
+    failures = [result["error"] for result in upload_results if result.get("error")]
+    if failures:
+        raise RuntimeError("; ".join(str(failure) for failure in failures))
+
+
+def _upload_record_images(prepared_document: PreparedDocument, data_manager):
+    whitespace_results = _detect_record_image_whitespace(prepared_document)
+    upload_results = storage_api.upload_file_paths(
+        _get_record_image_uploads(prepared_document)
+    )
+    _raise_for_upload_failures(upload_results)
 
     if DETECT_WHITESPACE:
         data_manager.updateRecordInternal(
             prepared_document.record_id, "image_whitespace", whitespace_results
         )
+
+
+def _upload_record_images_batch(
+    prepared_documents: List[PreparedDocument], data_manager
+):
+    upload_items = []
+    upload_documents = []
+    whitespace_by_record = {}
+    failures_by_record = {}
+
+    for prepared_document in prepared_documents:
+        try:
+            whitespace_by_record[
+                prepared_document.record_id
+            ] = _detect_record_image_whitespace(prepared_document)
+            document_uploads = _get_record_image_uploads(prepared_document)
+            upload_items.extend(document_uploads)
+            upload_documents.extend([prepared_document] * len(document_uploads))
+        except Exception as e:
+            failures_by_record[prepared_document.record_id] = e
+
+    upload_results = storage_api.upload_file_paths(upload_items)
+    for upload_result, prepared_document in zip(upload_results, upload_documents):
+        if (
+            upload_result.get("error")
+            and prepared_document.record_id not in failures_by_record
+        ):
+            failures_by_record[prepared_document.record_id] = upload_result["error"]
+
+    ready_documents = []
+    for prepared_document in prepared_documents:
+        failure = failures_by_record.get(prepared_document.record_id)
+        if failure:
+            _mark_record_error(
+                prepared_document.record_id,
+                prepared_document.rg_id,
+                prepared_document.file_name,
+                data_manager,
+                failure,
+                "upload_record_images",
+            )
+            _cleanup_local_files(prepared_document.files_to_delete)
+            continue
+
+        if DETECT_WHITESPACE:
+            data_manager.updateRecordInternal(
+                prepared_document.record_id,
+                "image_whitespace",
+                whitespace_by_record.get(prepared_document.record_id, []),
+            )
+        ready_documents.append(prepared_document)
+
+    return ready_documents
 
 
 def convert_pdf_file(input_path, output_directory, output_stem, convert_to=".png"):
@@ -788,11 +892,16 @@ def process_local_documents_batch(
     prepared_documents = []
     files_to_cleanup = []
     batch_id = uuid.uuid4().hex
+    duplicate_candidate_filenames = set()
+    if preventDuplicates:
+        duplicate_candidate_filenames = _find_duplicate_candidate_filenames(
+            candidates, data_manager, rg_id
+        )
 
     for candidate in candidates:
         filename = candidate["filename"]
         candidate_path = candidate["path"]
-        if preventDuplicates and data_manager.checkIfRecordExists(filename, rg_id):
+        if filename in duplicate_candidate_filenames:
             duplicate_files.append(filename)
             files_to_cleanup.append(candidate_path)
             continue
@@ -863,22 +972,7 @@ def process_document_batch(
     undeployProcessor=True,
     batch_id=None,
 ):
-    ready_documents = []
-    for prepared_document in prepared_documents:
-        try:
-            _upload_record_images(prepared_document, data_manager)
-            ready_documents.append(prepared_document)
-        except Exception as e:
-            _mark_record_error(
-                prepared_document.record_id,
-                rg_id,
-                prepared_document.file_name,
-                data_manager,
-                e,
-                "upload_record_images",
-            )
-            _cleanup_local_files(prepared_document.files_to_delete)
-
+    ready_documents = _upload_record_images_batch(prepared_documents, data_manager)
     if not ready_documents:
         return
 
@@ -936,16 +1030,37 @@ def _process_documents_with_google_batch(
     output_gcs_uri = storage_api.make_gcs_uri(output_prefix)
     gcs_documents = []
     document_by_gcs_uri: Dict[str, PreparedDocument] = {}
+    document_by_input_key: Dict[str, PreparedDocument] = {}
+    upload_items = []
 
     try:
         for prepared_document in prepared_documents:
             input_ext = Path(prepared_document.original_filename).suffix.lower()
             input_key = f"{input_prefix}/{prepared_document.record_id}{input_ext}"
-            gcs_uri = storage_api.upload_file_to_gcs(
-                prepared_document.doc_ai_input_path,
-                input_key,
-                content_type=prepared_document.mime_type,
+            upload_items.append(
+                {
+                    "file_path": prepared_document.doc_ai_input_path,
+                    "key": input_key,
+                    "content_type": prepared_document.mime_type,
+                }
             )
+            document_by_input_key[input_key] = prepared_document
+
+        upload_results = storage_api.upload_file_paths(upload_items)
+        for upload_result in upload_results:
+            prepared_document = document_by_input_key[upload_result["key"]]
+            if upload_result.get("error"):
+                _mark_record_error(
+                    prepared_document.record_id,
+                    rg_id,
+                    prepared_document.file_name,
+                    data_manager,
+                    upload_result["error"],
+                    "stage_document_ai_batch_input",
+                )
+                continue
+
+            gcs_uri = upload_result["gcs_uri"]
             gcs_documents.append(
                 {
                     "gcs_uri": gcs_uri,
@@ -954,6 +1069,9 @@ def _process_documents_with_google_batch(
             )
             document_by_gcs_uri[gcs_uri] = prepared_document
             document_by_gcs_uri[unquote(gcs_uri)] = prepared_document
+
+        if not gcs_documents:
+            return
 
         process_statuses = document_ai_api.batch_process_gcs_documents(
             gcs_documents=gcs_documents,

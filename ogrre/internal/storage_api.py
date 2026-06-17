@@ -12,7 +12,9 @@ import io
 import logging
 import os
 import re
+import shutil
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import quote, urlparse, unquote
@@ -22,6 +24,7 @@ import aiohttp
 from gcloud.aio.storage import Storage
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
+from google.cloud.storage import transfer_manager
 
 try:
     from PIL import Image
@@ -34,6 +37,8 @@ DIRNAME, _ = os.path.split(os.path.abspath(sys.argv[0]))
 STORAGE_SERVICE_KEY = os.getenv("STORAGE_SERVICE_KEY")
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "google").lower()
+GCS_UPLOAD_MAX_WORKERS = int(os.getenv("GCS_UPLOAD_MAX_WORKERS", "8"))
+GCS_UPLOAD_WORKER_TYPE = os.getenv("GCS_UPLOAD_WORKER_TYPE", "thread").lower()
 LOCAL_STORAGE_ROOT = os.path.expanduser(
     os.getenv("LOCAL_STORAGE_ROOT", "~/.ogrre/uploads")
 )
@@ -89,6 +94,97 @@ def upload_file_to_gcs(file_path, key, content_type=None, bucket_name=BUCKET_NAM
     blob = bucket.blob(key)
     blob.upload_from_filename(file_path, content_type=content_type)
     return make_gcs_uri(key, bucket_name=bucket_name)
+
+
+def _transfer_worker_type():
+    if GCS_UPLOAD_WORKER_TYPE == "process":
+        return transfer_manager.PROCESS
+    return transfer_manager.THREAD
+
+
+def _public_storage_url(bucket_name, key):
+    return f"https://storage.googleapis.com/{bucket_name}/{quote(key, safe='/')}"
+
+
+def upload_file_paths(file_uploads, bucket_name=BUCKET_NAME, max_workers=None):
+    """
+    Upload local files to the configured storage backend.
+
+    Cloud Storage has no single-request batch upload API. For Google storage this
+    uses transfer_manager.upload_many, which uploads many objects concurrently
+    and returns one result per input file.
+    """
+    if not file_uploads:
+        return []
+
+    results = [None] * len(file_uploads)
+
+    if _is_local():
+        for idx, upload in enumerate(file_uploads):
+            key = upload["key"]
+            destination = _storage_path(key)
+            try:
+                _ensure_local_dir(destination)
+                shutil.copyfile(upload["file_path"], destination)
+                results[idx] = {
+                    "key": key,
+                    "url": destination,
+                    "gcs_uri": None,
+                    "error": None,
+                }
+                _log.info(f"uploaded document to local storage: {destination}")
+            except Exception as e:
+                results[idx] = {
+                    "key": key,
+                    "url": None,
+                    "gcs_uri": None,
+                    "error": e,
+                }
+        return results
+
+    if not bucket_name:
+        raise ValueError("STORAGE_BUCKET_NAME is required for GCS uploads")
+
+    _, bucket = _get_bucket(bucket_name=bucket_name)
+    grouped_uploads = defaultdict(list)
+    for idx, upload in enumerate(file_uploads):
+        key = upload["key"]
+        blob = bucket.blob(key)
+        content_type = upload.get("content_type")
+        grouped_uploads[content_type].append((idx, upload["file_path"], key, blob))
+
+    for content_type, uploads in grouped_uploads.items():
+        file_blob_pairs = [(file_path, blob) for _, file_path, _, blob in uploads]
+        upload_kwargs = {}
+        if content_type:
+            upload_kwargs["content_type"] = content_type
+
+        try:
+            upload_results = transfer_manager.upload_many(
+                file_blob_pairs,
+                upload_kwargs=upload_kwargs or None,
+                raise_exception=False,
+                worker_type=_transfer_worker_type(),
+                max_workers=max_workers or GCS_UPLOAD_MAX_WORKERS,
+            )
+        except Exception as e:
+            upload_results = [e] * len(uploads)
+
+        for upload_result, (idx, _, key, blob) in zip(upload_results, uploads):
+            error = upload_result if isinstance(upload_result, Exception) else None
+            if error:
+                _log.error(f"failed to upload {key} to cloud storage: {error}")
+            else:
+                _log.info(f"uploaded document to cloud storage: {key}")
+            results[idx] = {
+                "key": key,
+                "url": getattr(blob, "self_link", None)
+                or _public_storage_url(bucket_name, key),
+                "gcs_uri": make_gcs_uri(key, bucket_name=bucket_name),
+                "error": error,
+            }
+
+    return results
 
 
 def upload_bytes(file_bytes, file_name, folder="uploads", content_type=None):
