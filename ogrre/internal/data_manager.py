@@ -967,6 +967,10 @@ class DataManager:
         document["rg_name"] = rg_name
         document["rg_id"] = rg_id
 
+        ## 06/17/2026: add functionality for data fusion
+        ## if data_fusion exists, only use subset of processor attributes
+        data_fusion = rg.get("data_fusion", None)
+
         ## get project name
         project_document = self.getProjectFromRecordGroup(rg_id)
         project_name = project_document.get("name", "")
@@ -1006,7 +1010,7 @@ class DataManager:
             google_id = rg["processorId"]
             processor_doc = self.getProcessorById(google_id)
             sorted_attributes, update_db = util.sortRecordAttributes(
-                document["attributesList"], processor_doc
+                document["attributesList"], processor_doc, data_fusion=data_fusion
             )
             document["attributesList"] = sorted_attributes
 
