@@ -875,12 +875,16 @@ class DataManager:
         elif location == "record_group":
             columns = []
             rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
+            data_fusion = rg_document.get("data_fusion", None)
             rg_document["_id"] = _id
             google_id = rg_document["processorId"]
             processor = self.getProcessorByGoogleId(google_id)
             if processor is None:
                 return None
             for attr in processor["attributes"]:
+                attr_name = attr["name"]
+                if data_fusion and attr_name not in data_fusion:
+                    continue
                 columns.append(attr["name"])
             return {"columns": columns, "obj": rg_document}
         return None
