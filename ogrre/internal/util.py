@@ -78,8 +78,10 @@ def sortRecordAttributes(
                     _log.debug(f"{attribute_name} is None")
                 else:
                     # get alias from processor metadata, if it exists
-                    processor_attribute_data = processor_attributes_dict.get(attribute_name)
-                    if (processor_attribute_data):
+                    processor_attribute_data = processor_attributes_dict.get(
+                        attribute_name
+                    )
+                    if processor_attribute_data:
                         attribute["alias"] = processor_attribute_data.get("alias")
                     sorted_attributes.append(attribute)
             if len(found_) == 0:
@@ -104,7 +106,7 @@ def sortRecordAttributes(
                 )
                 # get alias from processor metadata, if it exists
                 processor_attribute_data = processor_attributes_dict.get(attribute_name)
-                if (processor_attribute_data):
+                if processor_attribute_data:
                     attr["alias"] = processor_attribute_data.get("alias")
                 sorted_attributes.append(attr)
             else:
