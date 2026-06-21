@@ -44,7 +44,9 @@ def time_it(func):
     return wrapper
 
 
-def sortRecordAttributes(attributes, processor, keep_all_attributes=False, data_fusion=None):
+def sortRecordAttributes(
+    attributes, processor, keep_all_attributes=False, data_fusion=None
+):
     if processor is None:
         _log.info(f"no processor found")
         return attributes, False
