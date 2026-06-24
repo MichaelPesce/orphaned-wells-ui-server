@@ -121,7 +121,7 @@ def process_document_content(
 
             new_subattribute = {
                 "key": original_sub_attribute,
-                "ai_confidence": confidence,
+                "ai_confidence": sub_confidence,
                 "confidence": sub_confidence,
                 "raw_text": sub_raw_text,
                 "text_value": sub_text_value,
