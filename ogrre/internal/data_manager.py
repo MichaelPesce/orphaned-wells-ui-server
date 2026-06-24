@@ -62,6 +62,158 @@ class DataManager:
         self.ensureDefaultUnauthenticatedTeam()
         self.createProcessorsList()
 
+    def _createEmptyRecordAttribute(
+        self,
+        key,
+        is_subattribute=False,
+        top_level_attribute=None,
+        parent_attribute=None,
+    ):
+        new_field = {
+            "key": key,
+            "ai_confidence": None,
+            "confidence": None,
+            "raw_text": None,
+            "text_value": None,
+            "value": "",
+            "normalized_vertices": None,
+            "normalized_value": None,
+            "subattributes": [],
+            "isSubattribute": is_subattribute,
+            "edited": False,
+            "page": None,
+            "user_added": True,
+        }
+        if is_subattribute:
+            new_field["topLevelAttribute"] = top_level_attribute
+            new_field["parentAttribute"] = parent_attribute
+        return new_field
+
+    def _getAttributeAtPath(self, attributes, primary_index, subattribute_index_path):
+        attribute = attributes[primary_index]
+        attribute_identifier = attribute.get("key")
+        for sub_index in subattribute_index_path or []:
+            subattributes = attribute.get("subattributes") or []
+            attribute = subattributes[sub_index]
+            attribute_identifier = util.get_attribute_identifier(
+                attribute, attribute_identifier
+            )
+        return attribute, attribute_identifier
+
+    def _getSubattributeParentList(
+        self, attributes, primary_index, subattribute_index_path
+    ):
+        top_level_attribute = attributes[primary_index]
+        parent_attribute = top_level_attribute
+        parent_identifier = top_level_attribute.get("key")
+        parent_list = parent_attribute.setdefault("subattributes", [])
+
+        for sub_index in (subattribute_index_path or [])[:-1]:
+            parent_attribute = parent_list[sub_index]
+            parent_identifier = util.get_attribute_identifier(
+                parent_attribute, parent_identifier
+            )
+            parent_list = parent_attribute.setdefault("subattributes", [])
+
+        return parent_list, parent_attribute, parent_identifier
+
+    def _updateRecordAttributesForFieldOperation(
+        self,
+        _id,
+        new_data,
+        update_type,
+        user=None,
+    ):
+        record_doc = self.db.records.find_one({"_id": _id}, {"attributesList": 1})
+        if not record_doc:
+            _log.info("record lookup returned no document for field operation")
+            return False
+
+        attributes = util.normalize_record_attribute_tree(
+            record_doc.get("attributesList") or []
+        )
+        fieldID = new_data.get("fieldID") or {}
+        key = fieldID.get("key")
+        primaryIndex = fieldID.get("primaryIndex")
+        isSubattribute = fieldID.get("isSubattribute")
+        subattribute_index_path = util.normalize_subattribute_index_path(
+            fieldID, fieldID.get("subIndex")
+        )
+
+        if primaryIndex is None:
+            _log.info("field operation missing primaryIndex")
+            return False
+
+        if update_type == "insertField":
+            if not isSubattribute:
+                newIndex = primaryIndex + 1
+                attributes.insert(
+                    newIndex,
+                    self._createEmptyRecordAttribute(key, is_subattribute=False),
+                )
+            else:
+                parent_list, _, parent_identifier = self._getSubattributeParentList(
+                    attributes, primaryIndex, subattribute_index_path
+                )
+                if subattribute_index_path:
+                    newSubIndex = subattribute_index_path[-1] + 1
+                else:
+                    newSubIndex = len(parent_list)
+                top_level_attribute = attributes[primaryIndex].get("key")
+                parent_attribute = (
+                    parent_identifier
+                    or new_data.get("parentAttribute")
+                    or top_level_attribute
+                )
+                parent_list.insert(
+                    newSubIndex,
+                    self._createEmptyRecordAttribute(
+                        key,
+                        is_subattribute=True,
+                        top_level_attribute=top_level_attribute,
+                        parent_attribute=parent_attribute,
+                    ),
+                )
+        elif update_type == "deleteField":
+            if not isSubattribute:
+                del attributes[primaryIndex]
+            else:
+                if not subattribute_index_path:
+                    _log.info("deleteField missing subattribute index path")
+                    return False
+                parent_list, _, _ = self._getSubattributeParentList(
+                    attributes, primaryIndex, subattribute_index_path
+                )
+                del parent_list[subattribute_index_path[-1]]
+        elif update_type == "updateFieldCoordinates":
+            current_time = time.time()
+            new_coordinates = new_data.get("new_coordinates")
+            pageNumber = new_data.get("pageNumber")
+            if not isSubattribute:
+                target_attribute = attributes[primaryIndex]
+            else:
+                if not subattribute_index_path:
+                    _log.info("updateFieldCoordinates missing subattribute index path")
+                    return False
+                target_attribute, _ = self._getAttributeAtPath(
+                    attributes, primaryIndex, subattribute_index_path
+                )
+                attributes[primaryIndex]["lastUpdated"] = current_time
+                attributes[primaryIndex]["lastUpdatedUser"] = user
+                attributes[primaryIndex]["edited"] = True
+
+            target_attribute["user_provided_coordinates"] = new_coordinates
+            target_attribute["page"] = pageNumber
+            target_attribute["lastUpdated"] = current_time
+            target_attribute["lastUpdatedUser"] = user
+            target_attribute["edited"] = True
+        else:
+            _log.info(f"unsupported field operation update type: {update_type}")
+            return False
+
+        util.normalize_record_attribute_tree(attributes)
+        return {"attributesList": attributes}
+
     def ensureDefaultUnauthenticatedTeam(self):
         if REQUIRE_AUTH:
             return
@@ -1326,6 +1478,9 @@ class DataManager:
                     v = new_data.get("v", None)
                     reviewStatus = new_data.get("review_status", None)
                     subIndex = new_data.get("subIndex", None)
+                    subIndexPath = util.normalize_subattribute_index_path(
+                        new_data, subIndex
+                    )
                     ## update can be in the form of 'attributesList.[idx]?.subattributes?.[subidx]
                     if not is_subattribute:
                         attr_key = f"attributesList.{idx}"
@@ -1334,7 +1489,9 @@ class DataManager:
                         }
                         update_key_parts = attr_key.split(".")
                     else:
-                        attr_key = f"attributesList.{idx}.subattributes.{subIndex}"
+                        attr_key = util.attribute_index_path_to_mongo_path(
+                            idx, subIndexPath
+                        )
                         data_update = {
                             attr_key: v,
                         }
@@ -1343,210 +1500,14 @@ class DataManager:
                         data_update["review_status"] = "incomplete"
 
                 elif is_insert_delete_or_coordinates_update:
-                    fieldID = new_data.get("fieldID")
-                    parentAttribute = new_data.get("parentAttribute")
-                    k = fieldID.get("key")
-                    primaryIndex = fieldID.get("primaryIndex")
-                    isSubattribute = fieldID.get("isSubattribute")
-                    subIndex = fieldID.get("subIndex")
-                    if update_type == "insertField":
-                        if not isSubattribute:
-                            newIndex = primaryIndex + 1
-                            newField = {
-                                "key": k,
-                                "ai_confidence": None,
-                                "confidence": None,
-                                "raw_text": None,
-                                "text_value": None,
-                                "value": "",
-                                "normalized_vertices": None,
-                                "normalized_value": None,
-                                "subattributes": None,
-                                "isSubattribute": False,
-                                "edited": False,
-                                "page": None,
-                                "user_added": True,
-                            }
-                            data_update = {
-                                "$push": {
-                                    "attributesList": {
-                                        "$each": [newField],
-                                        "$position": newIndex,
-                                    }
-                                }
-                            }
-                        else:
-                            newSubIndex = subIndex + 1
-                            newSubField = {
-                                "key": k,
-                                "ai_confidence": None,
-                                "confidence": None,
-                                "raw_text": None,
-                                "text_value": None,
-                                "value": "",
-                                "normalized_vertices": None,
-                                "normalized_value": None,
-                                "subattributes": None,
-                                "isSubattribute": True,
-                                "edited": False,
-                                "page": None,
-                                "user_added": True,
-                                "topLevelAttribute": parentAttribute,
-                            }
-                            parent_attribute_doc = self.db.records.find_one(
-                                {"_id": _id},
-                                {
-                                    "_id": 0,
-                                    "attributesList": {"$slice": [primaryIndex, 1]},
-                                },
-                            )
-                            parent_attribute = (
-                                parent_attribute_doc.get("attributesList", [None])[0]
-                                if parent_attribute_doc
-                                else None
-                            )
-                            _log.info(f"parent_attribute: {parent_attribute}")
-                            if not parent_attribute:
-                                _log.info(
-                                    f"Error: tried to insert child attribute to a parent attribute that doesn't exist"
-                                )
-                                return False
-                            subattributes = parent_attribute.get("subattributes")
-                            if subattributes is not None:
-                                data_update = {
-                                    "$push": {
-                                        f"attributesList.{primaryIndex}.subattributes": {
-                                            "$each": [newSubField],
-                                            "$position": newSubIndex,
-                                        }
-                                    }
-                                }
-                            else:
-                                data_update = {
-                                    "$set": {
-                                        f"attributesList.{primaryIndex}.subattributes": [
-                                            newSubField
-                                        ]
-                                    }
-                                }
-                    elif update_type == "deleteField":
-                        if not isSubattribute:
-                            data_update = {
-                                "attributesList": {
-                                    "$concatArrays": [
-                                        {"$slice": ["$attributesList", primaryIndex]},
-                                        {
-                                            "$slice": [
-                                                "$attributesList",
-                                                primaryIndex + 1,
-                                                {"$size": "$attributesList"},
-                                            ]
-                                        },
-                                    ]
-                                }
-                            }
-                        else:
-                            data_update = {
-                                "attributesList": {
-                                    "$let": {
-                                        "vars": {
-                                            "targetAttribute": {
-                                                "$arrayElemAt": [
-                                                    "$attributesList",
-                                                    primaryIndex,
-                                                ]
-                                            }
-                                        },
-                                        "in": {
-                                            "$concatArrays": [
-                                                {
-                                                    "$slice": [
-                                                        "$attributesList",
-                                                        primaryIndex,
-                                                    ]
-                                                },
-                                                [
-                                                    {
-                                                        "$mergeObjects": [
-                                                            "$$targetAttribute",
-                                                            {
-                                                                "subattributes": {
-                                                                    "$concatArrays": [
-                                                                        {
-                                                                            "$slice": [
-                                                                                "$$targetAttribute.subattributes",
-                                                                                subIndex,
-                                                                            ]
-                                                                        },
-                                                                        {
-                                                                            "$slice": [
-                                                                                "$$targetAttribute.subattributes",
-                                                                                subIndex
-                                                                                + 1,
-                                                                                {
-                                                                                    "$size": "$$targetAttribute.subattributes"
-                                                                                },
-                                                                            ]
-                                                                        },
-                                                                    ]
-                                                                }
-                                                            },
-                                                        ]
-                                                    }
-                                                ],
-                                                {
-                                                    "$slice": [
-                                                        "$attributesList",
-                                                        primaryIndex + 1,
-                                                        {"$size": "$attributesList"},
-                                                    ]
-                                                },
-                                            ]
-                                        },
-                                    }
-                                }
-                            }
-                    elif update_type == "updateFieldCoordinates":
-                        current_time = time.time()
-                        new_coordinates = new_data.get("new_coordinates")
-                        pageNumber = new_data.get("pageNumber")
-                        if not isSubattribute:
-                            data_update = {
-                                f"attributesList.{primaryIndex}.user_provided_coordinates": new_coordinates
-                            }
-                            data_update[
-                                f"attributesList.{primaryIndex}.page"
-                            ] = pageNumber
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdated"
-                            ] = current_time
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdatedUser"
-                            ] = user
-                            data_update[f"attributesList.{primaryIndex}.edited"] = True
-                        else:
-                            data_update = {
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.user_provided_coordinates": new_coordinates
-                            }
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.page"
-                            ] = pageNumber
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdated"
-                            ] = current_time
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdated"
-                            ] = current_time
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdatedUser"
-                            ] = user
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdatedUser"
-                            ] = user
-                            data_update[f"attributesList.{primaryIndex}.edited"] = True
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.edited"
-                            ] = True
+                    data_update = self._updateRecordAttributesForFieldOperation(
+                        _id,
+                        new_data,
+                        update_type,
+                        user=user,
+                    )
+                    if not data_update:
+                        return False
 
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
@@ -1577,12 +1538,7 @@ class DataManager:
                 elif update_type != "attributesList":
                     _log.info(f"invalid update type: {update_type}")
                     return False
-                if update_type == "insertField":
-                    update_query = data_update
-                elif update_type == "deleteField":
-                    update_query = [{"$set": data_update}]
-                else:
-                    update_query = {"$set": data_update}
+                update_query = {"$set": data_update}
             if not forceUpdate:
                 ## fetch record's current data so we know what changed in the future
                 try:
@@ -1756,54 +1712,40 @@ class DataManager:
 
     def resetRecord(self, record_id, record_data, user):
         # print(f"resetting record: {record_id}")
-        record_attributes = record_data["attributesList"]
-        indexes_to_delete = []
-        idx = 0
-        for attribute in record_attributes:
-            if attribute.get("user_added", False):
-                indexes_to_delete.append(idx)
-                idx += 1
-                continue
-            attribute_name = attribute["key"]
-            original_value = attribute["raw_text"]
+        record_attributes = util.normalize_record_attribute_tree(
+            record_data["attributesList"]
+        )
+
+        def reset_attribute(attribute):
+            original_value = attribute.get("raw_text")
             attribute["value"] = original_value
-            attribute["confidence"] = attribute["ai_confidence"]
+            attribute["confidence"] = attribute.get("ai_confidence", None)
             attribute["edited"] = False
             attribute["cleaning_error"] = False
             attribute["uncleaned_value"] = None
             attribute["cleaned"] = False
             attribute["last_cleaned"] = None
-            ## check for subattributes and reset those
-            if attribute["subattributes"] is not None:
-                record_subattributes = attribute["subattributes"]
-                subindexes_to_delete = []
-                subidx = 0
-                for subattribute in record_subattributes:
-                    if subattribute.get("user_added", False):
-                        subindexes_to_delete.append(subidx)
-                        subidx += 1
-                        continue
-                    original_value = subattribute["raw_text"]
-                    subattribute["value"] = original_value
-                    subattribute["confidence"] = subattribute.get("ai_confidence", None)
-                    subattribute["edited"] = False
-                    subattribute["cleaning_error"] = False
-                    subattribute["uncleaned_value"] = None
-                    subattribute["cleaned"] = False
-                    subattribute["last_cleaned"] = None
-                    subidx += 1
-                subindexes_to_delete.reverse()
-                for i in subindexes_to_delete:
-                    _log.info(f"deleting {i}th subfield: {record_subattributes[i]}")
-                    del record_subattributes[i]
-            idx += 1
-        indexes_to_delete.reverse()
-        for i in indexes_to_delete:
-            _log.info(f"deleting {i}th field: {record_attributes[i]}")
-            del record_attributes[i]
+
+            kept_subattributes = []
+            for subattribute in attribute.get("subattributes") or []:
+                if subattribute.get("user_added", False):
+                    _log.info(f"deleting user-added subfield: {subattribute}")
+                    continue
+                reset_attribute(subattribute)
+                kept_subattributes.append(subattribute)
+            attribute["subattributes"] = kept_subattributes
+
+        kept_attributes = []
+        for attribute in record_attributes:
+            if attribute.get("user_added", False):
+                _log.info(f"deleting user-added field: {attribute}")
+                continue
+            reset_attribute(attribute)
+            kept_attributes.append(attribute)
+
         update = {
             "review_status": "unreviewed",
-            "attributesList": record_attributes,
+            "attributesList": kept_attributes,
             "verification_status": None,
         }
         # history is recorded in the function that calls this
@@ -1980,6 +1922,27 @@ class DataManager:
         attributes = ["file"]
         subattributes = []
         record_attributes = []
+
+        def add_subattributes_to_csv_row(
+            record_attribute,
+            subattribute_columns,
+            parent_column_name,
+            document_subattributes,
+        ):
+            for document_subattribute in document_subattributes or []:
+                subattribute_name = (
+                    f"{parent_column_name}[{document_subattribute['key']}]"
+                )
+                record_attribute[subattribute_name] = document_subattribute.get("value")
+                if subattribute_name not in subattribute_columns:
+                    subattribute_columns.append(subattribute_name)
+                add_subattributes_to_csv_row(
+                    record_attribute,
+                    subattribute_columns,
+                    subattribute_name,
+                    document_subattribute.get("subattributes") or [],
+                )
+
         if exportType == "csv":
             for document in records:
                 record_group_id = document["record_group_id"]
@@ -1993,7 +1956,7 @@ class DataManager:
                         if attribute_name in selectedColumns or keep_all_columns:
                             field_schema = rg_attribute_map.get(
                                 record_group_id, {}
-                            ).get(attribute_name)
+                            ).get(attribute_name) or {}
                             database_type = field_schema.get("database_data_type")
                             if str(database_type).lower() == "table":
                                 isParent = True
@@ -2011,15 +1974,12 @@ class DataManager:
                                 i += 1
                             if document_attribute.get("subattributes", None):
                                 current_parent_attributes.add(attribute_name)
-                                for document_subattribute in document_attribute[
-                                    "subattributes"
-                                ]:
-                                    subattribute_name = f"{attribute_name}[{document_subattribute['key']}]"
-                                    record_attribute[
-                                        subattribute_name
-                                    ] = document_subattribute["value"]
-                                    if subattribute_name not in subattributes:
-                                        subattributes.append(subattribute_name)
+                                add_subattributes_to_csv_row(
+                                    record_attribute,
+                                    subattributes,
+                                    attribute_name,
+                                    document_attribute.get("subattributes") or [],
+                                )
                             elif not isParent:
                                 current_attributes.add(attribute_name)
                                 if attribute_name not in attributes:
@@ -2294,9 +2254,7 @@ class DataManager:
         )
 
         if attribute.get("isSubattribute", False):
-            parentAttribute = attribute.get("topLevelAttribute", "")
-            subattributeKey = attribute["key"]
-            subattribute_identifier = f"{parentAttribute}::{subattributeKey}"
+            subattribute_identifier = util.get_attribute_identifier(attribute)
             util.cleanRecordAttribute(
                 processor_attributes=processor_attributes,
                 attribute=attribute,

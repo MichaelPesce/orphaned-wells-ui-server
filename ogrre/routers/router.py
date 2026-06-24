@@ -1228,7 +1228,13 @@ async def download_records(
             "subattributes",
             "page",
         ],
-        "subattributes": ["key", "value", "normalized_vertices", "page"],
+        "subattributes": [
+            "key",
+            "value",
+            "normalized_vertices",
+            "page",
+            "subattributes",
+        ],
     }
 
     output_file_id = util.last4_before_decimal()
