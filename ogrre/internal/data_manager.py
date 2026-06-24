@@ -1995,9 +1995,12 @@ class DataManager:
                     for document_attribute in document.get("attributesList", []):
                         attribute_name = document_attribute["key"].replace(" ", "")
                         if attribute_name in selectedColumns or keep_all_columns:
-                            field_schema = rg_attribute_map.get(
-                                record_group_id, {}
-                            ).get(attribute_name) or {}
+                            field_schema = (
+                                rg_attribute_map.get(record_group_id, {}).get(
+                                    attribute_name
+                                )
+                                or {}
+                            )
                             database_type = field_schema.get("database_data_type")
                             if str(database_type).lower() == "table":
                                 isParent = True

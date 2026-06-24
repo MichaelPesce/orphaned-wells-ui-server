@@ -30,9 +30,7 @@ def split_attribute_identifier(identifier):
     if identifier is None:
         return []
     return [
-        part
-        for part in str(identifier).split(ATTRIBUTE_PATH_SEPARATOR)
-        if part != ""
+        part for part in str(identifier).split(ATTRIBUTE_PATH_SEPARATOR) if part != ""
     ]
 
 
@@ -85,7 +83,9 @@ def normalize_record_attribute_tree(attributes):
     if attributes is None:
         return []
 
-    def normalize_attribute(attribute, top_level_attribute=None, parent_identifier=None):
+    def normalize_attribute(
+        attribute, top_level_attribute=None, parent_identifier=None
+    ):
         if not isinstance(attribute, dict):
             return attribute
 
@@ -213,7 +213,9 @@ def sortRecordAttributes(
         child_names = processor_attribute_tree.get(parent_identifier, [])
 
         for child_name in child_names:
-            child_identifier = combine_attribute_identifier(parent_identifier, child_name)
+            child_identifier = combine_attribute_identifier(
+                parent_identifier, child_name
+            )
             for idx, subattribute in enumerate(subattributes):
                 if idx in used_indexes:
                     continue
