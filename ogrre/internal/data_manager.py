@@ -89,33 +89,79 @@ class DataManager:
             new_field["parentAttribute"] = parent_attribute
         return new_field
 
-    def _getAttributeAtPath(self, attributes, primary_index, subattribute_index_path):
-        attribute = attributes[primary_index]
-        attribute_identifier = attribute.get("key")
-        for sub_index in subattribute_index_path or []:
-            subattributes = attribute.get("subattributes") or []
-            attribute = subattributes[sub_index]
-            attribute_identifier = util.get_attribute_identifier(
-                attribute, attribute_identifier
-            )
-        return attribute, attribute_identifier
+    def _getFieldIndexes(self, data):
+        data = data or {}
+        field_id = data.get("fieldID") or {}
+        index_source = {**data, **field_id} if field_id else data
+        indexes = index_source.get("indexes")
 
-    def _getSubattributeParentList(
-        self, attributes, primary_index, subattribute_index_path
-    ):
-        top_level_attribute = attributes[primary_index]
-        parent_attribute = top_level_attribute
-        parent_identifier = top_level_attribute.get("key")
+        if indexes is None:
+            primary_index = index_source.get("primaryIndex", index_source.get("idx"))
+            if primary_index is None:
+                return []
+
+            indexes = [primary_index]
+            indexes.extend(
+                util.normalize_subattribute_index_path(
+                    index_source,
+                    index_source.get("subIndex"),
+                )
+            )
+
+        if not isinstance(indexes, list):
+            indexes = [indexes]
+
+        normalized_indexes = []
+        for idx in indexes:
+            if idx is None:
+                continue
+            normalized_indexes.append(int(idx))
+        return normalized_indexes
+
+    def _getAttributeAtPath(self, attributes, indexes):
+        if not indexes:
+            return None, None
+
+        try:
+            if indexes[0] < 0:
+                return None, None
+
+            attribute = attributes[indexes[0]]
+            attribute_identifier = attribute.get("key")
+            for sub_index in indexes[1:]:
+                if sub_index < 0:
+                    return None, None
+                subattributes = attribute.get("subattributes") or []
+                attribute = subattributes[sub_index]
+                attribute_identifier = util.get_attribute_identifier(
+                    attribute, attribute_identifier
+                )
+            return attribute, attribute_identifier
+        except (IndexError, TypeError):
+            return None, None
+
+    def _getAttributeParentList(self, attributes, indexes):
+        if len(indexes) <= 1:
+            return attributes, None, None
+
+        parent_attribute, parent_identifier = self._getAttributeAtPath(
+            attributes, indexes[:-1]
+        )
+        if parent_attribute is None:
+            return None, None, None
         parent_list = parent_attribute.setdefault("subattributes", [])
 
-        for sub_index in (subattribute_index_path or [])[:-1]:
-            parent_attribute = parent_list[sub_index]
-            parent_identifier = util.get_attribute_identifier(
-                parent_attribute, parent_identifier
-            )
-            parent_list = parent_attribute.setdefault("subattributes", [])
-
         return parent_list, parent_attribute, parent_identifier
+
+    def _markAttributePathEdited(self, attributes, indexes, current_time, user):
+        for path_length in range(1, len(indexes) + 1):
+            attribute, _ = self._getAttributeAtPath(attributes, indexes[:path_length])
+            if attribute is None:
+                return False
+            attribute["lastUpdated"] = current_time
+            attribute["lastUpdatedUser"] = user
+            attribute["edited"] = True
+        return True
 
     def _updateRecordAttributesForFieldOperation(
         self,
@@ -134,32 +180,32 @@ class DataManager:
         )
         fieldID = new_data.get("fieldID") or {}
         key = fieldID.get("key")
-        primaryIndex = fieldID.get("primaryIndex")
-        isSubattribute = fieldID.get("isSubattribute")
-        subattribute_index_path = util.normalize_subattribute_index_path(
-            fieldID, fieldID.get("subIndex")
-        )
-
-        if primaryIndex is None:
-            _log.info("field operation missing primaryIndex")
+        field_indexes = self._getFieldIndexes(new_data)
+        if len(field_indexes) == 0:
+            _log.info("field operation missing indexes")
             return False
 
         if update_type == "insertField":
-            if not isSubattribute:
-                newIndex = primaryIndex + 1
+            if field_indexes[-1] < -1:
+                _log.info("insertField received an invalid negative index")
+                return False
+
+            if len(field_indexes) == 1:
+                newIndex = field_indexes[0] + 1
                 attributes.insert(
                     newIndex,
                     self._createEmptyRecordAttribute(key, is_subattribute=False),
                 )
             else:
-                parent_list, _, parent_identifier = self._getSubattributeParentList(
-                    attributes, primaryIndex, subattribute_index_path
+                parent_list, _, parent_identifier = self._getAttributeParentList(
+                    attributes, field_indexes
                 )
-                if subattribute_index_path:
-                    newSubIndex = subattribute_index_path[-1] + 1
-                else:
-                    newSubIndex = len(parent_list)
-                top_level_attribute = attributes[primaryIndex].get("key")
+                if parent_list is None:
+                    _log.info("insertField could not locate parent attribute")
+                    return False
+
+                newSubIndex = max(field_indexes[-1] + 1, 0)
+                top_level_attribute = attributes[field_indexes[0]].get("key")
                 parent_attribute = (
                     parent_identifier
                     or new_data.get("parentAttribute")
@@ -175,38 +221,42 @@ class DataManager:
                     ),
                 )
         elif update_type == "deleteField":
-            if not isSubattribute:
-                del attributes[primaryIndex]
-            else:
-                if not subattribute_index_path:
-                    _log.info("deleteField missing subattribute index path")
+            if field_indexes[-1] < 0:
+                _log.info("deleteField received an invalid negative index")
+                return False
+
+            if len(field_indexes) == 1:
+                if field_indexes[0] >= len(attributes):
+                    _log.info("deleteField top-level index is out of range")
                     return False
-                parent_list, _, _ = self._getSubattributeParentList(
-                    attributes, primaryIndex, subattribute_index_path
+                del attributes[field_indexes[0]]
+            else:
+                parent_list, _, _ = self._getAttributeParentList(
+                    attributes, field_indexes
                 )
-                del parent_list[subattribute_index_path[-1]]
+                if parent_list is None:
+                    _log.info("deleteField could not locate parent attribute")
+                    return False
+                if field_indexes[-1] >= len(parent_list):
+                    _log.info("deleteField subattribute index is out of range")
+                    return False
+                del parent_list[field_indexes[-1]]
         elif update_type == "updateFieldCoordinates":
             current_time = time.time()
             new_coordinates = new_data.get("new_coordinates")
             pageNumber = new_data.get("pageNumber")
-            if not isSubattribute:
-                target_attribute = attributes[primaryIndex]
-            else:
-                if not subattribute_index_path:
-                    _log.info("updateFieldCoordinates missing subattribute index path")
-                    return False
-                target_attribute, _ = self._getAttributeAtPath(
-                    attributes, primaryIndex, subattribute_index_path
-                )
-                attributes[primaryIndex]["lastUpdated"] = current_time
-                attributes[primaryIndex]["lastUpdatedUser"] = user
-                attributes[primaryIndex]["edited"] = True
+            if field_indexes[-1] < 0:
+                _log.info("updateFieldCoordinates received an invalid negative index")
+                return False
+
+            target_attribute, _ = self._getAttributeAtPath(attributes, field_indexes)
+            if target_attribute is None:
+                _log.info("updateFieldCoordinates could not locate target attribute")
+                return False
 
             target_attribute["user_provided_coordinates"] = new_coordinates
             target_attribute["page"] = pageNumber
-            target_attribute["lastUpdated"] = current_time
-            target_attribute["lastUpdatedUser"] = user
-            target_attribute["edited"] = True
+            self._markAttributePathEdited(attributes, field_indexes, current_time, user)
         else:
             _log.info(f"unsupported field operation update type: {update_type}")
             return False
@@ -1473,29 +1523,20 @@ class DataManager:
                     self.cleanAttribute(attributeToClean, record_id=record_id)
 
                 if update_type == "attribute":
-                    is_subattribute = new_data.get("isSubattribute", False)
-                    idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
                     reviewStatus = new_data.get("review_status", None)
-                    subIndex = new_data.get("subIndex", None)
-                    subIndexPath = util.normalize_subattribute_index_path(
-                        new_data, subIndex
+                    field_indexes = self._getFieldIndexes(new_data)
+                    if len(field_indexes) == 0 or field_indexes[-1] < 0:
+                        _log.info("attribute update missing valid indexes")
+                        return False
+
+                    attr_key = util.attribute_index_path_to_mongo_path(
+                        field_indexes[0], field_indexes[1:]
                     )
-                    ## update can be in the form of 'attributesList.[idx]?.subattributes?.[subidx]
-                    if not is_subattribute:
-                        attr_key = f"attributesList.{idx}"
-                        data_update = {
-                            attr_key: v,
-                        }
-                        update_key_parts = attr_key.split(".")
-                    else:
-                        attr_key = util.attribute_index_path_to_mongo_path(
-                            idx, subIndexPath
-                        )
-                        data_update = {
-                            attr_key: v,
-                        }
-                        update_key_parts = attr_key.split(".")
+                    data_update = {
+                        attr_key: v,
+                    }
+                    update_key_parts = attr_key.split(".")
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
