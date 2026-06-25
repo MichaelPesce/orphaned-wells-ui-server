@@ -95,6 +95,8 @@ class DataManager:
         index_source = {**data, **field_id} if field_id else data
         indexes = index_source.get("indexes")
 
+        ## 6/25/26: Added indexes to fieldID. This contains all indexes for attribute and subattributes
+        ## Keep the following block to ensure backwards compatibility
         if indexes is None:
             primary_index = index_source.get("primaryIndex", index_source.get("idx"))
             if primary_index is None:
@@ -1737,7 +1739,7 @@ class DataManager:
 
                 processor_document = self.getProcessorById(google_id)
                 if not processor_document:
-                    print("processor lookup returned no document for ")
+                    _log.info(f"processor lookup returned no document for {rg_id}")
                     rg_processor_attribute_map[rg_id] = {}
                     continue
 
@@ -1951,9 +1953,9 @@ class DataManager:
         output_filename=None,
         request_origin="",
     ):
+        ## TODO: Should we use aliases for export?
         user = user_info.get("email", None)
         rg_attribute_map = self.create_record_group_processor_attribute_map()
-        ## TODO: check if user is a part of the team who owns this project
         today = time.time()
         output_dir = self.app_settings.export_dir
         if output_filename is None:
@@ -1972,11 +1974,29 @@ class DataManager:
         ):
             for document_subattribute in document_subattributes or []:
                 subattribute_name = (
-                    f"{parent_column_name}[{document_subattribute['key']}]"
+                    f"{parent_column_name}[{document_subattribute['key']}"
                 )
-                record_attribute[subattribute_name] = document_subattribute.get("value")
-                if subattribute_name not in subattribute_columns:
-                    subattribute_columns.append(subattribute_name)
+                original_subattribute_name = subattribute_name
+                i = 2
+                while (
+                    subattribute_name in current_attributes
+                    or subattribute_name in current_parent_attributes
+                ):
+                    ## add a number to the end of the attribute so it
+                    ## is differentiable from other instances of the attribute
+                    subattribute_name = f"{original_subattribute_name}_{i}"
+                    i += 1
+                current_attributes.add(subattribute_name)
+                subattribute_name = f"{subattribute_name}]"
+
+                subattribute_contains_subattributes = len(document_subattribute.get("subattributes") or [])
+                if not subattribute_contains_subattributes:
+                    record_attribute[subattribute_name] = document_subattribute.get("value")
+                    if subattribute_name not in subattribute_columns:
+                        subattribute_columns.append(subattribute_name)
+                else:
+                    _log.info(f"subattribute {subattribute_name} contains subattributes, not adding it")
+                
                 add_subattributes_to_csv_row(
                     record_attribute,
                     subattribute_columns,
@@ -2037,7 +2057,6 @@ class DataManager:
                     record_attributes.append(record_attribute)
                 except Exception as e:
                     _log.info(f"unable to add {document_id}: {e}")
-
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
                 writer = csv.DictWriter(

@@ -70,6 +70,8 @@ def get_attribute_identifier(attribute, parent_identifier=None):
         return combine_attribute_identifier(parent_identifier, key)
 
     if attribute.get("isSubattribute", False):
+        ## 6/25/26: Added parentAttribute, but keeping backwards compatibility
+        ## with topLevelAttribute
         parent_attribute = attribute.get("parentAttribute") or attribute.get(
             "topLevelAttribute"
         )
@@ -269,10 +271,6 @@ def sortRecordAttributes(
                 _log.debug(f"{attribute_name} is None")
                 continue
 
-            # get alias from processor metadata, if it exists
-            processor_attribute_data = processor_attributes_dict.get(attribute_name)
-            if processor_attribute_data:
-                attribute["alias"] = processor_attribute_data.get("alias")
             sort_subattributes(attribute, attribute_name)
             sorted_attributes.append(attribute)
             used_top_level_indexes.add(idx)
@@ -299,10 +297,6 @@ def sortRecordAttributes(
                 _log.info(
                     f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
                 )
-                # get alias from processor metadata, if it exists
-                processor_attribute_data = processor_attributes_dict.get(attribute_name)
-                if processor_attribute_data:
-                    attr["alias"] = processor_attribute_data.get("alias")
                 sorted_attributes.append(attr)
             else:
                 obsolete_fields_amt += 1
