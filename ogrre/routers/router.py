@@ -1227,6 +1227,8 @@ async def download_records(
             "normalized_vertices",
             "subattributes",
             "page",
+            "parentAttribute",
+            "topLevelAttribute",
         ],
         "subattributes": [
             "key",
@@ -1234,6 +1236,8 @@ async def download_records(
             "normalized_vertices",
             "page",
             "subattributes",
+            "parentAttribute",
+            "topLevelAttribute",
         ],
     }
 
