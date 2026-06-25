@@ -1975,21 +1975,19 @@ class DataManager:
             record_group_id,
         ):
             for document_subattribute in document_subattributes or []:
-                subattribute_key = document_subattribute['key']
+                subattribute_key = document_subattribute["key"]
 
                 ## TODO: use alias?
                 rg_schema = rg_attribute_map.get(record_group_id, {})
-                subattribute_alias = self._getAttributeAlias(document_subattribute, rg_schema)
+                subattribute_alias = self._getAttributeAlias(
+                    document_subattribute, rg_schema
+                )
                 # if not subattribute_alias:
                 #     _log.info(f"could not find subattribute_alias for {subattribute_key}")
                 if USE_ALIASES and subattribute_alias:
-                    subattribute_name = (
-                        f"{parent_column_name}[{subattribute_alias}"
-                    )
+                    subattribute_name = f"{parent_column_name}[{subattribute_alias}"
                 else:
-                    subattribute_name = (
-                        f"{parent_column_name}[{subattribute_key}"
-                    )
+                    subattribute_name = f"{parent_column_name}[{subattribute_key}"
 
                 original_subattribute_name = subattribute_name
                 i = 2
@@ -2039,14 +2037,13 @@ class DataManager:
 
                         ## TODO: use alias?
                         rg_schema = rg_attribute_map.get(record_group_id, {})
-                        attribute_alias = self._getAttributeAlias(document_attribute, rg_schema)
+                        attribute_alias = self._getAttributeAlias(
+                            document_attribute, rg_schema
+                        )
                         if USE_ALIASES and attribute_alias:
-                            attribute_name = (
-                                f"{attribute_alias}"
-                            )
+                            attribute_name = f"{attribute_alias}"
                         else:
                             attribute_name = attribute_key
-
 
                         if attribute_key in selectedColumns or keep_all_columns:
                             field_schema = (
@@ -2251,12 +2248,18 @@ class DataManager:
                 self._annotateHistoryPayloadNumericTypes(value)
 
         return payload
-    
+
     def _getAttributeAlias(self, attribute, schema):
         attribute_key = attribute.get("key")
         # _log.info(f"{attribute}")
-        parentAttribute = attribute.get("parentAttribute") or attribute.get("topLevelAttribute")
-        schemaKey = attribute_key if not parentAttribute else f"{parentAttribute}::{attribute_key}"
+        parentAttribute = attribute.get("parentAttribute") or attribute.get(
+            "topLevelAttribute"
+        )
+        schemaKey = (
+            attribute_key
+            if not parentAttribute
+            else f"{parentAttribute}::{attribute_key}"
+        )
         attribute_schema = schema.get(schemaKey)
         if attribute_schema:
             alias = attribute_schema.get("alias")
