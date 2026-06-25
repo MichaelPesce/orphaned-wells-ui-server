@@ -1954,6 +1954,7 @@ class DataManager:
         request_origin="",
     ):
         ## TODO: Should we use aliases for export?
+        USE_ALIASES = True
         user = user_info.get("email", None)
         rg_attribute_map = self.create_record_group_processor_attribute_map()
         today = time.time()
@@ -1971,11 +1972,25 @@ class DataManager:
             subattribute_columns,
             parent_column_name,
             document_subattributes,
+            record_group_id,
         ):
             for document_subattribute in document_subattributes or []:
-                subattribute_name = (
-                    f"{parent_column_name}[{document_subattribute['key']}"
-                )
+                subattribute_key = document_subattribute['key']
+
+                ## TODO: use alias?
+                rg_schema = rg_attribute_map.get(record_group_id, {})
+                subattribute_alias = self._getAttributeAlias(document_subattribute, rg_schema)
+                # if not subattribute_alias:
+                #     _log.info(f"could not find subattribute_alias for {subattribute_key}")
+                if USE_ALIASES and subattribute_alias:
+                    subattribute_name = (
+                        f"{parent_column_name}[{subattribute_alias}"
+                    )
+                else:
+                    subattribute_name = (
+                        f"{parent_column_name}[{subattribute_key}"
+                    )
+
                 original_subattribute_name = subattribute_name
                 i = 2
                 while (
@@ -2008,6 +2023,7 @@ class DataManager:
                     subattribute_columns,
                     subattribute_name,
                     document_subattribute.get("subattributes") or [],
+                    record_group_id=record_group_id,
                 )
 
         if exportType == "csv":
@@ -2019,8 +2035,20 @@ class DataManager:
                     current_parent_attributes = set()
                     record_attribute = {}
                     for document_attribute in document.get("attributesList", []):
-                        attribute_name = document_attribute["key"].replace(" ", "")
-                        if attribute_name in selectedColumns or keep_all_columns:
+                        attribute_key = document_attribute["key"].replace(" ", "")
+
+                        ## TODO: use alias?
+                        rg_schema = rg_attribute_map.get(record_group_id, {})
+                        attribute_alias = self._getAttributeAlias(document_attribute, rg_schema)
+                        if USE_ALIASES and attribute_alias:
+                            attribute_name = (
+                                f"{attribute_alias}"
+                            )
+                        else:
+                            attribute_name = attribute_key
+
+
+                        if attribute_key in selectedColumns or keep_all_columns:
                             field_schema = (
                                 rg_attribute_map.get(record_group_id, {}).get(
                                     attribute_name
@@ -2049,6 +2077,7 @@ class DataManager:
                                     subattributes,
                                     attribute_name,
                                     document_attribute.get("subattributes") or [],
+                                    record_group_id=record_group_id,
                                 )
                             elif not isParent:
                                 current_attributes.add(attribute_name)
@@ -2222,6 +2251,21 @@ class DataManager:
                 self._annotateHistoryPayloadNumericTypes(value)
 
         return payload
+    
+    def _getAttributeAlias(self, attribute, schema):
+        attribute_key = attribute.get("key")
+        # _log.info(f"{attribute}")
+        parentAttribute = attribute.get("parentAttribute") or attribute.get("topLevelAttribute")
+        schemaKey = attribute_key if not parentAttribute else f"{parentAttribute}::{attribute_key}"
+        attribute_schema = schema.get(schemaKey)
+        if attribute_schema:
+            alias = attribute_schema.get("alias")
+            _log.info(f"we found an attribute schema: {alias}")
+            return alias
+        else:
+            _log.info(f"NO attribute schema for: {schemaKey}")
+            _log.info(attribute)
+        return None
 
     def _buildHistoryItem(
         self,
