@@ -1989,14 +1989,20 @@ class DataManager:
                 current_attributes.add(subattribute_name)
                 subattribute_name = f"{subattribute_name}]"
 
-                subattribute_contains_subattributes = len(document_subattribute.get("subattributes") or [])
+                subattribute_contains_subattributes = len(
+                    document_subattribute.get("subattributes") or []
+                )
                 if not subattribute_contains_subattributes:
-                    record_attribute[subattribute_name] = document_subattribute.get("value")
+                    record_attribute[subattribute_name] = document_subattribute.get(
+                        "value"
+                    )
                     if subattribute_name not in subattribute_columns:
                         subattribute_columns.append(subattribute_name)
                 else:
-                    _log.info(f"subattribute {subattribute_name} contains subattributes, not adding it")
-                
+                    _log.info(
+                        f"subattribute {subattribute_name} contains subattributes, not adding it"
+                    )
+
                 add_subattributes_to_csv_row(
                     record_attribute,
                     subattribute_columns,
