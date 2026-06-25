@@ -70,4 +70,6 @@ uvicorn==0.27.0
 wheel==0.42.0
 yarl==1.9.4
 zipstream==1.1.4
-ogrre_data_cleaning @ git+https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning@7efb0be3ed142651ea39c9d37384236e0252042f
+# ogrre_data_cleaning @ git+https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning@7efb0be3ed142651ea39c9d37384236e0252042f
+## 6/25/26: use this until we get PR merged:
+ogrre_data_cleaning @ git+https://github.com/MichaelPesce/OGRRE_data_cleaning@78dd6854cdc3ca6c508b6a1b5bedada1bd011dad
