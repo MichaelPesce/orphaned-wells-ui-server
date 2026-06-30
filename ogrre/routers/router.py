@@ -836,7 +836,9 @@ async def batch_process_documents(
     Notes:
         - bucketName is required. Send only the bucket name, not a gs:// URI.
         - prefix is optional. Omit it or send "" to process the whole bucket.
-          When present, send only the object prefix/folder path inside the bucket.
+          When present, send only the folder path inside the bucket.
+          Trailing slash is optional; the backend normalizes it to a folder
+          boundary so "folder/name" does not also match "folder/name_extra".
           Example: "incoming/well-records/".
         - run_cleaning_functions defaults to true.
         - outputBucketName/outputPrefix are optional and control where Document AI
@@ -892,6 +894,56 @@ async def batch_process_documents(
         run_cleaning_functions=run_cleaning_functions,
     )
     return {"job_id": job_id, "status": "queued"}
+
+
+@router.post("/batch_process_documents/{rg_id}/check_gcs_path")
+async def check_batch_process_documents_gcs_path(
+    rg_id: str,
+    request: Request,
+    user_info: dict = Depends(authenticate),
+):
+    """Count documents that would be submitted for a GCS batch request.
+
+    Request body matches /batch_process_documents/{rg_id}:
+        {
+            "bucketName": "source-bucket-name",
+            "prefix": "optional/folder/path/"
+        }
+
+    The backend applies the same prefix normalization and Document AI Toolbox
+    filtering as the batch processor, so totalFiles reflects the supported
+    documents that would be submitted.
+    """
+    if not REQUIRE_AUTH:
+        user_info = anonymous_user()
+
+    user_email = user_info["email"].lower()
+    if not data_manager.hasPermission(user_email, "upload_document"):
+        raise HTTPException(
+            403,
+            detail="You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
+    if not project_is_valid:
+        raise HTTPException(404, detail="Project not found")
+
+    req = await request.json()
+    bucket_name = req.get("bucketName") or req.get("bucket_name") or req.get("bucket")
+    prefix = req.get("prefix") or req.get("folderPath") or req.get("folder") or ""
+
+    if not bucket_name:
+        raise HTTPException(400, detail="bucketName is required")
+
+    try:
+        return batch_document_processing.get_gcs_path_document_summary(
+            bucket_name=bucket_name, prefix=prefix
+        )
+    except Exception as e:
+        _log.error(f"unable to check GCS bucket/path: {e}")
+        raise HTTPException(
+            400, detail=f"Unable to check GCS bucket/path: {e}"
+        )
 
 
 @router.get("/batch_process_documents/{job_id}/status")

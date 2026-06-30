@@ -97,6 +97,26 @@ def get_batch_document_job(job_id):
         return job_copy
 
 
+def get_gcs_path_document_summary(bucket_name, prefix=""):
+    normalized_prefix = _normalize_prefix(prefix)
+    batches = gcs_utilities.create_batches(
+        gcs_bucket_name=bucket_name, gcs_prefix=normalized_prefix, batch_size=BATCH_SIZE
+    )
+    total_documents = sum(len(_get_gcs_documents(batch)) for batch in batches)
+    total_batches = len(batches)
+    total_lro_waves = (
+        (total_batches + MAX_CONCURRENT_BATCH_LROS - 1) // MAX_CONCURRENT_BATCH_LROS
+    )
+    return {
+        "bucketName": bucket_name,
+        "prefix": prefix or "",
+        "normalizedPrefix": normalized_prefix,
+        "totalFiles": total_documents,
+        "totalBatches": total_batches,
+        "totalLroWaves": total_lro_waves,
+    }
+
+
 def _set_job_fields(job_id, **fields):
     with _batch_jobs_lock:
         job = _batch_jobs.get(job_id)
@@ -623,7 +643,10 @@ def _get_gcs_documents(input_config):
 def _normalize_prefix(prefix):
     if not prefix:
         return ""
-    return prefix.lstrip("/")
+    normalized_prefix = prefix.strip().lstrip("/")
+    if not normalized_prefix or normalized_prefix.endswith("/"):
+        return normalized_prefix
+    return f"{normalized_prefix}/"
 
 
 def _normalize_output_prefix(output_prefix, rg_id, job_id):
