@@ -941,9 +941,7 @@ async def check_batch_process_documents_gcs_path(
         )
     except Exception as e:
         _log.error(f"unable to check GCS bucket/path: {e}")
-        raise HTTPException(
-            400, detail=f"Unable to check GCS bucket/path: {e}"
-        )
+        raise HTTPException(400, detail=f"Unable to check GCS bucket/path: {e}")
 
 
 @router.get("/batch_process_documents/{job_id}/status")

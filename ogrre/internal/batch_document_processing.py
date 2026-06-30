@@ -105,8 +105,8 @@ def get_gcs_path_document_summary(bucket_name, prefix=""):
     total_documents = sum(len(_get_gcs_documents(batch)) for batch in batches)
     total_batches = len(batches)
     total_lro_waves = (
-        (total_batches + MAX_CONCURRENT_BATCH_LROS - 1) // MAX_CONCURRENT_BATCH_LROS
-    )
+        total_batches + MAX_CONCURRENT_BATCH_LROS - 1
+    ) // MAX_CONCURRENT_BATCH_LROS
     return {
         "bucketName": bucket_name,
         "prefix": prefix or "",
