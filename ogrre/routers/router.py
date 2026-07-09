@@ -1191,6 +1191,47 @@ async def delete_record_group(
     return {"response": "success"}
 
 
+@router.post("/delete_record_group_records/{rg_id}")
+async def delete_record_group_records(
+    rg_id: str,
+    request: Request,
+    user_info: dict = Depends(authenticate),
+):
+    """Delete records in a record group, optionally scoped by current filters.
+
+    Args:
+        rg_id: record group identifier
+        request.filter: Optional record filter
+
+    Returns:
+        Success response
+    """
+    if not data_manager.hasPermission(user_info["email"], "delete"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to delete records. Please contact a team lead or project manager.",
+        )
+
+    try:
+        req = await request.json()
+    except Exception:
+        req = {}
+
+    filter_by = req.get("filter", {})
+    if not isinstance(filter_by, dict):
+        raise HTTPException(400, detail=f"Filter must be an object.")
+
+    _, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
+    if rg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+
+    data_manager.deleteRecordsByRecordGroup(rg_id, filter_by, user_info)
+    return {"response": "success"}
+
+
 @router.post("/delete_record/{record_id}")
 async def delete_record(record_id: str, user_info: dict = Depends(authenticate)):
     """Delete record.

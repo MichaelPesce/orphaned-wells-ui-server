@@ -1847,7 +1847,7 @@ class DataManager:
         ## add records to deleted records collection and remove from records collection
         background_tasks.add_task(
             self._deleteRecords,
-            query={"record_group": rg_id},
+            query={"record_group_id": rg_id},
             deletedBy=user_info,
         )
 
@@ -1867,6 +1867,18 @@ class DataManager:
         self._deleteRecords(query=myquery, deletedBy=user_info)
         self.recordHistory(
             "deleteRecords", user=user_info.get("email", None), notes=myquery
+        )
+        return "success"
+
+    def deleteRecordsByRecordGroup(self, rg_id, filter_by, user_info):
+        query = dict(filter_by or {})
+        query["record_group_id"] = rg_id
+        self._deleteRecords(query=query, deletedBy=user_info)
+        self.recordHistory(
+            "deleteRecordGroupRecords",
+            user=user_info.get("email", None),
+            rg_id=rg_id,
+            notes=query,
         )
         return "success"
 
