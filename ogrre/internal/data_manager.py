@@ -610,6 +610,44 @@ class DataManager:
         # _log.info(f"{query}, {update}")
         self.db.users.update_one(query, update)
 
+    def ensureTeamExists(self, team):
+        team_document = {
+            "name": team,
+            "users": [],
+            "project_list": [],
+        }
+        result = self.db.teams.update_one(
+            {"name": team},
+            {"$setOnInsert": team_document},
+            upsert=True,
+        )
+        return result.upserted_id is not None
+
+    def changeUserTeam(self, email, new_team):
+        team = new_team.strip()
+        if team == "":
+            raise ValueError("Please provide a new team in the request body")
+
+        user_doc = self.getDocument("users", {"email": email})
+        if user_doc is None:
+            raise ValueError(f"Unable to find user {email}")
+
+        created_team = self.ensureTeamExists(team)
+        membership_result = self.addUserToTeam(email, team)
+        self.updateDefaultTeam(email, team)
+
+        response = {
+            "team": team,
+            "created_team": created_team,
+            "added_to_team": membership_result == "success",
+        }
+        self.recordHistory(
+            "changeUserTeam",
+            user=email,
+            query=response,
+        )
+        return response
+
     def addUser(self, user_info, team, team_lead=False, sys_admin=False):
         if team is None:
             _log.error(f"failed to add user {user_info}. team is required")
@@ -649,9 +687,6 @@ class DataManager:
         ## CHECK IF USER IS NOT ALREADY ON THIS TEAM
         checkvalues = {"name": team, "users": email}
         found_user = self.db.teams.count_documents(checkvalues)
-        if found_user > 0:
-            _log.info(f"found {email} on {team}")
-            return "already_exists"
 
         # Keep user role maps in sync with team membership.
         user_doc = self.getDocument("users", {"email": email})
@@ -666,9 +701,13 @@ class DataManager:
                 update_payload["default_team"] = team
             self.db.users.update_one({"email": email}, {"$set": update_payload})
 
+        if found_user > 0:
+            _log.info(f"found {email} on {team}")
+            return "already_exists"
+
         ## update team's users
         myquery = {"name": team}
-        newvalues = {"$push": {"users": email}}
+        newvalues = {"$addToSet": {"users": email}}
         self.db.teams.update_one(myquery, newvalues)
         return "success"
 
@@ -846,14 +885,13 @@ class DataManager:
         return team_doc
 
     def fetchTeams(self, user_info):
-        email = user_info.get("email", None)
-        query = {"users": email}
         teams = []
-        teams_cursor = self.db.teams.find(query)
+        teams_cursor = self.db.teams.find()
         for document in teams_cursor:
-            team_name = document["name"]
-            teams.append(team_name)
-        return teams
+            team_name = document.get("name", "")
+            if team_name != "":
+                teams.append(team_name)
+        return sorted(teams)
 
     def fetchProject(self, project_id):
         cursor = self.db.projects.find({"_id": ObjectId(project_id)})

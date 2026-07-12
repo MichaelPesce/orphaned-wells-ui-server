@@ -1891,16 +1891,54 @@ async def update_default_team(
         )
 
     req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
+        )
+
     new_team = req.get("new_team", None)
 
-    if new_team:
-        data_manager.updateDefaultTeam(user_info["email"], new_team)
-        return new_team
+    if isinstance(new_team, str):
+        try:
+            return data_manager.changeUserTeam(user_info["email"], new_team)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     else:
         raise HTTPException(
             status_code=400,
             detail=f"Please provide a new team in the request body",
         )
+
+
+@router.post("/change_team")
+async def change_team(request: Request, user_info: dict = Depends(authenticate)):
+    """Change the current user's default team, creating membership if needed."""
+    require_authenticated_admin_route()
+    if not data_manager.hasPermission(user_info["email"], "manage_system"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
+        )
+
+    req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
+        )
+
+    new_team = req.get("new_team", None)
+    if not isinstance(new_team, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
+        )
+
+    try:
+        return data_manager.changeUserTeam(user_info["email"], new_team)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/fetch_roles", response_model=list)
@@ -1926,7 +1964,7 @@ async def fetch_roles(request: Request, user_info: dict = Depends(authenticate))
 
 @router.get("/fetch_teams", response_model=list)
 async def fetch_teams(user_info: dict = Depends(authenticate)):
-    """Fetch all teams that a user is on.
+    """Fetch all available teams.
 
     Returns:
         List containing teams
