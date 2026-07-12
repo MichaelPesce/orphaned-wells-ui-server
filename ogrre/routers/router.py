@@ -660,7 +660,7 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.getProcessorByGoogleId(google_id)
+    resp = data_manager.getProcessorById(google_id)
     return resp
 
 
@@ -1975,7 +1975,7 @@ async def fetch_teams(user_info: dict = Depends(authenticate)):
             403,
             detail=f"You are not authorized to manage system. Please contact a team lead or project manager.",
         )
-    resp = data_manager.fetchTeams(user_info)
+    resp = data_manager.fetchTeams()
     return resp
 
 
