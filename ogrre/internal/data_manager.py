@@ -9,6 +9,7 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
 
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
+from ogrre.internal import storage_api
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
@@ -1882,6 +1883,31 @@ class DataManager:
         )
         return "success"
 
+    def _moveDeletedRecordImages(self, record_document):
+        record_id = str(record_document.get("_id", ""))
+        record_group_id = record_document.get("record_group_id")
+        if not record_id or not record_group_id:
+            _log.info(
+                f"cannot move deleted record images without record id and record group id: {record_document}"
+            )
+            return
+
+        try:
+            moved = storage_api.move_record_images_to_deleted(record_group_id, record_id)
+            if moved:
+                _log.info(
+                    f"moved deleted record images from "
+                    f"{storage_api.get_record_image_directory(record_group_id, record_id)} "
+                    f"to {storage_api.get_deleted_record_image_directory(record_id)}"
+                )
+            else:
+                _log.info(
+                    f"no record image directory found at "
+                    f"{storage_api.get_record_image_directory(record_group_id, record_id)}"
+                )
+        except Exception as e:
+            _log.error(f"unable to move deleted record images for {record_id}: {e}")
+
     def _deleteRecords(self, query, deletedBy):
         user = deletedBy.get("email", None)
         _log.info(f"deleting records with query: {query}")
@@ -1891,10 +1917,12 @@ class DataManager:
             for record_document in record_cursor:
                 record_document["deleted_by"] = user
                 self.db.deleted_records.insert_one(record_document)
+                # Storage key layout is owned by storage_api.
+                self._moveDeletedRecordImages(record_document)
         except Exception as e:
             _log.error(f"unable to move all deleted records: {e}")
 
-        ## Delete records associated with this project
+        ## Delete active records after archiving their documents and images.
         resp = self.db.records.delete_many(query)
         _log.info(f"delete resp = {resp}")
 
