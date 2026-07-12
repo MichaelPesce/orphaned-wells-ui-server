@@ -249,7 +249,7 @@ def move_directory(prefix, destination_prefix, bucket_name=BUCKET_NAME):
     moved_files = 0
 
     for blob in blobs:
-        relative_path = blob.name[len(source_prefix):]
+        relative_path = blob.name[len(source_prefix) :]
         if not relative_path:
             continue
         destination_name = f"{target_prefix}{relative_path}"

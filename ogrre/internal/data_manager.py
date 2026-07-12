@@ -1893,7 +1893,9 @@ class DataManager:
             return
 
         try:
-            moved = storage_api.move_record_images_to_deleted(record_group_id, record_id)
+            moved = storage_api.move_record_images_to_deleted(
+                record_group_id, record_id
+            )
             if moved:
                 _log.info(
                     f"moved deleted record images from "
