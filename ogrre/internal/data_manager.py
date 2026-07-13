@@ -277,9 +277,9 @@ class DataManager:
         if result.upserted_id:
             _log.info("created default unauthenticated team")
 
-    def getDefaultTeamForUser(self, email):
+    def getDefaultTeamForUser(self, email, anonymous_team=None):
         if not REQUIRE_AUTH and email == "anonymous":
-            return DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            return anonymous_team or DEFAULT_UNAUTHENTICATED_TEAM["name"]
 
         user_document = self.getDocument("users", ({"email": email}))
         if user_document is None:
@@ -807,8 +807,8 @@ class DataManager:
         stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
         return stats
 
-    def fetchTeamInfo(self, email):
-        team_name = self.getDefaultTeamForUser(email)
+    def fetchTeamInfo(self, email, anonymous_team=None):
+        team_name = self.getDefaultTeamForUser(email, anonymous_team)
         if team_name is None:
             _log.error(f"unable to find default team for user {email}")
             return None
@@ -848,10 +848,9 @@ class DataManager:
     def fetchProjects(self, user):
         projects = []
         if user.get("anonymous", False) and not REQUIRE_AUTH:
-            _log.info(f"getting projects for anonymous user - default team")
-            user_projects = self.getTeamProjectList(
-                DEFAULT_UNAUTHENTICATED_TEAM["name"]
-            )
+            team_name = user.get("default_team") or DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            _log.info(f"getting projects for anonymous user - team {team_name}")
+            user_projects = self.getTeamProjectList(team_name)
         else:
             _log.info(f"user is not anonymous")
             user_email = user.get("email", None)
@@ -937,7 +936,7 @@ class DataManager:
         exclude_attribute_fields=None,
         forDownload=False,
     ):
-        team_info = self.fetchTeamInfo(user["email"])
+        team_info = self.fetchTeamInfo(user["email"], user.get("default_team"))
         rg_list = self.getTeamRecordGroupsList(team_info["name"])
         filter_by["record_group_id"] = {"$in": rg_list}
         return self.fetchRecords(
@@ -1330,7 +1329,9 @@ class DataManager:
     def createProject(self, project_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
-        default_team = self.getDefaultTeamForUser(user_email)
+        default_team = self.getDefaultTeamForUser(
+            user_email, user_info.get("default_team")
+        )
         if default_team is None:
             _log.info(f"user {user_email} has no default team")
             return False
@@ -1363,7 +1364,9 @@ class DataManager:
     def createRecordGroup(self, rg_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
-        default_team = self.getDefaultTeamForUser(user_email)
+        default_team = self.getDefaultTeamForUser(
+            user_email, user_info.get("default_team")
+        )
         if default_team is None:
             _log.info(f"user {user_email} has no default team")
             return False
