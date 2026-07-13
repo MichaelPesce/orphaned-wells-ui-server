@@ -1904,7 +1904,9 @@ async def update_default_team(
     Returns:
         result
     """
-    if REQUIRE_AUTH and not data_manager.hasPermission(user_info["email"], "manage_system"):
+    if REQUIRE_AUTH and not data_manager.hasPermission(
+        user_info["email"], "manage_system"
+    ):
         raise HTTPException(
             403,
             detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
@@ -2010,7 +2012,9 @@ async def fetch_teams(user_info: dict = Depends(authenticate)):
     Returns:
         List containing teams
     """
-    if REQUIRE_AUTH and not data_manager.hasPermission(user_info["email"], "manage_system"):
+    if REQUIRE_AUTH and not data_manager.hasPermission(
+        user_info["email"], "manage_system"
+    ):
         raise HTTPException(
             403,
             detail=f"You are not authorized to manage system. Please contact a team lead or project manager.",
