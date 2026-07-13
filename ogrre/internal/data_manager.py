@@ -277,9 +277,9 @@ class DataManager:
         if result.upserted_id:
             _log.info("created default unauthenticated team")
 
-    def getDefaultTeamForUser(self, email):
+    def getDefaultTeamForUser(self, email, anonymous_team=None):
         if not REQUIRE_AUTH and email == "anonymous":
-            return DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            return anonymous_team or DEFAULT_UNAUTHENTICATED_TEAM["name"]
 
         user_document = self.getDocument("users", ({"email": email}))
         if user_document is None:
@@ -332,19 +332,6 @@ class DataManager:
         return processor_list
 
     ## lock functions
-    def fetchLock(self, user):
-        ## Can't use variable stored in memory for this
-        while self.LOCKED and self.LOCKED != user:
-            _log.info(f"{user} waiting for lock")
-            time.sleep(0.1)
-        self.LOCKED = user
-        _log.info(f"{user} grabbed lock")
-
-    def releaseLock(self, user):
-        ## Can't use variable stored in memory for this
-        _log.info(f"{user} releasing lock")
-        self.LOCKED = False
-
     def lockRecord(self, record_id, user, release_previous_record=True):
         _log.info(f"{user} locking {record_id}")
         if release_previous_record:
@@ -368,7 +355,6 @@ class DataManager:
     @time_it
     def tryLockingRecord(self, record_id, user):
         try:
-            # self.fetchLock(user)
             attained_lock = False
             locked_record_cursor = self.db.locked_records.find({"record_id": record_id})
             record_is_locked = False
@@ -404,7 +390,6 @@ class DataManager:
                     record_id=record_id, user=user, release_previous_record=True
                 )
                 attained_lock = True
-            # self.releaseLock(user)
             return attained_lock
         except Exception as e:
             _log.error(f"error trying to lock record: {e}")
@@ -604,11 +589,46 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return user
 
-    def updateDefaultTeam(self, email, new_team):
-        query = {"email": email}
-        update = {"$set": {"default_team": new_team}}
-        # _log.info(f"{query}, {update}")
-        self.db.users.update_one(query, update)
+    def ensureTeamExists(self, team):
+        team_document = {
+            "name": team,
+            "users": [],
+            "project_list": [],
+        }
+        result = self.db.teams.update_one(
+            {"name": team},
+            {"$setOnInsert": team_document},
+            upsert=True,
+        )
+        return result.upserted_id is not None
+
+    def changeUserTeam(self, email, new_team):
+        team = new_team.strip()
+        if team == "":
+            raise ValueError("Please provide a new team in the request body")
+
+        user_doc = self.getDocument("users", {"email": email})
+        if user_doc is None:
+            raise ValueError(f"Unable to find user {email}")
+
+        created_team = self.ensureTeamExists(team)
+        membership_result = self.addUserToTeam(email, team)
+        self.db.users.update_one(
+            {"email": email},
+            {"$set": {"default_team": team}},
+        )
+
+        response = {
+            "team": team,
+            "created_team": created_team,
+            "added_to_team": membership_result == "success",
+        }
+        self.recordHistory(
+            "changeUserTeam",
+            user=email,
+            query=response,
+        )
+        return response
 
     def addUser(self, user_info, team, team_lead=False, sys_admin=False):
         if team is None:
@@ -624,6 +644,7 @@ class DataManager:
 
         if sys_admin:
             roles["system"].append("sys_admin")
+        self.ensureTeamExists(team)
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
@@ -634,14 +655,7 @@ class DataManager:
             "time_created": time.time(),
         }
         db_response = self.db.users.insert_one(user)
-
-        ## add user to team's users
-        team_query = {"name": team}
-        team_document = self.getDocument("teams", team_query)
-        team_users = team_document.get("users", [])
-        team_users.append(user_info.get("email", ""))
-        newvalues = {"$set": {"users": team_users}}
-        self.db.teams.update_one(team_query, newvalues)
+        self.addUserToTeam(user_info.get("email", ""), team)
 
         return db_response
 
@@ -649,9 +663,6 @@ class DataManager:
         ## CHECK IF USER IS NOT ALREADY ON THIS TEAM
         checkvalues = {"name": team, "users": email}
         found_user = self.db.teams.count_documents(checkvalues)
-        if found_user > 0:
-            _log.info(f"found {email} on {team}")
-            return "already_exists"
 
         # Keep user role maps in sync with team membership.
         user_doc = self.getDocument("users", {"email": email})
@@ -666,23 +677,15 @@ class DataManager:
                 update_payload["default_team"] = team
             self.db.users.update_one({"email": email}, {"$set": update_payload})
 
+        if found_user > 0:
+            _log.info(f"found {email} on {team}")
+            return "already_exists"
+
         ## update team's users
         myquery = {"name": team}
-        newvalues = {"$push": {"users": email}}
+        newvalues = {"$addToSet": {"users": email}}
         self.db.teams.update_one(myquery, newvalues)
         return "success"
-
-    def updateUser(self, user_info):
-        email = user_info.get("email", "")
-        user = {
-            "name": user_info.get("name", ""),
-            "picture": user_info.get("picture", ""),
-            "hd": user_info.get("hd", ""),
-        }
-        myquery = {"email": email}
-        newvalues = {"$set": user}
-        cursor = self.db.users.update_one(myquery, newvalues)
-        return cursor
 
     def updateUserRole(self, email, team, role_category, new_roles):
         try:
@@ -756,35 +759,15 @@ class DataManager:
         self.recordHistory("deleteUser", user=admin_email)
         return email
 
-    def addUsersToProject(self, users, project_id):
-        ## TODO:
-        ## (1) change project to team
-        _id = ObjectId(project_id)
-        try:
-            for user in users:
-                email = user.get("email", "")
-                query = {"email": email}
-                cursor = self.db.users.find(query)
-                user_object = cursor.next()
-                user_projects = user_object.get("projects", [])
-                user_projects.append(_id)
-                update_query = {"projects": user_projects}
-                self.updateUserProjects(email, update_query)
-            return {"result": "success"}
-        except Exception as e:
-            _log.error(f"unable to add users: {e}")
-            return {"result": f"{e}"}
-
     ## Fetch/get functions
-    def getDocument(self, collection, query, clean_id=False, return_list=False):
+    def getDocument(self, collection, query, clean_id=False):
         try:
             cursor = self.db[collection].find(query)
-            if not return_list:
-                document = cursor.next()
-                if clean_id:
-                    document_id = document.get("_id", "")
-                    document["_id"] = str(document_id)
-                return document
+            document = cursor.next()
+            if clean_id:
+                document_id = document.get("_id", "")
+                document["_id"] = str(document_id)
+            return document
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
             return None
@@ -824,8 +807,8 @@ class DataManager:
         stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
         return stats
 
-    def fetchTeamInfo(self, email):
-        team_name = self.getDefaultTeamForUser(email)
+    def fetchTeamInfo(self, email, anonymous_team=None):
+        team_name = self.getDefaultTeamForUser(email, anonymous_team)
         if team_name is None:
             _log.error(f"unable to find default team for user {email}")
             return None
@@ -845,15 +828,14 @@ class DataManager:
         ]
         return team_doc
 
-    def fetchTeams(self, user_info):
-        email = user_info.get("email", None)
-        query = {"users": email}
+    def fetchTeams(self):
         teams = []
-        teams_cursor = self.db.teams.find(query)
+        teams_cursor = self.db.teams.find()
         for document in teams_cursor:
-            team_name = document["name"]
-            teams.append(team_name)
-        return teams
+            team_name = document.get("name", "")
+            if team_name != "":
+                teams.append(team_name)
+        return sorted(teams)
 
     def fetchProject(self, project_id):
         cursor = self.db.projects.find({"_id": ObjectId(project_id)})
@@ -866,10 +848,9 @@ class DataManager:
     def fetchProjects(self, user):
         projects = []
         if user.get("anonymous", False) and not REQUIRE_AUTH:
-            _log.info(f"getting projects for anonymous user - default team")
-            user_projects = self.getTeamProjectList(
-                DEFAULT_UNAUTHENTICATED_TEAM["name"]
-            )
+            team_name = user.get("default_team") or DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            _log.info(f"getting projects for anonymous user - team {team_name}")
+            user_projects = self.getTeamProjectList(team_name)
         else:
             _log.info(f"user is not anonymous")
             user_email = user.get("email", None)
@@ -955,7 +936,7 @@ class DataManager:
         exclude_attribute_fields=None,
         forDownload=False,
     ):
-        team_info = self.fetchTeamInfo(user["email"])
+        team_info = self.fetchTeamInfo(user["email"], user.get("default_team"))
         rg_list = self.getTeamRecordGroupsList(team_info["name"])
         filter_by["record_group_id"] = {"$in": rg_list}
         return self.fetchRecords(
@@ -1083,7 +1064,7 @@ class DataManager:
             data_fusion = rg_document.get("data_fusion", None)
             rg_document["_id"] = _id
             google_id = rg_document["processorId"]
-            processor = self.getProcessorByGoogleId(google_id)
+            processor = self.getProcessorById(google_id)
             if processor is None:
                 return None
             for attr in processor["attributes"]:
@@ -1093,10 +1074,6 @@ class DataManager:
                 columns.append(attr["name"])
             return {"columns": columns, "obj": rg_document}
         return None
-
-    def getProcessorByGoogleId(self, google_id):
-        processor = self.getProcessorById(google_id)
-        return processor
 
     def fetchProcessors(self, user):
         processor_list = self.createProcessorsList()
@@ -1352,7 +1329,9 @@ class DataManager:
     def createProject(self, project_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
-        default_team = self.getDefaultTeamForUser(user_email)
+        default_team = self.getDefaultTeamForUser(
+            user_email, user_info.get("default_team")
+        )
         if default_team is None:
             _log.info(f"user {user_email} has no default team")
             return False
@@ -1385,7 +1364,9 @@ class DataManager:
     def createRecordGroup(self, rg_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
-        default_team = self.getDefaultTeamForUser(user_email)
+        default_team = self.getDefaultTeamForUser(
+            user_email, user_info.get("default_team")
+        )
         if default_team is None:
             _log.info(f"user {user_email} has no default team")
             return False
@@ -1450,25 +1431,6 @@ class DataManager:
             document["_id"] = str(document["_id"])
             return document
         return None
-
-    def updateUserProjects(self, email, new_data):
-        _log.info(f"updating {email} to be {new_data}")
-        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
-        myquery = {"email": email}
-        newvalues = {"$set": new_data}
-        self.db.users.update_one(myquery, newvalues)
-        # _log.info(f"successfully updated project? cursor is : {cursor}")
-        return "success"
-
-    def updateRecordReviewStatus(self, record_id, review_status, user_info):
-        new_data = {"review_status": review_status}
-        self.updateRecord(
-            record_id,
-            new_data,
-            "record",
-            user_info,
-            calling_function="updateRecordReviewStatus",
-        )
 
     @time_it
     def updateRecordInternal(self, record_id, field, value):
