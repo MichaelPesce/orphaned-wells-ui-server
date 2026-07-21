@@ -1083,9 +1083,7 @@ async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)
 
 
 @router.get("/check_processor_status/{rg_id}")
-async def check_processor_status(
-    rg_id: str, user_info: dict = Depends(authenticate)
-):
+async def check_processor_status(rg_id: str, user_info: dict = Depends(authenticate)):
     """Check status of processor model.
 
     Args:
@@ -1095,9 +1093,7 @@ async def check_processor_status(
         Boolean indicating deployed or not
     """
     try:
-        return check_if_processor_is_deployed(
-            rg_id, data_manager, user_info=user_info
-        )
+        return check_if_processor_is_deployed(rg_id, data_manager, user_info=user_info)
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
         return 10
