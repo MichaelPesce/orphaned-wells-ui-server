@@ -103,7 +103,7 @@ def _sample_blob_names(blobs):
 
 
 def _get_file_base_name(filename):
-    return filename.split(".")[0]
+    return os.path.splitext(os.path.basename(str(filename or "")))[0]
 
 
 def _get_gcs_document_source_filename(gcs_document):
