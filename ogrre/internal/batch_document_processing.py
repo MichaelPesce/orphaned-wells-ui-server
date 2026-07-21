@@ -33,7 +33,7 @@ DETECT_WHITESPACE = os.getenv("DETECT_WHITESPACE", "true").lower() in (
     "true",
     "yes",
 )
-DEBUG_DUPLICATE_FIELD_KEYS = {
+MONITORED_DUPLICATE_FIELD_KEYS = {
     field.strip().lower()
     for field in os.getenv(
         "DOCUMENT_AI_BATCH_DUPLICATE_FIELD_KEYS",
@@ -41,14 +41,8 @@ DEBUG_DUPLICATE_FIELD_KEYS = {
     ).split(",")
     if field.strip()
 }
-DEBUG_VALUE_SAMPLE_LIMIT = int(
-    os.getenv("DOCUMENT_AI_BATCH_DEBUG_VALUE_SAMPLE_LIMIT", "120")
-)
-DEBUG_BLOB_NAME_SAMPLE_LIMIT = int(
-    os.getenv("DOCUMENT_AI_BATCH_DEBUG_BLOB_NAME_SAMPLE_LIMIT", "20")
-)
-DEBUG_LIST_SAMPLE_LIMIT = int(
-    os.getenv("DOCUMENT_AI_BATCH_DEBUG_LIST_SAMPLE_LIMIT", "20")
+LOG_BLOB_NAME_SAMPLE_LIMIT = int(
+    os.getenv("DOCUMENT_AI_BATCH_LOG_BLOB_NAME_SAMPLE_LIMIT", "20")
 )
 
 _batch_jobs = {}
@@ -71,59 +65,27 @@ def _new_summary():
     }
 
 
-def _truncate_log_value(value):
-    if value is None:
-        return None
-    text = " ".join(str(value).split())
-    if len(text) > DEBUG_VALUE_SAMPLE_LIMIT:
-        return f"{text[:DEBUG_VALUE_SAMPLE_LIMIT]}..."
-    return text
-
-
-def _target_counts_from_counter(counts):
-    if not DEBUG_DUPLICATE_FIELD_KEYS:
-        return {}
-    return {
-        key: count
-        for key, count in counts.items()
-        if str(key).lower() in DEBUG_DUPLICATE_FIELD_KEYS
-    }
-
-
-def _target_attribute_summary(attributes):
-    summary = {}
-    if not DEBUG_DUPLICATE_FIELD_KEYS:
-        return summary
+def _target_attribute_counts(attributes):
+    counts = Counter()
+    if not MONITORED_DUPLICATE_FIELD_KEYS:
+        return counts
 
     for attribute in attributes or []:
         if not isinstance(attribute, dict):
             continue
         key = attribute.get("key")
         normalized_key = str(key).lower()
-        if normalized_key not in DEBUG_DUPLICATE_FIELD_KEYS:
+        if normalized_key not in MONITORED_DUPLICATE_FIELD_KEYS:
             continue
-        item = summary.setdefault(
-            normalized_key,
-            {"key": key, "count": 0, "values": []},
-        )
-        item["count"] += 1
-        if len(item["values"]) < 5:
-            item["values"].append(_truncate_log_value(attribute.get("value")))
-    return summary
-
-
-def _target_attribute_counts(attributes):
-    return {
-        item["key"]: item["count"]
-        for item in _target_attribute_summary(attributes).values()
-    }
+        counts[normalized_key] += 1
+    return counts
 
 
 def _target_attribute_duplicates(attributes):
     return {
-        item["key"]: {"count": item["count"], "values": item["values"]}
-        for item in _target_attribute_summary(attributes).values()
-        if item["count"] > 1
+        key: count
+        for key, count in _target_attribute_counts(attributes).items()
+        if count > 1
     }
 
 
@@ -131,13 +93,11 @@ def _sample_values(values, limit):
     values = list(values)
     if len(values) <= limit:
         return values
-    return values[:limit] + [
-        f"... {len(values) - limit} more"
-    ]
+    return values[:limit] + [f"... {len(values) - limit} more"]
 
 
 def _sample_blob_names(blobs):
-    return _sample_values((blob.name for blob in blobs), DEBUG_BLOB_NAME_SAMPLE_LIMIT)
+    return _sample_values((blob.name for blob in blobs), LOG_BLOB_NAME_SAMPLE_LIMIT)
 
 
 def create_batch_document_job(
@@ -405,24 +365,6 @@ def _process_one_batch(
 
     if not prepared_documents:
         return partial_summary
-    _log.info(
-        "batch prepared documents job_id=%s batch_index=%s prepared_count=%s "
-        "prepared_documents_sample=%s",
-        job_id,
-        batch_index,
-        len(prepared_documents),
-        _sample_values(
-            (
-                {
-                    "source_uri": prepared.source_uri,
-                    "record_id": prepared.record_id,
-                    "file_name": prepared.file_name,
-                }
-                for prepared in prepared_documents
-            ),
-            DEBUG_LIST_SAMPLE_LIMIT,
-        ),
-    )
 
     filtered_input_config = documentai.BatchDocumentsInputConfig(
         gcs_documents=documentai.GcsDocuments(
@@ -431,18 +373,6 @@ def _process_one_batch(
     )
     output_gcs_uri = _build_output_gcs_uri(
         output_bucket_name, output_prefix, batch_index
-    )
-    _log.info(
-        "batch document processing submitting job_id=%s batch_index=%s "
-        "documents=%s output_gcs_uri=%s source_uris=%s",
-        job_id,
-        batch_index,
-        len(prepared_documents),
-        output_gcs_uri,
-        _sample_values(
-            (prepared.source_uri for prepared in prepared_documents),
-            DEBUG_LIST_SAMPLE_LIMIT,
-        ),
     )
 
     try:
@@ -454,15 +384,6 @@ def _process_one_batch(
         )
         operation.result(timeout=BATCH_LRO_TIMEOUT)
         metadata = operation.metadata
-        _log.info(
-            "batch Document AI LRO completed job_id=%s batch_index=%s "
-            "operation=%s state=%s status_count=%s",
-            job_id,
-            batch_index,
-            getattr(getattr(operation, "operation", None), "name", None),
-            metadata.state,
-            len(metadata.individual_process_statuses),
-        )
     except Exception as e:
         message = f"batch LRO failed for batch {batch_index}: {e}"
         _log.exception(message)
@@ -541,17 +462,6 @@ def _process_one_batch(
                 partial_summary, prepared, data_manager, rg_id, message
             )
             continue
-
-        _log.info(
-            "batch Document AI document status job_id=%s batch_index=%s "
-            "record_id=%s source_uri=%s output_gcs_destination=%s status_code=%s",
-            job_id,
-            batch_index,
-            prepared.record_id,
-            prepared.source_uri,
-            process_status.output_gcs_destination,
-            process_status.status.code,
-        )
 
         try:
             attributes_list = _read_output_attributes(
@@ -776,67 +686,21 @@ def _read_output_attributes(
             _sample_blob_names(json_blobs),
         )
 
-    _log.info(
-        "reading Document AI JSON output job_id=%s batch_index=%s "
-        "record_id=%s source_uri=%s output_gcs_destination=%s "
-        "destination_blob_path=%s selected_json_count=%s selected_blob_names=%s",
-        job_id,
-        batch_index,
-        record_id,
-        source_uri,
-        output_gcs_destination,
-        location.blob_path,
-        len(json_blobs),
-        _sample_blob_names(json_blobs),
-    )
-
     for blob in json_blobs:
         document_json = blob.download_as_text()
-        blob_attributes, entity_type_counts = (
-            document_ai_api.process_document_json_with_entity_counts(
+        attributes_list.extend(
+            document_ai_api.process_document_json(
                 document_json,
                 using_default_processor=using_default_processor,
             )
         )
-        target_entity_counts = _target_counts_from_counter(entity_type_counts)
-        duplicate_target_entity_counts = {
-            key: count for key, count in target_entity_counts.items() if count > 1
-        }
-        target_attribute_duplicates = _target_attribute_duplicates(blob_attributes)
-        if duplicate_target_entity_counts or target_attribute_duplicates:
-            _log.warning(
-                "Document AI JSON contains repeated target fields job_id=%s "
-                "batch_index=%s record_id=%s source_uri=%s blob_name=%s "
-                "target_entity_counts=%s duplicate_attribute_values=%s",
-                job_id,
-                batch_index,
-                record_id,
-                source_uri,
-                blob.name,
-                target_entity_counts,
-                target_attribute_duplicates,
-            )
-        else:
-            _log.info(
-                "Document AI JSON parsed job_id=%s batch_index=%s "
-                "record_id=%s source_uri=%s blob_name=%s attribute_count=%s "
-                "target_entity_counts=%s",
-                job_id,
-                batch_index,
-                record_id,
-                source_uri,
-                blob.name,
-                len(blob_attributes),
-                target_entity_counts,
-            )
-        attributes_list.extend(blob_attributes)
 
     aggregate_duplicates = _target_attribute_duplicates(attributes_list)
     if aggregate_duplicates:
         _log.warning(
-            "Document AI output aggregate contains repeated target fields "
+            "Document AI output contains repeated monitored fields "
             "job_id=%s batch_index=%s record_id=%s source_uri=%s "
-            "output_gcs_destination=%s selected_json_count=%s duplicates=%s",
+            "output_gcs_destination=%s selected_json_count=%s duplicate_counts=%s",
             job_id,
             batch_index,
             record_id,
@@ -883,15 +747,6 @@ def _update_record_with_attributes(
         )
 
     attributes_list = util.normalize_record_attribute_tree(attributes_list)
-    input_duplicate_targets = _target_attribute_duplicates(attributes_list)
-    if input_duplicate_targets:
-        _log.warning(
-            "batch record attributes have repeated target fields before cleaning "
-            "record_id=%s file_name=%s duplicates=%s",
-            record_id,
-            file_name,
-            input_duplicate_targets,
-        )
 
     for attribute in attributes_list:
         if run_cleaning_functions:
@@ -906,18 +761,10 @@ def _update_record_with_attributes(
         keep_all_attributes=True,
     )
     final_duplicate_targets = _target_attribute_duplicates(sorted_attributes_list)
-    _log.info(
-        "batch record attributes ready for db record_id=%s file_name=%s "
-        "attribute_count=%s target_field_counts=%s",
-        record_id,
-        file_name,
-        len(sorted_attributes_list),
-        _target_attribute_counts(sorted_attributes_list),
-    )
     if final_duplicate_targets:
         _log.warning(
-            "batch record attributes still have repeated target fields before db "
-            "update record_id=%s file_name=%s duplicates=%s",
+            "batch record attributes contain repeated monitored fields before db "
+            "update record_id=%s file_name=%s duplicate_counts=%s",
             record_id,
             file_name,
             final_duplicate_targets,

@@ -1,5 +1,4 @@
 import base64
-from collections import Counter
 import logging
 import os
 import sys
@@ -136,36 +135,14 @@ def document_to_attributes(document_object, using_default_processor=False):
     return _entities_to_attributes(document_entities)
 
 
-def _document_from_json(document_json):
+def process_document_json(document_json, using_default_processor=False):
     if isinstance(document_json, bytes):
         document_json = document_json.decode("utf-8")
-    return documentai.Document.from_json(document_json, ignore_unknown_fields=True)
-
-
-def count_document_entity_types(document_object, using_default_processor=False):
-    document_entities = _get_document_entities(
-        document_object, using_default_processor=using_default_processor
+    document_object = documentai.Document.from_json(
+        document_json, ignore_unknown_fields=True
     )
-    return dict(Counter(entity.type_ for entity in document_entities))
-
-
-def process_document_json(document_json, using_default_processor=False):
-    document_object = _document_from_json(document_json)
     return document_to_attributes(
         document_object, using_default_processor=using_default_processor
-    )
-
-
-def process_document_json_with_entity_counts(
-    document_json, using_default_processor=False
-):
-    document_object = _document_from_json(document_json)
-    document_entities = _get_document_entities(
-        document_object, using_default_processor=using_default_processor
-    )
-    return (
-        _entities_to_attributes(document_entities),
-        dict(Counter(entity.type_ for entity in document_entities)),
     )
 
 
