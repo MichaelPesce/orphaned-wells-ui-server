@@ -2226,15 +2226,13 @@ class DataManager:
 
     @time_it
     def checkIfRecordsExist(self, filenames, rg_id):
-        bases = {
-            self.getFilenameBase(f)
-            for f in filenames
-            if self.getFilenameBase(f)
-        }
+        bases = {self.getFilenameBase(f) for f in filenames if self.getFilenameBase(f)}
         if not bases:
             return []
 
-        record_cursor = self.db.records.find({"record_group_id": rg_id}, {"filename": 1})
+        record_cursor = self.db.records.find(
+            {"record_group_id": rg_id}, {"filename": 1}
+        )
         duplicate_records = set()
         for document in record_cursor:
             filename_base = self.getFilenameBase(document.get("filename", ""))
