@@ -63,6 +63,7 @@ def anonymous_user(default_team: Optional[str] = None):
         "permissions": [],
         "anonymous": True,
         "default_team": default_team or DEFAULT_UNAUTHENTICATED_TEAM["name"],
+        "collaborator": data_manager.getCollaboratorForUser(),
     }
 
 
@@ -529,7 +530,7 @@ async def get_processors(user_info: dict = Depends(authenticate)):
     Returns:
         List containing processors and metadata
     """
-    resp = data_manager.fetchProcessors(user_info.get("email", ""))
+    resp = data_manager.fetchProcessors(user_info)
     return resp
 
 
@@ -602,7 +603,7 @@ async def get_record_data(
 
     ## get record schema
     _, _, processor_attributes = data_manager.getProcessorByRecordGroupID(
-        record["rg_id"]
+        record["rg_id"], user=user_info
     )
     processor_attributes = util.convert_processor_attributes_to_dict(
         processor_attributes
@@ -681,7 +682,7 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.getProcessorById(google_id)
+    resp = data_manager.getProcessorById(google_id, user_info)
     return resp
 
 
@@ -694,7 +695,7 @@ async def get_column_data(
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.fetchColumnData(location, _id)
+    resp = data_manager.fetchColumnData(location, _id, user_info)
     return resp
 
 
@@ -1980,6 +1981,38 @@ async def change_team(request: Request, user_info: dict = Depends(authenticate))
 
     try:
         return data_manager.changeUserTeam(user_info["email"], new_team)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/change_collaborator")
+async def change_collaborator(request: Request, user_info: dict = Depends(authenticate)):
+    """Change the current user's processor collaborator override."""
+    require_authenticated_admin_route()
+    if not data_manager.hasPermission(user_info["email"], "system_administration"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
+        )
+
+    req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new collaborator in the request body",
+        )
+
+    new_collaborator = req.get("new_collaborator", None)
+    if not isinstance(new_collaborator, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new collaborator in the request body",
+        )
+
+    try:
+        return data_manager.changeUserCollaborator(
+            user_info["email"], new_collaborator
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
