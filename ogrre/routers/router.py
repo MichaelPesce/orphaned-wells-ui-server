@@ -1986,7 +1986,9 @@ async def change_team(request: Request, user_info: dict = Depends(authenticate))
 
 
 @router.post("/change_collaborator")
-async def change_collaborator(request: Request, user_info: dict = Depends(authenticate)):
+async def change_collaborator(
+    request: Request, user_info: dict = Depends(authenticate)
+):
     """Change the current user's processor collaborator override."""
     require_authenticated_admin_route()
     if not data_manager.hasPermission(user_info["email"], "system_administration"):
@@ -2010,9 +2012,7 @@ async def change_collaborator(request: Request, user_info: dict = Depends(authen
         )
 
     try:
-        return data_manager.changeUserCollaborator(
-            user_info["email"], new_collaborator
-        )
+        return data_manager.changeUserCollaborator(user_info["email"], new_collaborator)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
