@@ -375,7 +375,7 @@ def _process_batch_documents(
         processor_id,
         model_id,
         processor_attributes,
-    ) = data_manager.getProcessorByRecordGroupID(rg_id)
+    ) = data_manager.getProcessorByRecordGroupID(rg_id, user=user_info)
     if not processor_id or not model_id:
         raise ValueError(f"unable to find processor for record group {rg_id}")
 

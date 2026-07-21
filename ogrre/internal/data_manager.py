@@ -1546,7 +1546,11 @@ class DataManager:
                 ## call cleaning functions
                 if field_to_clean:
                     attributeToClean = new_data["v"]
-                    self.cleanAttribute(attributeToClean, record_id=record_id)
+                    self.cleanAttribute(
+                        attributeToClean,
+                        record_id=record_id,
+                        user_info=user_info,
+                    )
 
                 if update_type == "attribute":
                     v = new_data.get("v", None)
@@ -2412,13 +2416,17 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to record bulk history items: {e}")
 
-    def cleanAttribute(self, attribute, record_id=None, rg_id=None):
+    def cleanAttribute(self, attribute, record_id=None, rg_id=None, user_info=None):
         if record_id is None and rg_id is None:
             return None
         if rg_id is not None:
-            _, _, processor_attributes = self.getProcessorByRecordGroupID(rg_id)
+            _, _, processor_attributes = self.getProcessorByRecordGroupID(
+                rg_id, user=user_info
+            )
         else:
-            _, _, processor_attributes = self.getProcessorByRecordID(record_id)
+            _, _, processor_attributes = self.getProcessorByRecordID(
+                record_id, user=user_info
+            )
 
         ## convert processor attributes to dict
         processor_attributes = util.convert_processor_attributes_to_dict(

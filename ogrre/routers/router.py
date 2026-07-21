@@ -50,20 +50,25 @@ REFRESH_COOKIE = "ogrre_refresh_session"
 CSRF_COOKIE = "ogrre_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 ANONYMOUS_TEAM_COOKIE = "ogrre_anonymous_team"
+ANONYMOUS_COLLABORATOR_COOKIE = "ogrre_anonymous_collaborator"
 COOKIE_MAX_AGE_SECONDS = int(os.getenv("SESSION_COOKIE_MAX_AGE_SECONDS", "3600"))
 REFRESH_COOKIE_MAX_AGE_SECONDS = int(
     os.getenv("REFRESH_COOKIE_MAX_AGE_SECONDS", "2592000")
 )
 
 
-def anonymous_user(default_team: Optional[str] = None):
+def anonymous_user(
+    default_team: Optional[str] = None, collaborator: Optional[str] = None
+):
     return {
         "email": "anonymous",
         "roles": {},
         "permissions": [],
         "anonymous": True,
         "default_team": default_team or DEFAULT_UNAUTHENTICATED_TEAM["name"],
-        "collaborator": data_manager.getCollaboratorForUser(),
+        "collaborator": data_manager.getCollaboratorForUser(
+            {"collaborator": collaborator}
+        ),
     }
 
 
@@ -106,10 +111,35 @@ def _get_anonymous_team_from_request(request: Request) -> str:
     return DEFAULT_UNAUTHENTICATED_TEAM["name"]
 
 
+def _get_anonymous_collaborator_from_request(request: Request) -> str:
+    collaborator = (request.cookies.get(ANONYMOUS_COLLABORATOR_COOKIE) or "").strip()
+    return data_manager.getCollaboratorForUser({"collaborator": collaborator})
+
+
+def _get_anonymous_user_from_request(request: Request):
+    return anonymous_user(
+        _get_anonymous_team_from_request(request),
+        _get_anonymous_collaborator_from_request(request),
+    )
+
+
 def _set_anonymous_team_cookie(response: JSONResponse, team: str):
     response.set_cookie(
         key=ANONYMOUS_TEAM_COOKIE,
         value=team,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
+
+
+def _set_anonymous_collaborator_cookie(response: JSONResponse, collaborator: str):
+    response.set_cookie(
+        key=ANONYMOUS_COLLABORATOR_COOKIE,
+        value=collaborator,
         httponly=True,
         secure=COOKIE_SECURE,
         samesite=COOKIE_SAMESITE,
@@ -233,7 +263,7 @@ async def authenticate(request: Request, token: str = Depends(oauth2_scheme)):
         user account information
     """
     if not REQUIRE_AUTH:
-        return anonymous_user(_get_anonymous_team_from_request(request))
+        return _get_anonymous_user_from_request(request)
     token_to_verify = get_bearer_or_session_token(request, token)
     if not token_to_verify:
         raise HTTPException(status_code=401, detail="missing authentication token")
@@ -775,7 +805,7 @@ async def upload_document(
     """
     user_email = user_email.lower()
     if not REQUIRE_AUTH:
-        user_info = anonymous_user(_get_anonymous_team_from_request(request))
+        user_info = _get_anonymous_user_from_request(request)
     elif not data_manager.hasPermission(user_email, "upload_document"):
         raise HTTPException(
             403,
@@ -873,7 +903,7 @@ async def batch_process_documents(
           and does not delete or modify source files in the request bucket.
     """
     if not REQUIRE_AUTH:
-        user_info = anonymous_user(_get_anonymous_team_from_request(request))
+        user_info = _get_anonymous_user_from_request(request)
 
     user_email = user_info["email"].lower()
     if not data_manager.hasPermission(user_email, "upload_document"):
@@ -945,7 +975,7 @@ async def check_batch_process_documents_gcs_path(
     filtering, and duplicate filename detection as the batch processor.
     """
     if not REQUIRE_AUTH:
-        user_info = anonymous_user(_get_anonymous_team_from_request(request))
+        user_info = _get_anonymous_user_from_request(request)
 
     user_email = user_info["email"].lower()
     if not data_manager.hasPermission(user_email, "upload_document"):
@@ -1014,7 +1044,10 @@ async def deploy_processor(
         )
     try:
         background_tasks.add_task(
-            deployProcessor, rg_id=rg_id, data_manager=data_manager
+            deployProcessor,
+            rg_id=rg_id,
+            data_manager=data_manager,
+            user_info=user_info,
         )
         return 2
     except Exception as e:
@@ -1039,7 +1072,7 @@ async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        undeployed = undeployProcessor(rg_id, data_manager)
+        undeployed = undeployProcessor(rg_id, data_manager, user_info=user_info)
         if undeployed:
             return 3
         else:
@@ -1050,7 +1083,7 @@ async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)
 
 
 @router.get("/check_processor_status/{rg_id}")
-async def check_processor_status(rg_id: str):
+async def check_processor_status(rg_id: str, user_info: dict = Depends(authenticate)):
     """Check status of processor model.
 
     Args:
@@ -1060,7 +1093,7 @@ async def check_processor_status(rg_id: str):
         Boolean indicating deployed or not
     """
     try:
-        return check_if_processor_is_deployed(rg_id, data_manager)
+        return check_if_processor_is_deployed(rg_id, data_manager, user_info=user_info)
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
         return 10
@@ -2005,8 +2038,9 @@ async def change_collaborator(
     request: Request, user_info: dict = Depends(authenticate)
 ):
     """Change the current user's processor collaborator override."""
-    require_authenticated_admin_route()
-    if not data_manager.hasPermission(user_info["email"], "system_administration"):
+    if REQUIRE_AUTH and not data_manager.hasPermission(
+        user_info["email"], "system_administration"
+    ):
         raise HTTPException(
             403,
             detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
@@ -2025,6 +2059,17 @@ async def change_collaborator(
             status_code=400,
             detail=f"Please provide a new collaborator in the request body",
         )
+
+    if not REQUIRE_AUTH:
+        collaborator = new_collaborator.strip()
+        if collaborator == "":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Please provide a new collaborator in the request body",
+            )
+        response = JSONResponse({"collaborator": collaborator})
+        _set_anonymous_collaborator_cookie(response, collaborator)
+        return response
 
     try:
         return data_manager.changeUserCollaborator(user_info["email"], new_collaborator)
