@@ -196,9 +196,7 @@ def get_gcs_path_document_summary(
     total_lro_waves = (
         total_batches + MAX_CONCURRENT_BATCH_LROS - 1
     ) // MAX_CONCURRENT_BATCH_LROS
-    duplicate_file_bases = _get_duplicate_file_bases(
-        all_documents, rg_id, data_manager
-    )
+    duplicate_file_bases = _get_duplicate_file_bases(all_documents, rg_id, data_manager)
     duplicate_document_count = sum(
         1
         for gcs_document in all_documents
@@ -216,7 +214,9 @@ def get_gcs_path_document_summary(
     total_files_to_submit = (
         non_duplicate_document_count if prevent_duplicates else total_documents
     )
-    total_batches_to_submit = non_duplicate_batches if prevent_duplicates else total_batches
+    total_batches_to_submit = (
+        non_duplicate_batches if prevent_duplicates else total_batches
+    )
     total_lro_waves_to_submit = (
         total_batches_to_submit + MAX_CONCURRENT_BATCH_LROS - 1
     ) // MAX_CONCURRENT_BATCH_LROS
@@ -343,9 +343,7 @@ def _process_batch_documents(
         gcs_document for documents in batch_documents for gcs_document in documents
     ]
     total_documents = len(all_documents)
-    duplicate_file_bases = _get_duplicate_file_bases(
-        all_documents, rg_id, data_manager
-    )
+    duplicate_file_bases = _get_duplicate_file_bases(all_documents, rg_id, data_manager)
     duplicate_document_count = sum(
         1
         for gcs_document in all_documents
