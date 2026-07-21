@@ -1,4 +1,5 @@
 import base64
+from collections import Counter
 import logging
 import os
 import sys
@@ -65,6 +66,16 @@ def _get_entity_value(entity):
     return raw_text
 
 
+def _get_document_entities(document_object, using_default_processor=False):
+    document_entities = document_object.entities
+    if using_default_processor:
+        if not document_entities:
+            return []
+        _log.info("generic processor, diving into properties")
+        return document_entities[0].properties
+    return document_entities
+
+
 def _entity_to_attribute(entity, top_level_attribute=None, parent_identifier=None):
     raw_attribute = entity.type_
     attribute = util.relative_attribute_key(raw_attribute, parent_identifier)
@@ -109,14 +120,7 @@ def _entity_to_attribute(entity, top_level_attribute=None, parent_identifier=Non
     return new_attribute
 
 
-def document_to_attributes(document_object, using_default_processor=False):
-    document_entities = document_object.entities
-    if using_default_processor:
-        if not document_entities:
-            return []
-        _log.info("generic processor, diving into properties")
-        document_entities = document_entities[0].properties
-
+def _entities_to_attributes(document_entities):
     attributes_list = []
 
     for entity in document_entities:
@@ -125,14 +129,43 @@ def document_to_attributes(document_object, using_default_processor=False):
     return attributes_list
 
 
-def process_document_json(document_json, using_default_processor=False):
+def document_to_attributes(document_object, using_default_processor=False):
+    document_entities = _get_document_entities(
+        document_object, using_default_processor=using_default_processor
+    )
+    return _entities_to_attributes(document_entities)
+
+
+def _document_from_json(document_json):
     if isinstance(document_json, bytes):
         document_json = document_json.decode("utf-8")
-    document_object = documentai.Document.from_json(
-        document_json, ignore_unknown_fields=True
+    return documentai.Document.from_json(document_json, ignore_unknown_fields=True)
+
+
+def count_document_entity_types(document_object, using_default_processor=False):
+    document_entities = _get_document_entities(
+        document_object, using_default_processor=using_default_processor
     )
+    return dict(Counter(entity.type_ for entity in document_entities))
+
+
+def process_document_json(document_json, using_default_processor=False):
+    document_object = _document_from_json(document_json)
     return document_to_attributes(
         document_object, using_default_processor=using_default_processor
+    )
+
+
+def process_document_json_with_entity_counts(
+    document_json, using_default_processor=False
+):
+    document_object = _document_from_json(document_json)
+    document_entities = _get_document_entities(
+        document_object, using_default_processor=using_default_processor
+    )
+    return (
+        _entities_to_attributes(document_entities),
+        dict(Counter(entity.type_ for entity in document_entities)),
     )
 
 
@@ -190,12 +223,9 @@ def process_document_content(
     result = docai_client.process_document(request=request)
     document_object = result.document
 
-    document_entities = document_object.entities
-    if using_default_processor:
-        if not document_entities:
-            return []
-        _log.info("generic processor, diving into properties")
-        document_entities = document_entities[0].properties
+    document_entities = _get_document_entities(
+        document_object, using_default_processor=using_default_processor
+    )
 
     attributes_list = []
 
