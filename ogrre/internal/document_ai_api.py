@@ -281,6 +281,7 @@ def check_if_processor_is_deployed(rg_id, data_manager):
         _log.info("custom document ai backend selected; returning deployed")
         return 1
     processor_id, model_id, _ = data_manager.getProcessorByRecordGroupID(rg_id)
+    _log.info(f"checking deployment status of {processor_id} : {model_id}")
 
     client = _get_docai_client()
     parent = client.processor_path(PROJECT_ID, LOCATION, processor_id)
