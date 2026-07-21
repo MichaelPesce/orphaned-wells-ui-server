@@ -63,6 +63,7 @@ def anonymous_user(default_team: Optional[str] = None):
         "permissions": [],
         "anonymous": True,
         "default_team": default_team or DEFAULT_UNAUTHENTICATED_TEAM["name"],
+        "collaborator": data_manager.getCollaboratorForUser(),
     }
 
 
@@ -529,7 +530,7 @@ async def get_processors(user_info: dict = Depends(authenticate)):
     Returns:
         List containing processors and metadata
     """
-    resp = data_manager.fetchProcessors(user_info.get("email", ""))
+    resp = data_manager.fetchProcessors(user_info)
     return resp
 
 
@@ -602,7 +603,7 @@ async def get_record_data(
 
     ## get record schema
     _, _, processor_attributes = data_manager.getProcessorByRecordGroupID(
-        record["rg_id"]
+        record["rg_id"], user=user_info
     )
     processor_attributes = util.convert_processor_attributes_to_dict(
         processor_attributes
@@ -681,7 +682,7 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.getProcessorById(google_id)
+    resp = data_manager.getProcessorById(google_id, user_info)
     return resp
 
 
@@ -694,7 +695,7 @@ async def get_column_data(
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.fetchColumnData(location, _id)
+    resp = data_manager.fetchColumnData(location, _id, user_info)
     return resp
 
 
@@ -850,6 +851,7 @@ async def batch_process_documents(
             "bucketName": "source-bucket-name",
             "prefix": "optional/folder/path/",
             "run_cleaning_functions": true,
+            "preventDuplicates": true,
             "outputBucketName": "optional-output-bucket-name",
             "outputPrefix": "optional/output/folder/"
         }
@@ -862,6 +864,8 @@ async def batch_process_documents(
           boundary so "folder/name" does not also match "folder/name_extra".
           Example: "incoming/well-records/".
         - run_cleaning_functions defaults to true.
+        - preventDuplicates defaults to false for API compatibility. When true,
+          files with names that already exist in the record group are skipped.
         - outputBucketName/outputPrefix are optional and control where Document AI
           batch JSON output is written. They do not control frontend display PNGs.
         - The backend stores PNG display copies at:
@@ -890,6 +894,9 @@ async def batch_process_documents(
     run_cleaning_functions = req.get(
         "run_cleaning_functions", req.get("runCleaningFunctions", True)
     )
+    prevent_duplicates = req.get(
+        "prevent_duplicates", req.get("preventDuplicates", False)
+    )
 
     if not bucket_name:
         raise HTTPException(400, detail="bucketName is required")
@@ -901,6 +908,7 @@ async def batch_process_documents(
         prefix=prefix,
         output_bucket_name=output_bucket_name,
         output_prefix=output_prefix,
+        prevent_duplicates=prevent_duplicates,
     )
     background_tasks.add_task(
         batch_document_processing.process_batch_document_job,
@@ -913,6 +921,7 @@ async def batch_process_documents(
         output_bucket_name=output_bucket_name,
         output_prefix=output_prefix,
         run_cleaning_functions=run_cleaning_functions,
+        prevent_duplicates=prevent_duplicates,
     )
     return {"job_id": job_id, "status": "queued"}
 
@@ -928,12 +937,12 @@ async def check_batch_process_documents_gcs_path(
     Request body matches /batch_process_documents/{rg_id}:
         {
             "bucketName": "source-bucket-name",
-            "prefix": "optional/folder/path/"
+            "prefix": "optional/folder/path/",
+            "preventDuplicates": true
         }
 
-    The backend applies the same prefix normalization and Document AI Toolbox
-    filtering as the batch processor, so totalFiles reflects the supported
-    documents that would be submitted.
+    The backend applies the same prefix normalization, Document AI Toolbox
+    filtering, and duplicate filename detection as the batch processor.
     """
     if not REQUIRE_AUTH:
         user_info = anonymous_user(_get_anonymous_team_from_request(request))
@@ -952,13 +961,20 @@ async def check_batch_process_documents_gcs_path(
     req = await request.json()
     bucket_name = req.get("bucketName") or req.get("bucket_name") or req.get("bucket")
     prefix = req.get("prefix") or req.get("folderPath") or req.get("folder") or ""
+    prevent_duplicates = req.get(
+        "prevent_duplicates", req.get("preventDuplicates", False)
+    )
 
     if not bucket_name:
         raise HTTPException(400, detail="bucketName is required")
 
     try:
         return batch_document_processing.get_gcs_path_document_summary(
-            bucket_name=bucket_name, prefix=prefix
+            bucket_name=bucket_name,
+            prefix=prefix,
+            rg_id=rg_id,
+            data_manager=data_manager,
+            prevent_duplicates=prevent_duplicates,
         )
     except Exception as e:
         _log.error(f"unable to check GCS bucket/path: {e}")
@@ -1980,6 +1996,38 @@ async def change_team(request: Request, user_info: dict = Depends(authenticate))
 
     try:
         return data_manager.changeUserTeam(user_info["email"], new_team)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/change_collaborator")
+async def change_collaborator(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    """Change the current user's processor collaborator override."""
+    require_authenticated_admin_route()
+    if not data_manager.hasPermission(user_info["email"], "system_administration"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
+        )
+
+    req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new collaborator in the request body",
+        )
+
+    new_collaborator = req.get("new_collaborator", None)
+    if not isinstance(new_collaborator, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new collaborator in the request body",
+        )
+
+    try:
+        return data_manager.changeUserCollaborator(user_info["email"], new_collaborator)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
