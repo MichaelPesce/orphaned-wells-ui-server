@@ -9,7 +9,10 @@ This directory contains the Terraform configuration used to manage backend VM in
 - `modules/backend_vm` contains the reusable VM module, including a compute instance, static IP, and DNS record.
 - `variables.tf` declares the Terraform input variables.
 - `terraform.tfvars` provides the default Google Cloud project and region values.
-- `scripts/import_backend_vms.sh` imports existing GCP instances, static IPs, and DNS records into Terraform state.
+- `backend.tf` configures the shared GCS backend for Terraform state.
+- `scripts/bootstrap_terraform_state_bucket.sh` creates or updates the GCS state bucket.
+- `scripts/import_existing_infrastructure.sh` imports existing managed resources into a workspace from the current Terraform configuration.
+- `scripts/import_backend_vms.sh` is a compatibility wrapper around the comprehensive import script.
 
 ## Prerequisites
 
@@ -36,7 +39,7 @@ The import script also unsets `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_AUTHORIZ
 
 ## Terraform commands
 
-Initialize the working directory and download providers:
+Initialize the working directory, backend, and providers:
 
 ```bash
 terraform init
@@ -85,7 +88,59 @@ If you need to destroy infrastructure, run:
 terraform destroy -var-file=terraform.tfvars
 ```
 
-> Note: this repository currently uses local state by default (`terraform.tfstate`). Do not delete or lose this file unless you intend to recreate the infrastructure.
+> Note: this repository uses a shared GCS backend for state. Do not manually edit, delete, or overwrite remote state unless you are intentionally performing a state migration or recovery.
+
+## Remote state setup
+
+Terraform state is stored in this GCS bucket:
+
+```text
+gs://tidy-outlet-412020-ogrre-terraform-state/orphaned-wells-ui-server
+```
+
+The bucket must exist before `terraform init` can use the backend. Create or update it with:
+
+```bash
+cd orphaned-wells-ui-server/deployment/terraform
+bash scripts/bootstrap_terraform_state_bucket.sh
+```
+
+The bootstrap script creates the bucket in `us-central1`, enables uniform bucket-level access, enforces public access prevention, and enables object versioning.
+
+### Migrating the known-good local state
+
+Use this once to promote the known-good local `staging-test` state into the shared GCS backend. The example below pushes that state into the remote `ogrre` workspace. Set `REMOTE_WORKSPACE=staging-test` instead if you want to preserve the old workspace name.
+
+```bash
+cd orphaned-wells-ui-server/deployment/terraform
+
+BACKUP_DIR="/private/tmp/ogrre-tfstate-migration-$(date +%Y%m%d%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+
+cp terraform.tfstate.d/staging-test/terraform.tfstate "$BACKUP_DIR/staging-test.tfstate"
+cp -R terraform.tfstate terraform.tfstate.backup terraform.tfstate.d "$BACKUP_DIR"/
+
+bash scripts/bootstrap_terraform_state_bucket.sh
+
+terraform init -reconfigure
+
+REMOTE_WORKSPACE=ogrre
+terraform workspace new "$REMOTE_WORKSPACE" || terraform workspace select "$REMOTE_WORKSPACE"
+terraform state push "$BACKUP_DIR/staging-test.tfstate"
+
+terraform plan -var-file=terraform.tfvars
+```
+
+After the migration succeeds, other developers should run:
+
+```bash
+cd orphaned-wells-ui-server/deployment/terraform
+terraform init
+terraform workspace select ogrre
+terraform plan -var-file=terraform.tfvars
+```
+
+If `terraform state push` reports that remote state already exists, stop and inspect the remote workspace before using `-force`.
 
 ## Workspaces
 
@@ -143,41 +198,50 @@ terraform plan -target="module.backend_vms[\"staging\"].google_compute_instance.
 
 ## Import existing infrastructure into Terraform state
 
-The import script is designed to import existing backend VM resources for collaborators that already exist in Google Cloud.
+Use the comprehensive importer when creating a new workspace that should track existing Google Cloud infrastructure represented by this Terraform configuration. The script parses `terraform.tfvars` and collaborator zones from `main.tf`, generates the expected resource addresses and Google import IDs from this repo's naming conventions, and imports them into the target workspace. It does not use `terraform console`, so manifest generation does not depend on decoding existing Terraform state.
+
+Preview the import into `ogrre`:
 
 ```bash
-bash scripts/import_backend_vms.sh
+bash scripts/import_existing_infrastructure.sh --target-workspace ogrre --dry-run
 ```
 
-This script imports:
-
-- the Compute Engine instance
-- the reserved static IP address
-- the DNS record in the `uow-carbon-org` managed zone
-
-### Updating the import script for a new collaborator
-
-If you add a collaborator, also update `scripts/import_backend_vms.sh`:
-
-- add the collaborator key to the `COLLABORATORS` array
-- add the collaborator zone mapping to the `ZONES` associative array
-
-For example:
+Run the import into `ogrre`:
 
 ```bash
-declare -A ZONES=(
-  [isgs]="us-central1-a"
-  [osage]="us-central1-f"
-  [ca]="us-central1-f"
-  [newts]="us-central1-b"
-  [staging]="us-central1-a"
-  [boots]="us-central1-a"
-)
-
-COLLABORATORS=("isgs" "osage" "ca" "newts" "staging" "boots")
+bash scripts/import_existing_infrastructure.sh --target-workspace ogrre
 ```
 
-Then rerun the import script.
+If the target workspace has disposable, stale, or provider-incompatible local state, move its state file aside before importing:
+
+```bash
+bash scripts/import_existing_infrastructure.sh --target-workspace ogrre --reset-state
+```
+
+`--reset-state` only moves the selected local Terraform workspace state file to a timestamped backup. It does not change Google Cloud resources.
+
+The importer covers resources currently represented by the Terraform files, including:
+
+- backend VM module resources: Compute Engine instances, regional static IPs, and primary DNS records
+- shared firewall rules
+- GKE-required project services
+- the shared GKE cluster
+- GKE global static IPs
+- GKE test DNS records
+
+Resources already present in the target workspace are skipped. Missing, not-yet-created, or otherwise non-importable resources are reported in the summary and do not stop the script unless `--strict` is passed. This is expected when the configuration includes a new collaborator whose VM, DNS record, or GKE IP does not exist yet.
+
+The old script name still works:
+
+```bash
+bash scripts/import_backend_vms.sh --target-workspace ogrre
+```
+
+To keep the old VM-only behavior, pass `--backend-vms-only`. You can also limit VM imports to specific collaborators:
+
+```bash
+bash scripts/import_existing_infrastructure.sh --target-workspace ogrre --backend-vms-only staging
+```
 
 ## Adding a new collaborator
 
@@ -209,7 +273,7 @@ After updating `main.tf`, run:
 terraform plan -var-file=terraform.tfvars
 ```
 
-If the new VM already exists in the GCP project, also add it to `scripts/import_backend_vms.sh` and run the script to import the resources into state.
+If the new VM already exists in the GCP project, run `scripts/import_existing_infrastructure.sh` to import the resources into state. The import script reads the collaborator list from Terraform, so it does not need a per-collaborator script update.
 
 ## Notes
 
