@@ -62,6 +62,7 @@ class DataManager:
         self.use_airtable = False
         self.ensureDefaultUnauthenticatedTeam()
         self.createProcessorsList()
+        self.migrateExistingRecords()
 
     def _createEmptyRecordAttribute(
         self,
@@ -341,7 +342,7 @@ class DataManager:
 
     def getProcessorsByIds(self, google_ids=None, user=None):
         if USE_DB_PROCESSORS:
-            processors = self.getMongoProcessorByID(google_ids)
+            processors = self.getMongoProcessorsByIDs(google_ids)
         else:
             collaborator = self.getCollaboratorForUser(user)
             processors = []
@@ -1420,6 +1421,25 @@ class DataManager:
 
         return document
 
+    def migrateExistingRecords(self):
+        try:
+            count = self.db.records.count_documents({"record_number": {"$exists": False}})
+            if count > 0:
+                _log.info(f"Found {count} records without record_number. Starting migration...")
+                record_group_ids = self.db.records.distinct("record_group_id")
+                for rg_id in record_group_ids:
+                    cursor = self.db.records.find({"record_group_id": rg_id}).sort("dateCreated", 1)
+                    idx = 1
+                    for doc in cursor:
+                        self.db.records.update_one(
+                            {"_id": doc["_id"]},
+                            {"$set": {"record_number": idx}}
+                        )
+                        idx += 1
+                _log.info("Migration of record_number completed successfully.")
+        except Exception as e:
+            _log.error(f"Error during migrateExistingRecords: {e}")
+
     def getProcessorByRecordGroupID(self, rg_id, returnNameOnly=False, user=None):
         _id = ObjectId(rg_id)
         try:
@@ -1526,6 +1546,18 @@ class DataManager:
         user = user_info.get("email", None)
         ## add timestamp to project
         record["dateCreated"] = time.time()
+        
+        # Assign sequentially contiguous record number in the record group
+        record_group_id = record.get("record_group_id")
+        if record_group_id:
+            cursor = self.db.records.find({"record_group_id": record_group_id}, {"record_number": 1}).sort("record_number", -1).limit(1)
+            try:
+                latest_record = cursor.next()
+                next_number = latest_record.get("record_number", 0) + 1
+            except StopIteration:
+                next_number = 1
+            record["record_number"] = next_number
+
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
