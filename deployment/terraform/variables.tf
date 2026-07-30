@@ -70,6 +70,12 @@ variable "gke_subnetwork" {
   description = "VPC subnetwork used by the GKE cluster."
 }
 
+variable "gke_backend_names" {
+  type        = set(string)
+  default     = []
+  description = "Backend names to provision GKE ingress IPs, test DNS records, and Kubernetes deploy targets for."
+}
+
 variable "gke_backend_hostnames" {
   type        = map(string)
   default     = {}

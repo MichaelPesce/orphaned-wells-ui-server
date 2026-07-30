@@ -6,7 +6,7 @@ locals {
   ])
 
   gke_backends = {
-    for name, _ in local.collaborators : name => {
+    for name in var.gke_backend_names : name => {
       namespace            = "uow-${name}"
       hostname             = trimsuffix(lookup(var.gke_backend_hostnames, name, "${name}-k8s-server.uow-carbon.org"), ".")
       test_hostname        = "${name}-k8s-server.uow-carbon.org"

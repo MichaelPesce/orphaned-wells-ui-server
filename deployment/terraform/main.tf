@@ -67,6 +67,18 @@ locals {
       boot_resource_policies = []
       boot_disk_device_name  = "oprhaned-wells-ui-server-v0"
     }
+
+    rrc = {
+      enable_startup_script = false
+      zone                  = "us-central1-b"
+      machine_type          = "e2-standard-2"
+      boot_image            = "https://www.googleapis.com/compute/v1/projects/debian-cloud/global/images/debian-12-bookworm-v20260513"
+      boot_disk_size        = 20
+      boot_resource_policies = [
+        "https://www.googleapis.com/compute/v1/projects/tidy-outlet-412020/regions/us-central1/resourcePolicies/default-schedule-1"
+      ]
+      boot_disk_device_name = "rrc-ogrre-server"
+    }
   }
 }
 
