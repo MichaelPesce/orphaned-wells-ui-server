@@ -13,6 +13,7 @@ on:
           - isgs
           - newts
           - osage
+          - rrc
       IMAGE_TAG:
         description: Existing Docker image tag to deploy
         required: true
