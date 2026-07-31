@@ -53,6 +53,8 @@ on:
         required: false
       OSAGE_ENV:
         required: false
+      RRC_ENV:
+        required: false
 
 defaults:
   run:
