@@ -305,7 +305,7 @@ class DataManager:
         if not isinstance(collaborator, str):
             return None
         collaborator = collaborator.strip()
-        
+
         ## There is a naming convention disparity between OGRRE (rrc) and OGRRE data cleaning (texas_rrc)
         if collaborator == "rrc":
             collaborator = "texas_rrc"
