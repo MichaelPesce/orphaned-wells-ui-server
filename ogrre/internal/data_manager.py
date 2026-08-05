@@ -1427,17 +1427,22 @@ class DataManager:
 
     def migrateExistingRecords(self):
         try:
-            count = self.db.records.count_documents({"record_number": {"$exists": False}})
+            count = self.db.records.count_documents(
+                {"record_number": {"$exists": False}}
+            )
             if count > 0:
-                _log.info(f"Found {count} records without record_number. Starting migration...")
+                _log.info(
+                    f"Found {count} records without record_number. Starting migration..."
+                )
                 record_group_ids = self.db.records.distinct("record_group_id")
                 for rg_id in record_group_ids:
-                    cursor = self.db.records.find({"record_group_id": rg_id}).sort("dateCreated", 1)
+                    cursor = self.db.records.find({"record_group_id": rg_id}).sort(
+                        "dateCreated", 1
+                    )
                     idx = 1
                     for doc in cursor:
                         self.db.records.update_one(
-                            {"_id": doc["_id"]},
-                            {"$set": {"record_number": idx}}
+                            {"_id": doc["_id"]}, {"$set": {"record_number": idx}}
                         )
                         idx += 1
                 _log.info("Migration of record_number completed successfully.")
@@ -1550,11 +1555,17 @@ class DataManager:
         user = user_info.get("email", None)
         ## add timestamp to project
         record["dateCreated"] = time.time()
-        
+
         # Assign sequentially contiguous record number in the record group
         record_group_id = record.get("record_group_id")
         if record_group_id:
-            cursor = self.db.records.find({"record_group_id": record_group_id}, {"record_number": 1}).sort("record_number", -1).limit(1)
+            cursor = (
+                self.db.records.find(
+                    {"record_group_id": record_group_id}, {"record_number": 1}
+                )
+                .sort("record_number", -1)
+                .limit(1)
+            )
             try:
                 latest_record = cursor.next()
                 next_number = latest_record.get("record_number", 0) + 1
