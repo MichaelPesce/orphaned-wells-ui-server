@@ -5,7 +5,7 @@ This directory contains the Terraform configuration used to manage OGRRE backend
 ## What is included
 
 - `variables.tf` defines the shared defaults, including the default GKE backends and legacy VM inventory.
-- `main.tf` creates legacy backend VM modules only for entries in `legacy_backend_vms`.
+- `main.tf` creates legacy backend VM modules only for names listed in `enabled_legacy_backend_vms`, using definitions from `legacy_backend_vms`.
 - `gke.tf` creates the shared GKE deployment infrastructure unless `enable_gke=false`.
 - `modules/backend_vm` contains the reusable legacy VM module, including a compute instance, static IP, and optional VM-owned DNS record.
 - `terraform.tfvars.example` shows optional local override patterns.
@@ -58,7 +58,7 @@ terraform apply
 
 ## GKE deployment infrastructure
 
-The GKE path is enabled by default. Existing VM resources are still managed by Terraform through `legacy_backend_vms`, but GKE-owned backends no longer need a VM entry. Existing VMs can remain stopped in GCP while GKE serves traffic.
+The GKE path is enabled by default. Legacy VM definitions remain in `legacy_backend_vms`, but no legacy VM modules are managed unless their names are listed in `enabled_legacy_backend_vms`. Existing VMs can remain stopped or be removed in GCP while GKE serves traffic, after Terraform state is cleaned up.
 
 Create or update the GKE cluster, global load balancer IPs, primary DNS records, and optional `<env>-k8s-server.uow-carbon.org` test DNS records:
 
@@ -104,6 +104,18 @@ terraform destroy
 ```
 
 > Note: this repository uses a shared GCS backend for state. Do not manually edit, delete, or overwrite remote state unless you are intentionally performing a state migration or recovery.
+
+## Legacy Compute Engine VMs
+
+Legacy VM definitions are kept in `legacy_backend_vms` so they can be re-enabled later without reconstructing their machine, disk, image, or zone settings. They are disabled by default because `enabled_legacy_backend_vms` defaults to an empty set.
+
+To re-enable a legacy VM, add its name to `enabled_legacy_backend_vms`:
+
+```hcl
+enabled_legacy_backend_vms = ["isgs"]
+```
+
+To disable it again without deleting the definition, remove the name from `enabled_legacy_backend_vms`. If Terraform state still contains the old module resources and you want Terraform to stop managing them rather than destroy them, remove only those bindings from state with `terraform state rm`.
 
 ## Remote state setup
 
@@ -237,7 +249,7 @@ bash scripts/import_existing_infrastructure.sh --target-workspace ogrre --reset-
 
 The importer covers resources currently represented by the Terraform files, including:
 
-- legacy backend VM module resources: Compute Engine instances, regional static IPs, and VM-owned primary DNS records
+- enabled legacy backend VM module resources: Compute Engine instances, regional static IPs, and VM-owned primary DNS records
 - shared firewall rules
 - GKE-required project services
 - the shared GKE cluster
@@ -247,7 +259,7 @@ The importer covers resources currently represented by the Terraform files, incl
 
 Resources already present in the target workspace are skipped. Missing, not-yet-created, or otherwise non-importable resources are reported in the summary and do not stop the script unless `--strict` is passed. This is expected when the configuration includes a new collaborator whose DNS record or GKE IP does not exist yet.
 
-To keep the old VM-only behavior, pass `--backend-vms-only`. You can also limit VM imports to specific collaborators:
+To import only enabled VM module resources, pass `--backend-vms-only`. You can also limit VM imports to specific collaborators:
 
 ```bash
 bash scripts/import_existing_infrastructure.sh --target-workspace ogrre --backend-vms-only staging
@@ -295,7 +307,7 @@ Store the updated output as the backend repository secret `K8S_DEPLOY_TARGETS`.
 
 ## Adding a legacy VM
 
-Only add a collaborator to `legacy_backend_vms` when you intentionally need Terraform to manage a Compute Engine VM.
+Only add a collaborator to `legacy_backend_vms` when you intentionally need Terraform to keep a reusable Compute Engine VM definition. Add the collaborator name to `enabled_legacy_backend_vms` only when Terraform should actively manage that VM.
 
 Example legacy VM block:
 
@@ -311,6 +323,8 @@ legacy_backend_vms = {
     boot_disk_device_name  = "boots-uow-server"
   }
 }
+
+enabled_legacy_backend_vms = ["boots"]
 ```
 
 If the same collaborator is also a GKE backend with `create_primary_dns_record=true`, the VM module will not create a duplicate primary DNS record.
@@ -325,7 +339,7 @@ If the new VM already exists in the GCP project, run `scripts/import_existing_in
 
 ## Notes
 
-- `main.tf` uses a `for_each` loop to instantiate the `backend_vm` module for each `legacy_backend_vms` entry.
+- `main.tf` uses a `for_each` loop to instantiate the `backend_vm` module for each name in `enabled_legacy_backend_vms`.
 - The VM module creates a compute instance, reserved static IP address, and an optional DNS record in `uow-carbon-org`.
 - GKE primary DNS records are managed by `google_dns_record_set.gke_backend_primary`.
 - Each managed resource uses `prevent_destroy = true` to protect production infrastructure from accidental deletion.

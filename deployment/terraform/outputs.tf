@@ -1,5 +1,5 @@
 output "server_ips" {
-  description = "Legacy VM external IPs. GKE backend IPs are exposed separately by gke_backend_static_ips."
+  description = "Enabled legacy VM external IPs. GKE backend IPs are exposed separately by gke_backend_static_ips."
 
   value = {
     for name, vm in module.backend_vms :
@@ -8,9 +8,9 @@ output "server_ips" {
 }
 
 output "isgs_ip" {
-  description = "Legacy ISGS VM external IP."
+  description = "Legacy ISGS VM external IP, when that legacy VM is enabled."
 
-  value = module.backend_vms["isgs"].ip
+  value = try(module.backend_vms["isgs"].ip, null)
 }
 
 output "dns_names" {

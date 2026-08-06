@@ -104,6 +104,12 @@ variable "legacy_backend_vms" {
   description = "Legacy Compute Engine VM backends. Add entries here only when intentionally managing a VM."
 }
 
+variable "enabled_legacy_backend_vms" {
+  type        = set(string)
+  default     = []
+  description = "Names from legacy_backend_vms to actively manage as Compute Engine VM backends. Empty disables all legacy VMs while keeping their definitions available for future re-enable."
+}
+
 variable "enable_gke" {
   type        = bool
   default     = true

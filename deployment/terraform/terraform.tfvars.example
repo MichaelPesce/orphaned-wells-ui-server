@@ -1,6 +1,11 @@
 # Defaults for the shared OGRRE project live in variables.tf.
 # Copy this file to terraform.tfvars only when you need local overrides.
 
+# Legacy Compute Engine VMs are disabled by default. Re-enable specific
+# legacy VMs by listing names from legacy_backend_vms:
+#
+# enabled_legacy_backend_vms = ["isgs"]
+#
 # Add a GKE-only collaborator without creating a legacy Compute Engine VM:
 #
 # gke_backend_overrides = {

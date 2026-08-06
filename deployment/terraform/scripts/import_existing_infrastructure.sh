@@ -51,7 +51,7 @@ Options:
   --var-file PATH            Terraform variable file to parse.
                              Default: terraform.tfvars. Missing files are
                              treated as no local overrides.
-  --backend-vms-only         Import only module.backend_vms resources.
+  --backend-vms-only         Import only enabled module.backend_vms resources.
   --reset-state              Move the selected local workspace state file aside
                              before importing. This affects Terraform state
                              only; it does not change Google Cloud resources.
@@ -276,6 +276,68 @@ parse_tfvars_map_keys() {
   ' "${VAR_FILE}"
 }
 
+parse_enabled_legacy_backend_vms() {
+  [[ -f "${VAR_FILE}" ]] || return
+
+  awk '
+    function strip_comment(line) {
+      sub(/[[:space:]]*#.*/, "", line)
+      return line
+    }
+
+    function count_open_brackets(line, tmp) {
+      tmp = line
+      return gsub(/\[/, "[", tmp)
+    }
+
+    function count_close_brackets(line, tmp) {
+      tmp = line
+      return gsub(/\]/, "]", tmp)
+    }
+
+    function print_strings(block, value) {
+      while (match(block, /"[^"]+"/)) {
+        value = substr(block, RSTART + 1, RLENGTH - 2)
+        print value
+        block = substr(block, RSTART + RLENGTH)
+      }
+    }
+
+    BEGIN {
+      in_assignment = 0
+      depth = 0
+      block = ""
+    }
+
+    {
+      line = strip_comment($0)
+
+      if (!in_assignment) {
+        if (line ~ /^[[:space:]]*enabled_legacy_backend_vms[[:space:]]*=/) {
+          sub(/^[^=]*=[[:space:]]*/, "", line)
+          in_assignment = 1
+          block = line "\n"
+          depth = count_open_brackets(line) - count_close_brackets(line)
+
+          if (depth <= 0) {
+            print_strings(block)
+            exit
+          }
+        }
+        next
+      }
+
+      block = block line "\n"
+      depth += count_open_brackets(line) - count_close_brackets(line)
+
+      if (depth <= 0) {
+        print_strings(block)
+        exit
+      }
+    }
+  ' "${VAR_FILE}"
+}
+
 parse_legacy_backend_vms() {
   awk '
     function strip_comment(line) {
@@ -393,6 +455,34 @@ append_unique_gke_backend() {
   done
 
   GKE_BACKENDS+=("${backend}")
+}
+
+append_unique_enabled_legacy_vm() {
+  local backend="$1"
+  local existing
+
+  [[ -n "${backend}" ]] || return
+
+  for existing in "${ENABLED_LEGACY_VMS[@]}"; do
+    if [[ "${existing}" == "${backend}" ]]; then
+      return
+    fi
+  done
+
+  ENABLED_LEGACY_VMS+=("${backend}")
+}
+
+legacy_vm_is_enabled() {
+  local backend="$1"
+  local existing
+
+  for existing in "${ENABLED_LEGACY_VMS[@]}"; do
+    if [[ "${existing}" == "${backend}" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 gke_backend_is_configured() {
@@ -570,23 +660,36 @@ while IFS= read -r backend; do
   fi
 done < <(parse_tfvars_map_keys "gke_backend_overrides")
 
+ENABLED_LEGACY_VMS=()
+while IFS= read -r backend; do
+  append_unique_enabled_legacy_vm "${backend}"
+done < <(parse_enabled_legacy_backend_vms)
+
 LEGACY_VMS=()
 LEGACY_VM_ZONES=()
 while IFS=$'\t' read -r backend zone; do
   [[ -n "${backend}" && -n "${zone}" ]] || continue
 
-  if collaborator_is_requested "${backend}"; then
+  if collaborator_is_requested "${backend}" && legacy_vm_is_enabled "${backend}"; then
     LEGACY_VMS+=("${backend}")
     LEGACY_VM_ZONES+=("${zone}")
   fi
 done < <(parse_legacy_backend_vms)
 
-if [[ "${#GKE_BACKENDS[@]}" -eq 0 && "${#LEGACY_VMS[@]}" -eq 0 ]]; then
+if [[ "${BACKEND_VMS_ONLY}" == true && "${#LEGACY_VMS[@]}" -eq 0 ]]; then
   if [[ "${#COLLABORATOR_FILTERS[@]}" -gt 0 ]]; then
-    fail "No matching GKE backends or legacy VMs found for filter: ${COLLABORATOR_FILTERS[*]}"
+    fail "No matching enabled legacy VMs found for filter: ${COLLABORATOR_FILTERS[*]}"
   fi
 
-  fail "No GKE backends or legacy VMs were found in variables.tf"
+  fail "No legacy VMs are enabled by enabled_legacy_backend_vms"
+fi
+
+if [[ "${#GKE_BACKENDS[@]}" -eq 0 && "${#LEGACY_VMS[@]}" -eq 0 ]]; then
+  if [[ "${#COLLABORATOR_FILTERS[@]}" -gt 0 ]]; then
+    fail "No matching GKE backends or enabled legacy VMs found for filter: ${COLLABORATOR_FILTERS[*]}"
+  fi
+
+  fail "No GKE backends or enabled legacy VMs were found in Terraform configuration"
 fi
 
 STATE_LIST_FILE="$(mktemp)"
@@ -642,7 +745,7 @@ echo "Import manifest source: parsed Terraform files and repo naming conventions
 echo "Project: ${PROJECT_ID}"
 echo "Region: ${REGION}"
 echo "GKE backends: $(join_list ", " "${GKE_BACKENDS[@]}")"
-echo "Legacy VM backends: $(join_list ", " "${LEGACY_VMS[@]}")"
+echo "Enabled legacy VM backends: $(join_list ", " "${LEGACY_VMS[@]}")"
 if [[ "${ENABLE_GKE}" == "true" ]]; then
   echo "GKE imports: enabled"
 else
