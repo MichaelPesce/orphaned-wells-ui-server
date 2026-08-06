@@ -1584,40 +1584,17 @@ class DataManager:
         ## add timestamp to project
         record["dateCreated"] = time.time()
 
-        # Assign sequentially contiguous record number in the record group
-        record_group_id = record.get("record_group_id")
-        if record_group_id:
-            # Check if a counter document exists for this record_group_id.
-            # If not, set it to the max of existing records in that group.
-            counter = self.db.counters.find_one({"_id": record_group_id})
-            if not counter:
-                cursor = (
-                    self.db.records.find(
-                        {"record_group_id": record_group_id}, {"record_number": 1}
-                    )
-                    .sort("record_number", -1)
-                    .limit(1)
-                )
-                try:
-                    latest_record = cursor.next()
-                    current_max = latest_record.get("record_number", 0)
-                except StopIteration:
-                    current_max = 0
-
-                self.db.counters.update_one(
-                    {"_id": record_group_id},
-                    {"$setOnInsert": {"record_number": current_max}},
-                    upsert=True,
-                )
-
-            # Atomically increment the counter and get the next number
-            next_doc = self.db.counters.find_one_and_update(
-                {"_id": record_group_id},
-                {"$inc": {"record_number": 1}},
-                upsert=True,
-                return_document=ReturnDocument.AFTER,
-            )
-            record["record_number"] = next_doc["record_number"]
+        # Atomically increment the counter and get the next number
+        next_doc = self.db.counters.find_one_and_update(
+            {"_id": "records"},
+            {
+                "$setOnInsert": {"record_number": 0},
+                "$inc": {"record_number": 1},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        record["record_number"] = next_doc["record_number"]
 
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
