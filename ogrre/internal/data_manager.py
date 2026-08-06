@@ -62,7 +62,6 @@ class DataManager:
         self.use_airtable = False
         self.ensureDefaultUnauthenticatedTeam()
         self.createProcessorsList()
-        self.migrateExistingRecords()
 
     def _createEmptyRecordAttribute(
         self,
@@ -1445,7 +1444,30 @@ class DataManager:
                             {"_id": doc["_id"]}, {"$set": {"record_number": idx}}
                         )
                         idx += 1
+                    if rg_id:
+                        self.db.counters.update_one(
+                            {"_id": rg_id},
+                            {"$set": {"record_number": idx - 1}},
+                            upsert=True
+                        )
                 _log.info("Migration of record_number completed successfully.")
+            else:
+                record_group_ids = self.db.records.distinct("record_group_id")
+                for rg_id in record_group_ids:
+                    if rg_id:
+                        counter = self.db.counters.find_one({"_id": rg_id})
+                        if not counter:
+                            cursor = self.db.records.find({"record_group_id": rg_id}, {"record_number": 1}).sort("record_number", -1).limit(1)
+                            try:
+                                latest_record = cursor.next()
+                                current_max = latest_record.get("record_number", 0)
+                            except StopIteration:
+                                current_max = 0
+                            self.db.counters.update_one(
+                                {"_id": rg_id},
+                                {"$set": {"record_number": current_max}},
+                                upsert=True
+                            )
         except Exception as e:
             _log.error(f"Error during migrateExistingRecords: {e}")
 
@@ -1559,19 +1581,37 @@ class DataManager:
         # Assign sequentially contiguous record number in the record group
         record_group_id = record.get("record_group_id")
         if record_group_id:
-            cursor = (
-                self.db.records.find(
-                    {"record_group_id": record_group_id}, {"record_number": 1}
+            # Check if a counter document exists for this record_group_id.
+            # If not, set it to the max of existing records in that group.
+            counter = self.db.counters.find_one({"_id": record_group_id})
+            if not counter:
+                cursor = (
+                    self.db.records.find(
+                        {"record_group_id": record_group_id}, {"record_number": 1}
+                    )
+                    .sort("record_number", -1)
+                    .limit(1)
                 )
-                .sort("record_number", -1)
-                .limit(1)
+                try:
+                    latest_record = cursor.next()
+                    current_max = latest_record.get("record_number", 0)
+                except StopIteration:
+                    current_max = 0
+
+                self.db.counters.update_one(
+                    {"_id": record_group_id},
+                    {"$setOnInsert": {"record_number": current_max}},
+                    upsert=True
+                )
+
+            # Atomically increment the counter and get the next number
+            next_doc = self.db.counters.find_one_and_update(
+                {"_id": record_group_id},
+                {"$inc": {"record_number": 1}},
+                upsert=True,
+                return_document=ReturnDocument.AFTER
             )
-            try:
-                latest_record = cursor.next()
-                next_number = latest_record.get("record_number", 0) + 1
-            except StopIteration:
-                next_number = 1
-            record["record_number"] = next_number
+            record["record_number"] = next_doc["record_number"]
 
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
