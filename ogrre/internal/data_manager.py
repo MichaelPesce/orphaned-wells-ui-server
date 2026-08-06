@@ -1448,7 +1448,7 @@ class DataManager:
                         self.db.counters.update_one(
                             {"_id": rg_id},
                             {"$set": {"record_number": idx - 1}},
-                            upsert=True
+                            upsert=True,
                         )
                 _log.info("Migration of record_number completed successfully.")
             else:
@@ -1457,7 +1457,13 @@ class DataManager:
                     if rg_id:
                         counter = self.db.counters.find_one({"_id": rg_id})
                         if not counter:
-                            cursor = self.db.records.find({"record_group_id": rg_id}, {"record_number": 1}).sort("record_number", -1).limit(1)
+                            cursor = (
+                                self.db.records.find(
+                                    {"record_group_id": rg_id}, {"record_number": 1}
+                                )
+                                .sort("record_number", -1)
+                                .limit(1)
+                            )
                             try:
                                 latest_record = cursor.next()
                                 current_max = latest_record.get("record_number", 0)
@@ -1466,7 +1472,7 @@ class DataManager:
                             self.db.counters.update_one(
                                 {"_id": rg_id},
                                 {"$set": {"record_number": current_max}},
-                                upsert=True
+                                upsert=True,
                             )
         except Exception as e:
             _log.error(f"Error during migrateExistingRecords: {e}")
@@ -1601,7 +1607,7 @@ class DataManager:
                 self.db.counters.update_one(
                     {"_id": record_group_id},
                     {"$setOnInsert": {"record_number": current_max}},
-                    upsert=True
+                    upsert=True,
                 )
 
             # Atomically increment the counter and get the next number
@@ -1609,7 +1615,7 @@ class DataManager:
                 {"_id": record_group_id},
                 {"$inc": {"record_number": 1}},
                 upsert=True,
-                return_document=ReturnDocument.AFTER
+                return_document=ReturnDocument.AFTER,
             )
             record["record_number"] = next_doc["record_number"]
 
