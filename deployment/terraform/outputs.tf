@@ -41,6 +41,13 @@ output "gke_backend_static_ips" {
   } : {}
 }
 
+output "gke_backend_upload_buckets" {
+  value = var.enable_gke ? {
+    for name, backend in local.gke_backends :
+    name => backend.upload_bucket_name
+  } : {}
+}
+
 output "gke_primary_dns_names" {
   value = var.enable_gke ? {
     for name, dns in google_dns_record_set.gke_backend_primary :
@@ -66,6 +73,7 @@ output "kubernetes_deploy_targets" {
       test_host            = backend.test_hostname
       static_ip_name       = google_compute_global_address.gke_backend[name].name
       static_ip_address    = google_compute_global_address.gke_backend[name].address
+      storage_bucket_name  = backend.upload_bucket_name
       replicas             = backend.replicas
       cpu_request          = backend.cpu_request
       memory_request       = backend.memory_request

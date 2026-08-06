@@ -169,6 +169,8 @@ variable "gke_backends" {
     hostname                  = optional(string)
     test_hostname             = optional(string)
     static_ip_name            = optional(string)
+    upload_bucket_name        = optional(string)
+    upload_bucket_location    = optional(string)
     replicas                  = optional(number)
     cpu_request               = optional(string)
     memory_request            = optional(string)
@@ -181,12 +183,14 @@ variable "gke_backends" {
   }))
 
   default = {
-    staging = {}
-    osage   = {}
-    isgs    = {}
-    newts   = {}
-    ca      = {}
-    rrc     = {}
+    staging = {
+      upload_bucket_name = "uploaded_documents_v0"
+    }
+    osage = {}
+    isgs  = {}
+    newts = {}
+    ca    = {}
+    rrc   = {}
   }
 
   description = "Default GKE backend definitions. Keys are collaborator names; omitted attributes use OGRRE naming defaults."
@@ -198,6 +202,8 @@ variable "gke_backend_overrides" {
     hostname                  = optional(string)
     test_hostname             = optional(string)
     static_ip_name            = optional(string)
+    upload_bucket_name        = optional(string)
+    upload_bucket_location    = optional(string)
     replicas                  = optional(number)
     cpu_request               = optional(string)
     memory_request            = optional(string)
@@ -223,4 +229,10 @@ variable "gke_dns_ttl" {
   type        = number
   default     = 300
   description = "TTL for GKE test DNS A records."
+}
+
+variable "upload_bucket_location" {
+  type        = string
+  default     = "US"
+  description = "Default Cloud Storage location for newly created collaborator upload buckets."
 }

@@ -7,6 +7,7 @@ This directory contains the Terraform configuration used to manage OGRRE backend
 - `variables.tf` defines the shared defaults, including the default GKE backends and legacy VM inventory.
 - `main.tf` creates legacy backend VM modules only for names listed in `enabled_legacy_backend_vms`, using definitions from `legacy_backend_vms`.
 - `gke.tf` creates the shared GKE deployment infrastructure unless `enable_gke=false`.
+- `storage.tf` creates one Cloud Storage upload bucket per unique GKE backend bucket name.
 - `modules/backend_vm` contains the reusable legacy VM module, including a compute instance, static IP, and optional VM-owned DNS record.
 - `terraform.tfvars.example` shows optional local override patterns.
 - `backend.tf` configures the shared GCS backend for Terraform state.
@@ -60,7 +61,7 @@ terraform apply
 
 The GKE path is enabled by default. Legacy VM definitions remain in `legacy_backend_vms`, but no legacy VM modules are managed unless their names are listed in `enabled_legacy_backend_vms`. Existing VMs can remain stopped or be removed in GCP while GKE serves traffic, after Terraform state is cleaned up.
 
-Create or update the GKE cluster, global load balancer IPs, primary DNS records, and optional `<env>-k8s-server.uow-carbon.org` test DNS records:
+Create or update the GKE cluster, global load balancer IPs, upload buckets, primary DNS records, and optional `<env>-k8s-server.uow-carbon.org` test DNS records:
 
 ```bash
 terraform plan
@@ -116,6 +117,35 @@ enabled_legacy_backend_vms = ["isgs"]
 ```
 
 To disable it again without deleting the definition, remove the name from `enabled_legacy_backend_vms`. If Terraform state still contains the old module resources and you want Terraform to stop managing them rather than destroy them, remove only those bindings from state with `terraform state rm`.
+
+## Upload Buckets
+
+Each GKE backend gets a Cloud Storage upload bucket. The default bucket name is `<collaborator>_uploads`; use `upload_bucket_name` for existing exceptions or explicit custom names.
+
+The shared defaults preserve the current bucket names:
+
+```text
+staging -> uploaded_documents_v0
+isgs    -> isgs_uploads
+newts   -> newts_uploads
+osage   -> osage_uploads
+rrc     -> rrc_uploads
+ca      -> ca_uploads
+```
+
+Bucket resources are keyed by bucket name, so collaborators can intentionally share a bucket without Terraform creating duplicate resources. Buckets use `force_destroy=false` and `prevent_destroy=true` to protect uploaded files.
+
+To customize a new collaborator:
+
+```hcl
+gke_backend_overrides = {
+  boots = {
+    upload_bucket_name = "boots_uploads"
+  }
+}
+```
+
+Cloud Storage bucket location is immutable. New buckets default to `upload_bucket_location`, currently `US`; imported buckets keep their existing location, storage class, and encryption settings.
 
 ## Remote state setup
 
@@ -253,6 +283,7 @@ The importer covers resources currently represented by the Terraform files, incl
 - shared firewall rules
 - GKE-required project services
 - the shared GKE cluster
+- GKE backend upload buckets
 - GKE global static IPs
 - GKE primary DNS records
 - GKE test DNS records
@@ -277,6 +308,7 @@ gke_backend_overrides = {
 
 That creates:
 
+- `boots_uploads`
 - `boots-uow-gke-ip`
 - `boots-server.uow-carbon.org`
 - `boots-k8s-server.uow-carbon.org`, unless disabled
@@ -287,6 +319,7 @@ If the collaborator needs non-default GKE settings, set them in the same map:
 ```hcl
 gke_backend_overrides = {
   boots = {
+    upload_bucket_name   = "boots_uploads"
     replicas             = 1
     memory_request       = "8Gi"
     memory_limit         = "8Gi"

@@ -27,6 +27,7 @@ GKE_REQUIRED_SERVICES=(
   "compute.googleapis.com"
   "container.googleapis.com"
   "dns.googleapis.com"
+  "storage.googleapis.com"
 )
 
 usage() {
@@ -338,6 +339,172 @@ parse_enabled_legacy_backend_vms() {
   ' "${VAR_FILE}"
 }
 
+parse_variable_default_map_string_attribute() {
+  local variable_name="$1"
+  local entry_name="$2"
+  local attribute_name="$3"
+
+  awk -v variable_name="${variable_name}" -v entry_name="${entry_name}" -v attribute_name="${attribute_name}" '
+    function strip_comment(line) {
+      sub(/[[:space:]]*#.*/, "", line)
+      return line
+    }
+
+    function count_open_braces(line, tmp) {
+      tmp = line
+      return gsub(/\{/, "{", tmp)
+    }
+
+    function count_close_braces(line, tmp) {
+      tmp = line
+      return gsub(/\}/, "}", tmp)
+    }
+
+    function entry_key(line, key) {
+      key = line
+      sub(/^[[:space:]]*/, "", key)
+      sub(/[[:space:]]*=.*/, "", key)
+      gsub(/"/, "", key)
+      return key
+    }
+
+    function maybe_print_attribute(line, value) {
+      if (line ~ "(^|[[:space:]])" attribute_name "[[:space:]]*=") {
+        value = line
+        sub(".*" attribute_name "[[:space:]]*=[[:space:]]*", "", value)
+        if (match(value, /"[^"]+"/)) {
+          print substr(value, RSTART + 1, RLENGTH - 2)
+          exit
+        }
+      }
+    }
+
+    BEGIN {
+      in_variable = 0
+      in_default = 0
+      in_entry = 0
+      depth = 0
+    }
+
+    {
+      line = strip_comment($0)
+
+      if (!in_variable) {
+        if (line ~ "^[[:space:]]*variable[[:space:]]+\"" variable_name "\"[[:space:]]*{") {
+          in_variable = 1
+        }
+        next
+      }
+
+      if (!in_default) {
+        if (line ~ /^[[:space:]]*default[[:space:]]*=[[:space:]]*{/) {
+          in_default = 1
+          depth = count_open_braces(line) - count_close_braces(line)
+        }
+        next
+      }
+
+      if (depth == 1 && line ~ /^[[:space:]]*"?[A-Za-z0-9_-]+"?[[:space:]]*=[[:space:]]*{/) {
+        in_entry = entry_key(line) == entry_name
+      }
+
+      if (in_entry) {
+        maybe_print_attribute(line)
+      }
+
+      depth += count_open_braces(line) - count_close_braces(line)
+
+      if (depth == 1) {
+        in_entry = 0
+      }
+
+      if (depth <= 0) {
+        exit
+      }
+    }
+  ' variables.tf
+}
+
+parse_tfvars_map_string_attribute() {
+  local key_name="$1"
+  local entry_name="$2"
+  local attribute_name="$3"
+
+  [[ -f "${VAR_FILE}" ]] || return
+
+  awk -v key_name="${key_name}" -v entry_name="${entry_name}" -v attribute_name="${attribute_name}" '
+    function strip_comment(line) {
+      sub(/[[:space:]]*#.*/, "", line)
+      return line
+    }
+
+    function count_open_braces(line, tmp) {
+      tmp = line
+      return gsub(/\{/, "{", tmp)
+    }
+
+    function count_close_braces(line, tmp) {
+      tmp = line
+      return gsub(/\}/, "}", tmp)
+    }
+
+    function entry_key(line, key) {
+      key = line
+      sub(/^[[:space:]]*/, "", key)
+      sub(/[[:space:]]*=.*/, "", key)
+      gsub(/"/, "", key)
+      return key
+    }
+
+    function maybe_print_attribute(line, value) {
+      if (line ~ "(^|[[:space:]])" attribute_name "[[:space:]]*=") {
+        value = line
+        sub(".*" attribute_name "[[:space:]]*=[[:space:]]*", "", value)
+        if (match(value, /"[^"]+"/)) {
+          print substr(value, RSTART + 1, RLENGTH - 2)
+          exit
+        }
+      }
+    }
+
+    BEGIN {
+      in_map = 0
+      in_entry = 0
+      depth = 0
+    }
+
+    {
+      line = strip_comment($0)
+
+      if (!in_map) {
+        if (line ~ "^[[:space:]]*" key_name "[[:space:]]*=[[:space:]]*{") {
+          in_map = 1
+          depth = count_open_braces(line) - count_close_braces(line)
+        }
+        next
+      }
+
+      if (depth == 1 && line ~ /^[[:space:]]*"?[A-Za-z0-9_-]+"?[[:space:]]*=[[:space:]]*{/) {
+        in_entry = entry_key(line) == entry_name
+      }
+
+      if (in_entry) {
+        maybe_print_attribute(line)
+      }
+
+      depth += count_open_braces(line) - count_close_braces(line)
+
+      if (depth == 1) {
+        in_entry = 0
+      }
+
+      if (depth <= 0) {
+        exit
+      }
+    }
+  ' "${VAR_FILE}"
+}
+
 parse_legacy_backend_vms() {
   awk '
     function strip_comment(line) {
@@ -457,6 +624,46 @@ append_unique_gke_backend() {
   GKE_BACKENDS+=("${backend}")
 }
 
+append_unique_gke_upload_bucket() {
+  local bucket="$1"
+  local existing
+
+  [[ -n "${bucket}" ]] || return
+
+  for existing in "${GKE_UPLOAD_BUCKETS[@]}"; do
+    if [[ "${existing}" == "${bucket}" ]]; then
+      return
+    fi
+  done
+
+  GKE_UPLOAD_BUCKETS+=("${bucket}")
+}
+
+gke_upload_bucket_name() {
+  local backend="$1"
+  local bucket
+
+  bucket="$(parse_tfvars_map_string_attribute "gke_backend_overrides" "${backend}" "upload_bucket_name")"
+  if [[ -n "${bucket}" ]]; then
+    printf '%s\n' "${bucket}"
+    return
+  fi
+
+  bucket="$(parse_tfvars_map_string_attribute "gke_backends" "${backend}" "upload_bucket_name")"
+  if [[ -n "${bucket}" ]]; then
+    printf '%s\n' "${bucket}"
+    return
+  fi
+
+  bucket="$(parse_variable_default_map_string_attribute "gke_backends" "${backend}" "upload_bucket_name")"
+  if [[ -n "${bucket}" ]]; then
+    printf '%s\n' "${bucket}"
+    return
+  fi
+
+  printf '%s_uploads\n' "${backend}"
+}
+
 append_unique_enabled_legacy_vm() {
   local backend="$1"
   local existing
@@ -500,6 +707,7 @@ gke_backend_is_configured() {
 
 build_manifest() {
   local backend
+  local bucket
   local zone
   local service
 
@@ -521,6 +729,10 @@ build_manifest() {
   fi
 
   if [[ "${ENABLE_GKE}" == "true" && "${BACKEND_VMS_ONLY}" != true ]]; then
+    for bucket in "${GKE_UPLOAD_BUCKETS[@]}"; do
+      add_manifest_entry "gke-storage" "google_storage_bucket.backend_uploads[\"${bucket}\"]" "${PROJECT_ID}/${bucket}"
+    done
+
     for backend in "${GKE_BACKENDS[@]}"; do
       add_manifest_entry "gke-backend" "google_compute_global_address.gke_backend[\"${backend}\"]" "projects/${PROJECT_ID}/global/addresses/${backend}-uow-gke-ip"
       add_manifest_entry "gke-dns" "google_dns_record_set.gke_backend_primary[\"${backend}\"]" "projects/${PROJECT_ID}/managedZones/${DNS_MANAGED_ZONE}/rrsets/${backend}-server.${BACKEND_DNS_DOMAIN}./A"
@@ -660,6 +872,11 @@ while IFS= read -r backend; do
   fi
 done < <(parse_tfvars_map_keys "gke_backend_overrides")
 
+GKE_UPLOAD_BUCKETS=()
+for backend in "${GKE_BACKENDS[@]}"; do
+  append_unique_gke_upload_bucket "$(gke_upload_bucket_name "${backend}")"
+done
+
 ENABLED_LEGACY_VMS=()
 while IFS= read -r backend; do
   append_unique_enabled_legacy_vm "${backend}"
@@ -745,6 +962,7 @@ echo "Import manifest source: parsed Terraform files and repo naming conventions
 echo "Project: ${PROJECT_ID}"
 echo "Region: ${REGION}"
 echo "GKE backends: $(join_list ", " "${GKE_BACKENDS[@]}")"
+echo "GKE upload buckets: $(join_list ", " "${GKE_UPLOAD_BUCKETS[@]}")"
 echo "Enabled legacy VM backends: $(join_list ", " "${LEGACY_VMS[@]}")"
 if [[ "${ENABLE_GKE}" == "true" ]]; then
   echo "GKE imports: enabled"

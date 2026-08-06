@@ -12,11 +12,21 @@
 #   boots = {}
 # }
 
+# The default upload bucket name is <collaborator>_uploads.
+# Override it only for existing buckets or intentional shared buckets:
+#
+# gke_backend_overrides = {
+#   boots = {
+#     upload_bucket_name = "custom_upload_bucket"
+#   }
+# }
+#
 # Override per-backend GKE settings when defaults are not enough:
 #
 # gke_backend_overrides = {
 #   boots = {
 #     hostname             = "boots-server.uow-carbon.org"
+#     upload_bucket_name   = "boots_uploads"
 #     replicas             = 1
 #     cpu_request          = "2"
 #     memory_request       = "8Gi"
