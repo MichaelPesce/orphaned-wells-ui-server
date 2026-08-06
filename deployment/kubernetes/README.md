@@ -46,6 +46,7 @@ Each namespace contains:
 - `IMAGE`
 - `HOSTNAME`
 - `STATIC_IP_NAME`
+- `STORAGE_BUCKET_NAME`
 - CPU and memory requests/limits
 
 The rendered file is an ephemeral deployment artifact:
@@ -108,6 +109,7 @@ terraform output -json kubernetes_deploy_targets | jq -c .
 Store that exact JSON as the GitHub repository secret:
 
 ```bash
+gh auth login
 gh secret set K8S_DEPLOY_TARGETS \
   --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
   --body "$(terraform output -json kubernetes_deploy_targets | jq -c .)"
@@ -133,6 +135,7 @@ Keep the existing deployment secrets:
 - `DOCKERHUB_ACCESS_TOKEN`
 - `CREDS_JSON`
 - `SERVICE_KEY_JSON`
+- `K8S_DEPLOY_TARGETS`
 
 Each backend environment also needs an environment-file secret:
 
@@ -449,7 +452,8 @@ Optional per-backend settings can be added in the same map:
 ```hcl
 gke_backend_overrides = {
   boots = {
-    upload_bucket_name   = "boots_uploads"
+    # Only set this when the bucket cannot use the default "boots_uploads" name.
+    upload_bucket_name   = "existing-bucket-name"
     replicas             = 1
     memory_request       = "8Gi"
     memory_limit         = "8Gi"
@@ -466,10 +470,12 @@ terraform plan
 terraform apply
 ```
 
-3. Export and update `K8S_DEPLOY_TARGETS`:
+3. Export and update `K8S_DEPLOY_TARGETS`. Run `gh auth login` first if this machine has not been authenticated:
 
 ```bash
-terraform output -json kubernetes_deploy_targets | jq -c .
+gh secret set K8S_DEPLOY_TARGETS \
+  --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
+  --body "$(terraform output -json kubernetes_deploy_targets | jq -c .)"
 ```
 
 4. Add a GitHub environment-file secret for the collaborator, for example `BOOTS_ENV`.

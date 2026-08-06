@@ -18,6 +18,8 @@ This directory contains the Terraform configuration used to manage OGRRE backend
 
 - Terraform installed (compatible with Terraform 1.x)
 - Google Cloud SDK installed
+- `jq` installed
+- GitHub CLI `gh` installed and authenticated when updating GitHub Actions secrets from the command line
 - Access to the target GCP project for this deployment
 - A supported shell to run `bash` scripts
 
@@ -74,7 +76,16 @@ Export the GitHub Actions target map:
 terraform output -json kubernetes_deploy_targets | jq -c .
 ```
 
-Store that JSON as the GitHub secret `K8S_DEPLOY_TARGETS`. See `../kubernetes/README.md` for Kubernetes deployment and operations commands.
+Store that JSON as the GitHub secret `K8S_DEPLOY_TARGETS`:
+
+```bash
+gh auth login
+gh secret set K8S_DEPLOY_TARGETS \
+  --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
+  --body "$(terraform output -json kubernetes_deploy_targets | jq -c .)"
+```
+
+See `../kubernetes/README.md` for Kubernetes deployment and operations commands.
 
 ### Primary DNS state migration
 
@@ -319,7 +330,8 @@ If the collaborator needs non-default GKE settings, set them in the same map:
 ```hcl
 gke_backend_overrides = {
   boots = {
-    upload_bucket_name   = "boots_uploads"
+    # Only set this when the bucket cannot use the default "boots_uploads" name.
+    upload_bucket_name   = "existing-bucket-name"
     replicas             = 1
     memory_request       = "8Gi"
     memory_limit         = "8Gi"
@@ -336,7 +348,13 @@ terraform apply
 terraform output -json kubernetes_deploy_targets | jq -c .
 ```
 
-Store the updated output as the backend repository secret `K8S_DEPLOY_TARGETS`.
+Store the updated output as the backend repository secret `K8S_DEPLOY_TARGETS`:
+
+```bash
+gh secret set K8S_DEPLOY_TARGETS \
+  --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
+  --body "$(terraform output -json kubernetes_deploy_targets | jq -c .)"
+```
 
 ## Adding a legacy VM
 
