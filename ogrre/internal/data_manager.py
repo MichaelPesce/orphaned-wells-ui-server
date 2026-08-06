@@ -1433,47 +1433,19 @@ class DataManager:
                 _log.info(
                     f"Found {count} records without record_number. Starting migration..."
                 )
-                record_group_ids = self.db.records.distinct("record_group_id")
-                for rg_id in record_group_ids:
-                    cursor = self.db.records.find({"record_group_id": rg_id}).sort(
-                        "dateCreated", 1
+                cursor = self.db.records.find().sort("dateCreated", 1)
+                idx = 1
+                for doc in cursor:
+                    self.db.records.update_one(
+                        {"_id": doc["_id"]}, {"$set": {"record_number": idx}}
                     )
-                    idx = 1
-                    for doc in cursor:
-                        self.db.records.update_one(
-                            {"_id": doc["_id"]}, {"$set": {"record_number": idx}}
-                        )
-                        idx += 1
-                    if rg_id:
-                        self.db.counters.update_one(
-                            {"_id": rg_id},
-                            {"$set": {"record_number": idx - 1}},
-                            upsert=True,
-                        )
+                    idx += 1
+                self.db.counters.update_one(
+                    {"_id": "records"},
+                    {"$set": {"record_number": idx - 1}},
+                    upsert=True,
+                )
                 _log.info("Migration of record_number completed successfully.")
-            else:
-                record_group_ids = self.db.records.distinct("record_group_id")
-                for rg_id in record_group_ids:
-                    if rg_id:
-                        counter = self.db.counters.find_one({"_id": rg_id})
-                        if not counter:
-                            cursor = (
-                                self.db.records.find(
-                                    {"record_group_id": rg_id}, {"record_number": 1}
-                                )
-                                .sort("record_number", -1)
-                                .limit(1)
-                            )
-                            try:
-                                latest_record = cursor.next()
-                                current_max = latest_record.get("record_number", 0)
-                            except StopIteration:
-                                current_max = 0
-                            self.db.counters.update_one(
-                                {"_id": rg_id},
-                                {"$set": {"record_number": current_max}},
-                                upsert=True,
-                            )
         except Exception as e:
             _log.error(f"Error during migrateExistingRecords: {e}")
 
