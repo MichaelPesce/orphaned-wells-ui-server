@@ -1424,31 +1424,6 @@ class DataManager:
 
         return document
 
-    def migrateExistingRecords(self):
-        try:
-            count = self.db.records.count_documents(
-                {"record_number": {"$exists": False}}
-            )
-            if count > 0:
-                _log.info(
-                    f"Found {count} records without record_number. Starting migration..."
-                )
-                cursor = self.db.records.find().sort("dateCreated", 1)
-                idx = 1
-                for doc in cursor:
-                    self.db.records.update_one(
-                        {"_id": doc["_id"]}, {"$set": {"record_number": idx}}
-                    )
-                    idx += 1
-                self.db.counters.update_one(
-                    {"_id": "records"},
-                    {"$set": {"record_number": idx - 1}},
-                    upsert=True,
-                )
-                _log.info("Migration of record_number completed successfully.")
-        except Exception as e:
-            _log.error(f"Error during migrateExistingRecords: {e}")
-
     def getProcessorByRecordGroupID(self, rg_id, returnNameOnly=False, user=None):
         _id = ObjectId(rg_id)
         try:
