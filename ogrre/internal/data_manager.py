@@ -1559,10 +1559,7 @@ class DataManager:
         # Atomically increment the counter and get the next number
         next_doc = self.db.counters.find_one_and_update(
             {"_id": "records"},
-            {
-                "$setOnInsert": {"record_number": 0},
-                "$inc": {"record_number": 1},
-            },
+            {"$inc": {"record_number": 1}},
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
