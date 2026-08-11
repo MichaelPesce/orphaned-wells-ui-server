@@ -72,4 +72,5 @@ wheel==0.42.0
 yarl==1.9.4
 zipstream==1.1.4
 ## TODO: update this once PR https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning/pull/40 is merged
-ogrre_data_cleaning @ git+https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning@460867f7e961b34cd0436bd87010d3b45410f8b4
+ogrre_data_cleaning @ git+https://github.com/MichaelPesce/OGRRE_data_cleaning@faf88e2f3b699a4ce39a1ea5aed4977fd8a3f1d6
+# ogrre_data_cleaning @ git+https://github.com/CATALOG-Historic-Records/OGRRE_data_cleaning@460867f7e961b34cd0436bd87010d3b45410f8b4
