@@ -34,11 +34,11 @@ jobs:
 
   e2e-tests:
     name: Frontend E2E testing
-    uses: CATALOG-Historic-Records/orphaned-wells-ui/.github/workflows/frontend-tests-dispatch.yml@main
+    uses: CATALOG-Historic-Records/MichaelPesce/.github/workflows/frontend-tests-dispatch.yml@expand-testing
     permissions:
       contents: read
     with:
-      checkout_repository: CATALOG-Historic-Records/orphaned-wells-ui
+      checkout_repository: MichaelPesce/orphaned-wells-ui
       checkout_ref: main
       backend_mode: source
       backend_repository: ${{ github.repository }}
