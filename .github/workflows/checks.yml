@@ -34,7 +34,8 @@ jobs:
 
   e2e-tests:
     name: Frontend E2E testing
-    uses: CATALOG-Historic-Records/MichaelPesce/.github/workflows/frontend-tests-dispatch.yml@expand-testing
+    needs: code-formatting
+    uses: MichaelPesce/orphaned-wells-ui/.github/workflows/frontend-tests-dispatch.yml@expand-testing
     permissions:
       contents: read
     with:
