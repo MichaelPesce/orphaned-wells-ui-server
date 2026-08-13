@@ -2243,7 +2243,11 @@ class DataManager:
                     record_attribute["file"] = document.get("filename", "")
                     if "record_notes" in selectedColumns or keep_all_columns:
                         notes_list = document.get("record_notes") or []
-                        active_notes = [note for note in notes_list if not note.get("deleted", False)]
+                        active_notes = [
+                            note
+                            for note in notes_list
+                            if not note.get("deleted", False)
+                        ]
                         formatted_notes = []
                         for note in active_notes:
                             creator = note.get("creator", "Unknown")
@@ -2274,7 +2278,11 @@ class DataManager:
                             record_attribute[attribute_name] = document_attribute
                     if "record_notes" in selectedColumns or keep_all_columns:
                         notes_list = document.get("record_notes") or []
-                        active_notes = [note for note in notes_list if not note.get("deleted", False)]
+                        active_notes = [
+                            note
+                            for note in notes_list
+                            if not note.get("deleted", False)
+                        ]
                         record_attribute["record_notes"] = active_notes
                     record_attribute["file"] = document.get("filename", "")
                     record_attributes.append(record_attribute)
