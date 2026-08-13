@@ -3,7 +3,7 @@ name: Checks
 
 on:
   push:
-    branches: [main]
+
   pull_request:
     branches: [main]
 
@@ -35,11 +35,11 @@ jobs:
   e2e-tests:
     name: Frontend E2E testing
     needs: code-formatting
-    uses: MichaelPesce/orphaned-wells-ui/.github/workflows/frontend-tests-dispatch.yml@expand-testing
+    uses: CATALOG-Historic-Records/orphaned-wells-ui/.github/workflows/frontend-tests-dispatch.yml@main
     permissions:
       contents: read
     with:
-      checkout_repository: MichaelPesce/orphaned-wells-ui
+      checkout_repository: CATALOG-Historic-Records/orphaned-wells-ui
       checkout_ref: main
       backend_mode: source
       backend_repository: ${{ github.repository }}
