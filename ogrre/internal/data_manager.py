@@ -1180,16 +1180,41 @@ class DataManager:
             rg_documents = list(self.db.record_groups.find({"_id": {"$in": rg_ids}}))
             processor_ids = []
             for doc in rg_documents:
-                google_id = doc["processorId"]
-                processor_ids.append(google_id)
+                google_id = doc.get("processorId")
+                if google_id:
+                    processor_ids.append(google_id)
             processors = self.getProcessorsByIds(processor_ids, user=user)
-            for proc in processors:
-                if proc and "attributes" in proc:
-                    for attr in proc.get("attributes") or []:
-                        columns.add(attr["name"])
+            doc_type_columns = {}
+            if location == "documentType":
+                processor_map = {}
+                for proc in processors:
+                    if proc:
+                        proc_id = proc.get("processorId") or proc.get("name") or proc.get("Processor ID")
+                        if proc_id:
+                            processor_map[proc_id] = proc
+                for doc in rg_documents:
+                    doc_type = doc.get("documentType") or "Unknown"
+                    if doc_type not in doc_type_columns:
+                        doc_type_columns[doc_type] = []
+                    proc = processor_map.get(doc.get("processorId"))
+                    if proc and "attributes" in proc:
+                        for attr in proc.get("attributes") or []:
+                            attr_name = attr.get("name")
+                            if attr_name:
+                                columns.add(attr_name)
+                                if attr_name not in doc_type_columns[doc_type]:
+                                    doc_type_columns[doc_type].append(attr_name)
+            else:
+                for proc in processors:
+                    if proc and "attributes" in proc:
+                        for attr in proc.get("attributes") or []:
+                            attr_name = attr.get("name")
+                            if attr_name:
+                                columns.add(attr_name)
+
             if "projects" in document:
                 del document["projects"]
-            return {"columns": list(columns), "obj": document}
+            return {"columns": list(columns), "doc_type_columns": doc_type_columns, "obj": document}
 
         elif location == "record_group":
             columns = []
