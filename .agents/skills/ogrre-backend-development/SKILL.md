@@ -40,7 +40,7 @@ Before editing, inspect the relevant local patterns:
   names, permission names, auth behavior, upload behavior, or user-visible
   workflows change.
 - For route and data-manager endpoint work, also read
-  `.codex/skills/ogrre-backend-api-route/SKILL.md`.
+  `.agents/skills/ogrre-backend-api-route/SKILL.md`.
 
 Prefer the backend's existing module boundaries and helper functions over new
 abstractions. Keep new logic close to the owning route, data-manager method,
