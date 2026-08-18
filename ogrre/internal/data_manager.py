@@ -2349,7 +2349,7 @@ class DataManager:
         record["_id"] = str(record["_id"])
         return record
 
-    def getRecordImageUrls(self, record):
+    def getRecordDisplayImageUrls(self, record):
         image_urls = []
         rg_id = record.get("record_group_id")
         record_id = str(record.get("_id"))
@@ -2385,7 +2385,7 @@ class DataManager:
         return {
             "record_id": record_id,
             "image_files": next_image_files,
-            "img_urls": self.getRecordImageUrls(record),
+            "img_urls": self.getRecordDisplayImageUrls(record),
         }
 
     @time_it
@@ -3399,7 +3399,7 @@ class DataManager:
         except Exception as e:
             _log.error(f"error on cleaning {location}: {e}")
 
-    def getRecordImageUrls(self, record_id, rg_id):
+    def getRecordImageFileUrlPairs(self, record_id, rg_id):
         """
         Get the URLs for all images in a record.
 

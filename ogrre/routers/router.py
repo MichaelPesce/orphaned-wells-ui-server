@@ -2592,7 +2592,7 @@ async def rotate_record_images(
             raise HTTPException(status_code=400, detail="Missing required parameters")
 
         # Get the current image URLs
-        image_urls = data_manager.getRecordImageUrls(record_id, rg_id)
+        image_urls = data_manager.getRecordImageFileUrlPairs(record_id, rg_id)
         if not image_urls:
             raise HTTPException(
                 status_code=404, detail="No images found for this record"
