@@ -2,8 +2,10 @@ import logging
 import time
 import os
 import csv
+import io
 import json
 import re
+from collections import Counter
 
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
@@ -1178,15 +1180,22 @@ class DataManager:
             for rg in record_groups:
                 rg_ids.append(ObjectId(rg))
             rg_documents = list(self.db.record_groups.find({"_id": {"$in": rg_ids}}))
-            processor_ids = []
+            schema_less_record_groups = []
             for doc in rg_documents:
-                google_id = doc["processorId"]
-                processor_ids.append(google_id)
-            processors = self.getProcessorsByIds(processor_ids, user=user)
-            for proc in processors:
-                if proc and "attributes" in proc:
-                    for attr in proc.get("attributes") or []:
-                        columns.add(attr["name"])
+                rg_schema = self.getRecordGroupSchemaAttributes(
+                    user=user, rg_document=doc
+                )
+                if rg_schema:
+                    for attr in rg_schema:
+                        attr_name = attr.get("name")
+                        if attr_name:
+                            columns.add(attr_name)
+                else:
+                    schema_less_record_groups.append(str(doc["_id"]))
+            if schema_less_record_groups:
+                columns.update(
+                    self.deriveRecordColumnsFromRecordGroups(schema_less_record_groups)
+                )
             if "projects" in document:
                 del document["projects"]
             return {"columns": list(columns), "obj": document}
@@ -1196,16 +1205,65 @@ class DataManager:
             rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
             data_fusion = rg_document.get("data_fusion", None)
             rg_document["_id"] = _id
-            google_id = rg_document["processorId"]
-            processor = self.getProcessorById(google_id, user)
-            if processor is not None and "attributes" in processor:
-                for attr in processor["attributes"] or []:
+            rg_schema = self.getRecordGroupSchemaAttributes(
+                user=user, rg_document=rg_document
+            )
+            if rg_schema:
+                for attr in rg_schema:
                     attr_name = attr["name"]
                     if data_fusion and attr_name not in data_fusion:
                         continue
                     columns.append(attr["name"])
+            else:
+                columns = self.deriveRecordColumnsFromRecordGroups([_id])
             return {"columns": columns, "obj": rg_document}
         return None
+
+    def getRecordGroupSchemaAttributes(
+        self, rg_id=None, user=None, rg_document=None
+    ):
+        try:
+            document = rg_document
+            if document is None and rg_id is not None:
+                document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
+            if document is None:
+                return []
+
+            processor_id = document.get("processorId")
+            if processor_id:
+                processor_document = self.getProcessorById(processor_id, user)
+                if processor_document and "attributes" in processor_document:
+                    return processor_document.get("attributes") or []
+
+            attributes = document.get("attributes") or []
+            if isinstance(attributes, list):
+                return attributes
+            return []
+        except Exception as e:
+            _log.error(f"unable to get record group schema attributes: {e}")
+            return []
+
+    def getRecordGroupSchemaMap(self, rg_id, user=None):
+        return util.convert_processor_attributes_to_dict(
+            self.getRecordGroupSchemaAttributes(rg_id=rg_id, user=user)
+        )
+
+    def deriveRecordColumnsFromRecordGroups(self, record_group_ids):
+        columns = set()
+        if not record_group_ids:
+            return []
+
+        cursor = self.db.records.find(
+            {"record_group_id": {"$in": record_group_ids}},
+            {"attributesList": 1},
+        )
+        for record in cursor:
+            for _, attribute_identifier in util.iter_attribute_tree(
+                record.get("attributesList") or []
+            ):
+                if attribute_identifier:
+                    columns.add(attribute_identifier)
+        return list(columns)
 
     def fetchProcessors(self, user):
         processor_list = self.createProcessorsList(user, update_state=False)
@@ -1326,10 +1384,13 @@ class DataManager:
 
         ## sort record attributes
         try:
-            google_id = rg["processorId"]
-            processor_doc = self.getProcessorById(google_id, user_info)
+            processor_attributes = self.getRecordGroupSchemaAttributes(
+                user=user_info, rg_document=rg
+            )
             sorted_attributes, update_db = util.sortRecordAttributes(
-                document["attributesList"], processor_doc, data_fusion=data_fusion
+                document["attributesList"],
+                {"attributes": processor_attributes},
+                data_fusion=data_fusion,
             )
             document["attributesList"] = sorted_attributes
 
@@ -1430,6 +1491,13 @@ class DataManager:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
+            if not google_id:
+                processor_attributes = self.getRecordGroupSchemaAttributes(
+                    user=user, rg_document=document
+                )
+                if returnNameOnly:
+                    return document.get("documentType") or document.get("name")
+                return None, None, processor_attributes
             processor_document = self.getProcessorById(google_id, user)
             if not processor_document:
                 processor_document = DEFAULT_PROCESSORS[0]
@@ -1457,6 +1525,631 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None, None, None
+
+    def userCanAccessProject(self, project_id, user_info):
+        try:
+            ObjectId(project_id)
+        except Exception:
+            return False
+        return project_id in {project["_id"] for project in self.fetchProjects(user_info)}
+
+    def _getImportPackage(self, import_request):
+        if isinstance(import_request, dict):
+            return (
+                import_request.get("import_package")
+                or import_request.get("package")
+                or import_request.get("data")
+                or import_request
+            )
+        return import_request
+
+    def _getImportPackageRecords(self, import_package):
+        if isinstance(import_package, list):
+            records = import_package
+        elif isinstance(import_package, dict):
+            records = import_package.get("records")
+        else:
+            raise ValueError("JSON import must be an object or an array of records.")
+
+        if not isinstance(records, list):
+            raise ValueError("JSON import must include a records array.")
+        if len(records) == 0:
+            raise ValueError("JSON import must include at least one record.")
+        return records
+
+    def _getImportPackageFormat(self, import_package):
+        if isinstance(import_package, dict):
+            return import_package.get("format") or import_package.get("version")
+        return None
+
+    def _getImportRecordMetadataKeys(self):
+        return {
+            "_id",
+            "id",
+            "record_id",
+            "record_group_id",
+            "rg_id",
+            "project_id",
+            "name",
+            "file",
+            "filename",
+            "original_filename",
+            "api_number",
+            "contributor",
+            "status",
+            "review_status",
+            "verification_status",
+            "URL",
+            "url",
+            "image_files",
+            "img_urls",
+            "image_whitespace",
+            "source_type",
+            "dateCreated",
+            "lastUpdated",
+            "lastUpdatedBy",
+            "record_notes",
+            "notes",
+            "previous_id",
+            "next_id",
+            "rank",
+            "record_number",
+        }
+
+    def _looksLikeImportedAttribute(self, value):
+        if not isinstance(value, dict):
+            return False
+        return any(
+            key in value
+            for key in (
+                "key",
+                "name",
+                "value",
+                "raw_text",
+                "text_value",
+                "normalized_value",
+                "normalized_vertices",
+                "coordinates",
+                "subattributes",
+                "properties",
+                "page",
+                "confidence",
+                "ai_confidence",
+            )
+        )
+
+    def _getImportPackageSchemaFields(self, import_package):
+        if not isinstance(import_package, dict):
+            return []
+
+        schema = import_package.get("schema")
+        if isinstance(schema, dict):
+            fields = schema.get("fields") or schema.get("attributes") or []
+        else:
+            fields = import_package.get("schema_fields") or []
+
+        if not isinstance(fields, list):
+            return []
+
+        allowed_keys = {
+            "name",
+            "alias",
+            "data_type",
+            "google_data_type",
+            "database_data_type",
+            "cleaning_function",
+            "accepted_range",
+            "field_specific_notes",
+            "grouping",
+            "model_enabled",
+            "occurrence",
+            "page_order_sort",
+        }
+        normalized_fields = []
+        for idx, field in enumerate(fields):
+            if not isinstance(field, dict):
+                continue
+            field_name = field.get("name") or field.get("key")
+            if not field_name:
+                continue
+            normalized_field = {
+                key: value
+                for key, value in field.items()
+                if key in allowed_keys and value is not None
+            }
+            normalized_field["name"] = str(field_name)
+            if "data_type" not in normalized_field and field.get("Google Data Type"):
+                normalized_field["data_type"] = field.get("Google Data Type")
+            if "page_order_sort" not in normalized_field:
+                normalized_field["page_order_sort"] = idx + 1
+            normalized_fields.append(normalized_field)
+        return normalized_fields
+
+    def _getImportPackageDocumentType(self, import_package):
+        if not isinstance(import_package, dict):
+            return None
+        schema = import_package.get("schema")
+        if isinstance(schema, dict):
+            return schema.get("documentType") or schema.get("document_type")
+        return import_package.get("documentType") or import_package.get("document_type")
+
+    def _coerceImportedValue(self, value):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return json.dumps(value, default=util.defaultJSONDumpHandler)
+
+    def _simpleFieldsToAttributes(self, fields):
+        attributes = []
+        for key, value in fields.items():
+            if isinstance(value, dict) and not any(
+                field_key in value
+                for field_key in (
+                    "key",
+                    "name",
+                    "value",
+                    "raw_text",
+                    "normalized_value",
+                    "subattributes",
+                    "properties",
+                )
+            ):
+                subattributes = self._simpleFieldsToAttributes(value)
+                attributes.append(
+                    {
+                        "key": key,
+                        "value": None,
+                        "raw_text": None,
+                        "normalized_value": None,
+                        "subattributes": subattributes,
+                    }
+                )
+            else:
+                attributes.append(
+                    {
+                        "key": key,
+                        "value": value,
+                        "raw_text": value,
+                        "normalized_value": value,
+                        "subattributes": [],
+                    }
+                )
+        return attributes
+
+    def _attributeMapToAttributes(self, record):
+        attributes = []
+        metadata_keys = self._getImportRecordMetadataKeys()
+        for key, value in record.items():
+            if key in metadata_keys:
+                continue
+            if self._looksLikeImportedAttribute(value):
+                attribute = value.copy()
+                if not attribute.get("key") and not attribute.get("name"):
+                    attribute["key"] = key
+                attributes.append(attribute)
+            else:
+                attributes.append(
+                    {
+                        "key": key,
+                        "value": value,
+                        "raw_text": value,
+                        "normalized_value": value,
+                        "subattributes": [],
+                    }
+                )
+        return attributes
+
+    def _normalizeImportedAttribute(self, attribute, record_idx):
+        if not isinstance(attribute, dict):
+            raise ValueError(f"Record {record_idx + 1} has a non-object attribute.")
+
+        key = attribute.get("key") or attribute.get("name")
+        if not key:
+            raise ValueError(f"Record {record_idx + 1} has an attribute without a key.")
+
+        subattributes = (
+            attribute.get("subattributes")
+            if "subattributes" in attribute
+            else attribute.get("properties", [])
+        )
+        if subattributes is None:
+            subattributes = []
+        if not isinstance(subattributes, list):
+            raise ValueError(
+                f"Record {record_idx + 1} attribute {key} has non-array subattributes."
+            )
+
+        value = attribute.get("value")
+        if "value" not in attribute:
+            value = attribute.get("normalized_value", attribute.get("raw_text"))
+
+        raw_text = attribute.get("raw_text", attribute.get("text_value", value))
+        normalized_value = attribute.get("normalized_value", value)
+        normalized_attribute = {
+            "key": str(key),
+            "ai_confidence": attribute.get(
+                "ai_confidence", attribute.get("confidence")
+            ),
+            "confidence": attribute.get("confidence"),
+            "raw_text": self._coerceImportedValue(raw_text),
+            "text_value": self._coerceImportedValue(attribute.get("text_value")),
+            "value": self._coerceImportedValue(value),
+            "normalized_vertices": attribute.get(
+                "normalized_vertices", attribute.get("coordinates")
+            ),
+            "normalized_value": self._coerceImportedValue(normalized_value),
+            "subattributes": [
+                self._normalizeImportedAttribute(subattribute, record_idx)
+                for subattribute in subattributes
+            ],
+            "edited": bool(attribute.get("edited", False)),
+            "page": attribute.get("page"),
+        }
+        if "user_added" in attribute:
+            normalized_attribute["user_added"] = bool(attribute.get("user_added"))
+        return normalized_attribute
+
+    def _normalizeImportedRecordAttributes(self, record, record_idx):
+        attributes = record.get("attributesList")
+        if attributes is None:
+            attributes = record.get("attributes")
+        if attributes is None and isinstance(record.get("fields"), dict):
+            attributes = self._simpleFieldsToAttributes(record.get("fields"))
+        if attributes is None:
+            attributes = self._attributeMapToAttributes(record)
+
+        if not isinstance(attributes, list):
+            raise ValueError(
+                f"Record {record_idx + 1} must include attributesList, attributes, fields, or exported attribute columns."
+            )
+        if len(attributes) == 0:
+            raise ValueError(f"Record {record_idx + 1} does not contain attributes.")
+
+        normalized_attributes = [
+            self._normalizeImportedAttribute(attribute, record_idx)
+            for attribute in attributes
+        ]
+        return util.normalize_record_attribute_tree(normalized_attributes)
+
+    def _buildImportedRecords(self, rg_id, import_package, user_info):
+        records = self._getImportPackageRecords(import_package)
+        normalized_records = []
+        for idx, record in enumerate(records):
+            if not isinstance(record, dict):
+                raise ValueError(f"Record {idx + 1} must be an object.")
+
+            source_filename = (
+                record.get("filename")
+                or record.get("file")
+                or record.get("original_filename")
+            )
+            name = record.get("name") or source_filename or f"record-{idx + 1}"
+            name = str(name).strip() or f"record-{idx + 1}"
+            filename = str(source_filename or f"{name}.json").strip()
+            if not filename:
+                filename = f"{name}.json"
+            if name == filename:
+                name = os.path.splitext(os.path.basename(filename))[0] or name
+
+            normalized_records.append(
+                {
+                    "record_group_id": rg_id,
+                    "name": name,
+                    "filename": filename,
+                    "api_number": record.get("api_number"),
+                    "contributor": user_info,
+                    "status": record.get("status") or "digitized",
+                    "review_status": record.get("review_status") or "unreviewed",
+                    "verification_status": record.get("verification_status"),
+                    "original_filename": record.get("original_filename")
+                    or record.get("file")
+                    or filename,
+                    "image_files": record.get("image_files") or [],
+                    "attributesList": self._normalizeImportedRecordAttributes(
+                        record, idx
+                    ),
+                    "source_type": record.get("source_type") or "json_import",
+                }
+            )
+        filename_counts = Counter(
+            record.get("filename") for record in normalized_records
+        )
+        filename_base_counts = Counter(
+            self.getFilenameBase(record.get("filename"))
+            for record in normalized_records
+        )
+        duplicate_filenames = {
+            filename: count
+            for filename, count in filename_counts.items()
+            if filename and count > 1
+        }
+        duplicate_filename_bases = {
+            filename_base: count
+            for filename_base, count in filename_base_counts.items()
+            if filename_base and count > 1
+        }
+        if duplicate_filenames or duplicate_filename_bases:
+            _log.info(
+                "record import normalized duplicate filenames rg_id=%s exact_duplicates=%s base_duplicates=%s",
+                rg_id,
+                duplicate_filenames,
+                duplicate_filename_bases,
+            )
+        _log.info(
+            "record import normalized records rg_id=%s input_count=%s normalized_count=%s filename_sample=%s",
+            rg_id,
+            len(records),
+            len(normalized_records),
+            [record.get("filename") for record in normalized_records[:10]],
+        )
+        return normalized_records
+
+    def importJsonRecords(self, rg_id, import_request, user_info, prevent_duplicates=True):
+        import_package = self._getImportPackage(import_request)
+        normalized_records = self._buildImportedRecords(
+            rg_id, import_package, user_info
+        )
+        requested_count = len(normalized_records)
+        filename_base_counts = Counter(
+            self.getFilenameBase(record.get("filename"))
+            for record in normalized_records
+        )
+        duplicate_filename_bases = {
+            filename_base: count
+            for filename_base, count in filename_base_counts.items()
+            if filename_base and count > 1
+        }
+
+        schema_fields = self._getImportPackageSchemaFields(import_package)
+        if schema_fields:
+            rg_document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
+            if rg_document and not rg_document.get("processorId"):
+                self.db.record_groups.update_one(
+                    {"_id": ObjectId(rg_id)},
+                    {"$set": {"attributes": schema_fields}},
+                )
+
+        created_record_ids = []
+        skipped_duplicates = []
+        for record in normalized_records:
+            if prevent_duplicates and self.checkIfRecordExists(
+                record.get("filename"), rg_id
+            ):
+                skipped_duplicates.append(record.get("filename"))
+                _log.info(
+                    "record import skipped duplicate rg_id=%s filename=%s filename_base=%s name=%s",
+                    rg_id,
+                    record.get("filename"),
+                    self.getFilenameBase(record.get("filename")),
+                    record.get("name"),
+                )
+                continue
+            created_record_id = self.createRecord(record, user_info)
+            created_record_ids.append(created_record_id)
+            _log.info(
+                "record import created record rg_id=%s record_id=%s filename=%s filename_base=%s name=%s",
+                rg_id,
+                created_record_id,
+                record.get("filename"),
+                self.getFilenameBase(record.get("filename")),
+                record.get("name"),
+            )
+
+        _log.info(
+            "record import complete rg_id=%s requested_count=%s created_count=%s skipped_duplicate_count=%s prevent_duplicates=%s duplicate_filename_bases_in_file=%s skipped_duplicates=%s",
+            rg_id,
+            requested_count,
+            len(created_record_ids),
+            len(skipped_duplicates),
+            prevent_duplicates,
+            duplicate_filename_bases,
+            skipped_duplicates,
+        )
+
+        self.recordHistory(
+            "importJsonRecords",
+            user_info.get("email", None),
+            rg_id=rg_id,
+            notes={
+                "requested_count": requested_count,
+                "created_count": len(created_record_ids),
+                "skipped_duplicate_count": len(skipped_duplicates),
+                "format": self._getImportPackageFormat(import_package),
+                "duplicate_filename_bases_in_file": duplicate_filename_bases,
+            },
+        )
+        return {
+            "record_group_id": rg_id,
+            "created_record_ids": created_record_ids,
+            "requested_count": requested_count,
+            "created_count": len(created_record_ids),
+            "skipped_duplicates": skipped_duplicates,
+            "skipped_duplicate_count": len(skipped_duplicates),
+            "duplicate_filename_bases_in_file": duplicate_filename_bases,
+        }
+
+    def _parseCsvAttributePath(self, column_name):
+        parts = []
+        current = ""
+        for char in str(column_name):
+            if char == "[":
+                if current:
+                    parts.append(current.strip())
+                current = ""
+            elif char == "]":
+                if current:
+                    parts.append(current.strip())
+                current = ""
+            else:
+                current += char
+        if current.strip():
+            parts.append(current.strip())
+        return [part for part in parts if part]
+
+    def _addCsvAttributeValue(self, attributes, path, value):
+        if not path:
+            return
+        key = path[0]
+        attribute = next(
+            (existing for existing in attributes if existing.get("key") == key),
+            None,
+        )
+        if attribute is None:
+            attribute = {
+                "key": key,
+                "value": None if len(path) > 1 else value,
+                "raw_text": None if len(path) > 1 else value,
+                "normalized_value": None if len(path) > 1 else value,
+                "subattributes": [],
+            }
+            attributes.append(attribute)
+        elif len(path) == 1:
+            attribute["value"] = value
+            attribute["raw_text"] = value
+            attribute["normalized_value"] = value
+
+        if len(path) > 1:
+            self._addCsvAttributeValue(attribute["subattributes"], path[1:], value)
+
+    def _csvRowsToImportPackage(self, rows):
+        records = []
+        metadata_keys = self._getImportRecordMetadataKeys()
+        for idx, row in enumerate(rows):
+            attributes = []
+            for column, value in row.items():
+                if column is None or column in metadata_keys:
+                    continue
+                if value is None or str(value).strip() == "":
+                    continue
+                self._addCsvAttributeValue(
+                    attributes,
+                    self._parseCsvAttributePath(column),
+                    value,
+                )
+
+            filename = row.get("filename") or row.get("file") or f"record-{idx + 1}.csv"
+            records.append(
+                {
+                    "name": row.get("name")
+                    or os.path.splitext(os.path.basename(filename))[0]
+                    or f"record-{idx + 1}",
+                    "filename": filename,
+                    "original_filename": row.get("original_filename") or filename,
+                    "api_number": row.get("api_number"),
+                    "status": row.get("status"),
+                    "review_status": row.get("review_status"),
+                    "verification_status": row.get("verification_status"),
+                    "attributesList": attributes,
+                    "source_type": "csv_import",
+                }
+            )
+        return {"format": "ogrre-csv-records-v1", "records": records}
+
+    def parseImportFile(self, filename, file_bytes):
+        size_bytes = len(file_bytes) if isinstance(file_bytes, bytes) else None
+        if isinstance(file_bytes, bytes):
+            text = file_bytes.decode("utf-8-sig")
+        else:
+            text = str(file_bytes)
+        extension = os.path.splitext(filename or "")[1].lower()
+
+        if extension == ".csv":
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            _log.info(
+                "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s headers_sample=%s",
+                filename,
+                extension,
+                size_bytes,
+                len(rows),
+                len(reader.fieldnames or []),
+                (reader.fieldnames or [])[:10],
+            )
+            return self._csvRowsToImportPackage(rows)
+
+        try:
+            parsed = json.loads(text)
+            try:
+                record_count = len(self._getImportPackageRecords(parsed))
+            except Exception:
+                record_count = "unknown"
+            _log.info(
+                "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=json package_format=%s record_count=%s",
+                filename,
+                extension,
+                size_bytes,
+                self._getImportPackageFormat(parsed),
+                record_count,
+            )
+            return parsed
+        except json.JSONDecodeError as json_error:
+            if extension == ".json":
+                raise ValueError(f"Invalid JSON import file: {json_error}")
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            if rows:
+                _log.info(
+                    "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s headers_sample=%s",
+                    filename,
+                    extension,
+                    size_bytes,
+                    len(rows),
+                    len(reader.fieldnames or []),
+                    (reader.fieldnames or [])[:10],
+                )
+                return self._csvRowsToImportPackage(rows)
+            raise ValueError("Import file must be valid JSON or CSV.")
+
+    def createRecordGroupFromJsonImport(self, project_id, import_request, user_info):
+        if not self.userCanAccessProject(project_id, user_info):
+            raise PermissionError("User does not have access to this project.")
+
+        import_package = self._getImportPackage(import_request)
+        self._getImportPackageRecords(import_package)
+
+        record_group_info = (
+            import_request.get("record_group")
+            if isinstance(import_request, dict)
+            else {}
+        )
+        if not isinstance(record_group_info, dict):
+            record_group_info = {}
+
+        name = str(record_group_info.get("name") or "").strip()
+        if not name:
+            raise ValueError("Record group name is required.")
+
+        document_type = (
+            record_group_info.get("documentType")
+            or record_group_info.get("document_type")
+            or self._getImportPackageDocumentType(import_package)
+            or "JSON Import"
+        )
+        rg_info = {
+            "name": name,
+            "description": record_group_info.get("description", ""),
+            "history": [],
+            "documentType": document_type,
+            "processorId": None,
+            "processor_id": None,
+            "project_id": project_id,
+            "source_type": "json_import",
+            "import_format": self._getImportPackageFormat(import_package),
+            "attributes": self._getImportPackageSchemaFields(import_package),
+        }
+        rg_id = self.createRecordGroup(rg_info, user_info)
+        prevent_duplicates = True
+        if isinstance(import_request, dict):
+            prevent_duplicates = import_request.get(
+                "preventDuplicates", import_request.get("prevent_duplicates", True)
+            )
+        import_summary = self.importJsonRecords(
+            rg_id,
+            import_request,
+            user_info,
+            prevent_duplicates=prevent_duplicates,
+        )
+        import_summary["record_group_id"] = rg_id
+        return import_summary
 
     ## create/add functions
     def createProject(self, project_info, user_info):
@@ -1574,6 +2267,82 @@ class DataManager:
             document["_id"] = str(document["_id"])
             return document
         return None
+
+    def connectRecordGroupProcessor(self, rg_id, processor_id, user_info):
+        _, record_group = self.fetchRecordGroupData(rg_id, user_info)
+        if record_group is None:
+            raise PermissionError("User does not have access to this record group.")
+        if not processor_id:
+            raise ValueError("Processor ID is required.")
+
+        processor = self.getProcessorById(processor_id, user_info)
+        if not processor:
+            raise ValueError("Processor not found.")
+
+        processor_document_type = (
+            processor.get("documentType")
+            or processor.get("displayName")
+            or processor.get("name")
+            or "Connected Processor"
+        )
+        update = {
+            "processorId": processor.get("processorId") or processor_id,
+            "processor_id": processor.get("processorId") or processor_id,
+            "documentType": processor_document_type,
+            "attributes": processor.get("attributes") or [],
+            "source_type": record_group.get("source_type") or "processor_connected",
+        }
+        return self.updateRecordGroup(rg_id, update, user_info)
+
+    def fetchRecordForUser(self, record_id, user_info):
+        try:
+            record = self.getDocument("records", {"_id": ObjectId(record_id)})
+        except Exception:
+            return None
+        if not record:
+            return None
+        rg_id = record.get("record_group_id")
+        if rg_id not in self.getUserRecordGroups(user_info):
+            return None
+        record["_id"] = str(record["_id"])
+        return record
+
+    def getRecordImageUrls(self, record):
+        image_urls = []
+        rg_id = record.get("record_group_id")
+        record_id = str(record.get("_id"))
+        for image in record.get("image_files") or []:
+            if util.imageIsValid(image):
+                image_urls.append(get_document_image(rg_id, record_id, image))
+        return image_urls
+
+    def appendRecordImages(self, record_id, image_files, user_info):
+        record = self.fetchRecordForUser(record_id, user_info)
+        if record is None:
+            raise PermissionError("User does not have access to this record.")
+
+        existing_image_files = record.get("image_files") or []
+        next_image_files = existing_image_files[:]
+        for image_file in image_files:
+            if image_file and image_file not in next_image_files:
+                next_image_files.append(image_file)
+
+        self.db.records.update_one(
+            {"_id": ObjectId(record_id)},
+            {"$set": {"image_files": next_image_files}},
+        )
+        self.recordHistory(
+            "appendRecordImages",
+            user_info.get("email", None),
+            record_id=record_id,
+            notes={"added_image_count": len(next_image_files) - len(existing_image_files)},
+        )
+        record["image_files"] = next_image_files
+        return {
+            "record_id": record_id,
+            "image_files": next_image_files,
+            "img_urls": self.getRecordImageUrls(record),
+        }
 
     @time_it
     def updateRecordInternal(self, record_id, field, value):
@@ -1837,23 +2606,15 @@ class DataManager:
                 {
                     "_id": 1,
                     "processorId": 1,
+                    "attributes": 1,
                 },
             )
             rg_processor_attribute_map = {}
             for rg in cursor:
                 rg_id = str(rg["_id"])
-                google_id = str(rg.get("processorId"))
-                if not google_id:
-                    rg_processor_attribute_map[rg_id] = {}
-                    continue
-
-                processor_document = self.getProcessorById(google_id)
-                if not processor_document:
-                    _log.info(f"processor lookup returned no document for {rg_id}")
-                    rg_processor_attribute_map[rg_id] = {}
-                    continue
-
-                processor_attributes = processor_document.get("attributes", None) or []
+                processor_attributes = self.getRecordGroupSchemaAttributes(
+                    rg_document=rg
+                )
                 rg_processor_attribute_map[
                     rg_id
                 ] = util.convert_processor_attributes_to_dict(processor_attributes)
@@ -2551,6 +3312,10 @@ class DataManager:
                     documents.append(each)
             else:
                 _log.error(f"clean {location} is not supported")
+                return False
+
+            if not processor_attributes:
+                _log.info(f"no schema-backed cleaning rules found for {location} {_id}")
                 return False
 
             ## convert processor attributes to dict
