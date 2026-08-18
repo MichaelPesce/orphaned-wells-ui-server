@@ -1219,9 +1219,7 @@ class DataManager:
             return {"columns": columns, "obj": rg_document}
         return None
 
-    def getRecordGroupSchemaAttributes(
-        self, rg_id=None, user=None, rg_document=None
-    ):
+    def getRecordGroupSchemaAttributes(self, rg_id=None, user=None, rg_document=None):
         try:
             document = rg_document
             if document is None and rg_id is not None:
@@ -1531,7 +1529,9 @@ class DataManager:
             ObjectId(project_id)
         except Exception:
             return False
-        return project_id in {project["_id"] for project in self.fetchProjects(user_info)}
+        return project_id in {
+            project["_id"] for project in self.fetchProjects(user_info)
+        }
 
     def _getImportPackage(self, import_request):
         if isinstance(import_request, dict):
@@ -1946,7 +1946,9 @@ class DataManager:
         )
         return preview
 
-    def importJsonRecords(self, rg_id, import_request, user_info, prevent_duplicates=True):
+    def importJsonRecords(
+        self, rg_id, import_request, user_info, prevent_duplicates=True
+    ):
         import_package = self._getImportPackage(import_request)
         normalized_records = self._buildImportedRecords(
             rg_id, import_package, user_info
@@ -1988,9 +1990,7 @@ class DataManager:
             notes={
                 "requested_count": duplicate_preview["requested_count"],
                 "created_count": len(created_record_ids),
-                "skipped_duplicate_count": duplicate_preview[
-                    "skipped_duplicate_count"
-                ],
+                "skipped_duplicate_count": duplicate_preview["skipped_duplicate_count"],
                 "format": self._getImportPackageFormat(import_package),
                 "duplicate_filename_base_count_in_file": duplicate_preview[
                     "duplicate_filename_base_count_in_file"
@@ -2377,7 +2377,9 @@ class DataManager:
             "appendRecordImages",
             user_info.get("email", None),
             record_id=record_id,
-            notes={"added_image_count": len(next_image_files) - len(existing_image_files)},
+            notes={
+                "added_image_count": len(next_image_files) - len(existing_image_files)
+            },
         )
         record["image_files"] = next_image_files
         return {

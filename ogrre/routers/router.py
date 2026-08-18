@@ -810,9 +810,7 @@ async def import_json_record_group(
         raise HTTPException(400, detail="JSON import request body is required.")
 
     try:
-        return data_manager.createRecordGroupFromJsonImport(
-            project_id, data, user_info
-        )
+        return data_manager.createRecordGroupFromJsonImport(project_id, data, user_info)
     except PermissionError:
         raise HTTPException(
             403,
@@ -1018,9 +1016,7 @@ async def connect_record_group_processor(
     data = await request.json()
     processor_id = data.get("processorId") or data.get("processor_id")
     try:
-        return data_manager.connectRecordGroupProcessor(
-            rg_id, processor_id, user_info
-        )
+        return data_manager.connectRecordGroupProcessor(rg_id, processor_id, user_info)
     except PermissionError:
         raise HTTPException(
             403,
@@ -1094,7 +1090,9 @@ async def upload_record_images(
             else:
                 output_paths.append(original_output_path)
 
-        image_file_names = [os.path.basename(output_path) for output_path in output_paths]
+        image_file_names = [
+            os.path.basename(output_path) for output_path in output_paths
+        ]
         await storage_api.upload_files(
             file_paths=output_paths,
             file_names=image_file_names,
