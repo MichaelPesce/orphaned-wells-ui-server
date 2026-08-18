@@ -306,9 +306,9 @@ class DataManager:
             return None
         collaborator = collaborator.strip()
 
-        ## There is a naming convention disparity between OGRRE (rrc) and OGRRE data cleaning (texas_rrc)
-        if collaborator == "rrc":
-            collaborator = "texas_rrc"
+        ## There WAS a naming convention disparity between OGRRE (rrc) and OGRRE data cleaning (texas_rrc), which is now fixed. leave this in as a fallback for now
+        if collaborator == "texas_rrc":
+            collaborator = "rrc"
         return collaborator or None
 
     def getCollaboratorForUser(self, user=None):
