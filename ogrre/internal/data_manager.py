@@ -1850,54 +1850,111 @@ class DataManager:
                     "source_type": record.get("source_type") or "json_import",
                 }
             )
-        filename_counts = Counter(
-            record.get("filename") for record in normalized_records
+        return normalized_records
+
+    def analyzeImportedRecordDuplicates(
+        self, rg_id, normalized_records, prevent_duplicates=True
+    ):
+        filenames = [record.get("filename") for record in normalized_records]
+        existing_duplicate_bases = set(
+            self.checkIfRecordsExist(filenames, rg_id) if rg_id else []
         )
-        filename_base_counts = Counter(
-            self.getFilenameBase(record.get("filename"))
-            for record in normalized_records
-        )
-        duplicate_filenames = {
-            filename: count
-            for filename, count in filename_counts.items()
-            if filename and count > 1
-        }
         duplicate_filename_bases = {
             filename_base: count
-            for filename_base, count in filename_base_counts.items()
+            for filename_base, count in Counter(
+                self.getFilenameBase(filename) for filename in filenames
+            ).items()
             if filename_base and count > 1
         }
-        if duplicate_filenames or duplicate_filename_bases:
-            _log.info(
-                "record import normalized duplicate filenames rg_id=%s exact_duplicates=%s base_duplicates=%s",
-                rg_id,
-                duplicate_filenames,
-                duplicate_filename_bases,
+
+        seen_import_bases = set()
+        existing_duplicates = []
+        internal_duplicates = []
+        importable_records = []
+
+        for idx, record in enumerate(normalized_records):
+            filename = record.get("filename")
+            filename_base = self.getFilenameBase(filename)
+            duplicate_item = {
+                "index": idx,
+                "filename": filename,
+                "filename_base": filename_base,
+                "name": record.get("name"),
+            }
+
+            is_existing_duplicate = (
+                bool(filename_base) and filename_base in existing_duplicate_bases
             )
-        _log.info(
-            "record import normalized records rg_id=%s input_count=%s normalized_count=%s filename_sample=%s",
-            rg_id,
-            len(records),
-            len(normalized_records),
-            [record.get("filename") for record in normalized_records[:10]],
+            is_internal_duplicate = (
+                bool(filename_base) and filename_base in seen_import_bases
+            )
+
+            if is_existing_duplicate:
+                existing_duplicates.append(duplicate_item)
+            elif is_internal_duplicate:
+                internal_duplicates.append(duplicate_item)
+
+            if prevent_duplicates and (is_existing_duplicate or is_internal_duplicate):
+                continue
+
+            importable_records.append(record)
+            if filename_base:
+                seen_import_bases.add(filename_base)
+
+        skipped_duplicate_count = (
+            len(existing_duplicates) + len(internal_duplicates)
+            if prevent_duplicates
+            else 0
         )
-        return normalized_records
+        return {
+            "record_count": len(normalized_records),
+            "requested_count": len(normalized_records),
+            "importable_records": importable_records,
+            "importable_count": len(importable_records),
+            "existing_duplicates": existing_duplicates,
+            "existing_duplicate_count": len(existing_duplicates),
+            "internal_duplicates": internal_duplicates,
+            "internal_duplicate_count": len(internal_duplicates),
+            "skipped_duplicates": [
+                duplicate["filename"]
+                for duplicate in existing_duplicates + internal_duplicates
+            ]
+            if prevent_duplicates
+            else [],
+            "skipped_duplicate_count": skipped_duplicate_count,
+            "duplicate_filename_bases_in_file": duplicate_filename_bases,
+            "duplicate_filename_base_count_in_file": len(duplicate_filename_bases),
+            "prevent_duplicates": prevent_duplicates,
+        }
+
+    def previewJsonRecords(self, rg_id, import_request, prevent_duplicates=True):
+        import_package = self._getImportPackage(import_request)
+        normalized_records = self._buildImportedRecords(rg_id, import_package, {})
+        preview = self.analyzeImportedRecordDuplicates(
+            rg_id, normalized_records, prevent_duplicates=prevent_duplicates
+        )
+        preview.pop("importable_records", None)
+        _log.info(
+            "record import preview rg_id=%s requested_count=%s importable_count=%s skipped_duplicate_count=%s existing_duplicate_count=%s internal_duplicate_count=%s prevent_duplicates=%s",
+            rg_id,
+            preview["requested_count"],
+            preview["importable_count"],
+            preview["skipped_duplicate_count"],
+            preview["existing_duplicate_count"],
+            preview["internal_duplicate_count"],
+            prevent_duplicates,
+        )
+        return preview
 
     def importJsonRecords(self, rg_id, import_request, user_info, prevent_duplicates=True):
         import_package = self._getImportPackage(import_request)
         normalized_records = self._buildImportedRecords(
             rg_id, import_package, user_info
         )
-        requested_count = len(normalized_records)
-        filename_base_counts = Counter(
-            self.getFilenameBase(record.get("filename"))
-            for record in normalized_records
+        duplicate_preview = self.analyzeImportedRecordDuplicates(
+            rg_id, normalized_records, prevent_duplicates=prevent_duplicates
         )
-        duplicate_filename_bases = {
-            filename_base: count
-            for filename_base, count in filename_base_counts.items()
-            if filename_base and count > 1
-        }
+        records_to_create = duplicate_preview.pop("importable_records", [])
 
         schema_fields = self._getImportPackageSchemaFields(import_package)
         if schema_fields:
@@ -1909,40 +1966,19 @@ class DataManager:
                 )
 
         created_record_ids = []
-        skipped_duplicates = []
-        for record in normalized_records:
-            if prevent_duplicates and self.checkIfRecordExists(
-                record.get("filename"), rg_id
-            ):
-                skipped_duplicates.append(record.get("filename"))
-                _log.info(
-                    "record import skipped duplicate rg_id=%s filename=%s filename_base=%s name=%s",
-                    rg_id,
-                    record.get("filename"),
-                    self.getFilenameBase(record.get("filename")),
-                    record.get("name"),
-                )
-                continue
-            created_record_id = self.createRecord(record, user_info)
-            created_record_ids.append(created_record_id)
-            _log.info(
-                "record import created record rg_id=%s record_id=%s filename=%s filename_base=%s name=%s",
-                rg_id,
-                created_record_id,
-                record.get("filename"),
-                self.getFilenameBase(record.get("filename")),
-                record.get("name"),
-            )
+        for record in records_to_create:
+            created_record_ids.append(self.createRecord(record, user_info))
 
         _log.info(
-            "record import complete rg_id=%s requested_count=%s created_count=%s skipped_duplicate_count=%s prevent_duplicates=%s duplicate_filename_bases_in_file=%s skipped_duplicates=%s",
+            "record import complete rg_id=%s requested_count=%s created_count=%s skipped_duplicate_count=%s existing_duplicate_count=%s internal_duplicate_count=%s prevent_duplicates=%s duplicate_filename_base_count_in_file=%s",
             rg_id,
-            requested_count,
+            duplicate_preview["requested_count"],
             len(created_record_ids),
-            len(skipped_duplicates),
+            duplicate_preview["skipped_duplicate_count"],
+            duplicate_preview["existing_duplicate_count"],
+            duplicate_preview["internal_duplicate_count"],
             prevent_duplicates,
-            duplicate_filename_bases,
-            skipped_duplicates,
+            duplicate_preview["duplicate_filename_base_count_in_file"],
         )
 
         self.recordHistory(
@@ -1950,21 +1986,29 @@ class DataManager:
             user_info.get("email", None),
             rg_id=rg_id,
             notes={
-                "requested_count": requested_count,
+                "requested_count": duplicate_preview["requested_count"],
                 "created_count": len(created_record_ids),
-                "skipped_duplicate_count": len(skipped_duplicates),
+                "skipped_duplicate_count": duplicate_preview[
+                    "skipped_duplicate_count"
+                ],
                 "format": self._getImportPackageFormat(import_package),
-                "duplicate_filename_bases_in_file": duplicate_filename_bases,
+                "duplicate_filename_base_count_in_file": duplicate_preview[
+                    "duplicate_filename_base_count_in_file"
+                ],
             },
         )
         return {
             "record_group_id": rg_id,
             "created_record_ids": created_record_ids,
-            "requested_count": requested_count,
+            "requested_count": duplicate_preview["requested_count"],
             "created_count": len(created_record_ids),
-            "skipped_duplicates": skipped_duplicates,
-            "skipped_duplicate_count": len(skipped_duplicates),
-            "duplicate_filename_bases_in_file": duplicate_filename_bases,
+            "skipped_duplicates": duplicate_preview["skipped_duplicates"],
+            "skipped_duplicate_count": duplicate_preview["skipped_duplicate_count"],
+            "existing_duplicate_count": duplicate_preview["existing_duplicate_count"],
+            "internal_duplicate_count": duplicate_preview["internal_duplicate_count"],
+            "duplicate_filename_bases_in_file": duplicate_preview[
+                "duplicate_filename_bases_in_file"
+            ],
         }
 
     def _parseCsvAttributePath(self, column_name):
@@ -2056,13 +2100,12 @@ class DataManager:
             reader = csv.DictReader(io.StringIO(text))
             rows = list(reader)
             _log.info(
-                "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s headers_sample=%s",
+                "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s",
                 filename,
                 extension,
                 size_bytes,
                 len(rows),
                 len(reader.fieldnames or []),
-                (reader.fieldnames or [])[:10],
             )
             return self._csvRowsToImportPackage(rows)
 
@@ -2088,13 +2131,12 @@ class DataManager:
             rows = list(reader)
             if rows:
                 _log.info(
-                    "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s headers_sample=%s",
+                    "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s",
                     filename,
                     extension,
                     size_bytes,
                     len(rows),
                     len(reader.fieldnames or []),
-                    (reader.fieldnames or [])[:10],
                 )
                 return self._csvRowsToImportPackage(rows)
             raise ValueError("Import file must be valid JSON or CSV.")

@@ -869,14 +869,6 @@ async def import_record_file_record_group(
     user_info: dict = Depends(authenticate),
 ):
     """Create a processorless record group from an uploaded JSON or CSV export."""
-    _log.info(
-        "record import file request action=create_record_group project_id=%s filename=%s content_type=%s preventDuplicates=%s user=%s",
-        project_id,
-        file.filename,
-        file.content_type,
-        preventDuplicates,
-        user_info.get("email"),
-    )
     if not data_manager.hasPermission(user_info["email"], "create_record_group"):
         raise HTTPException(
             403,
@@ -920,14 +912,6 @@ async def import_record_file_records(
     user_info: dict = Depends(authenticate),
 ):
     """Append records to an existing record group from an uploaded JSON or CSV file."""
-    _log.info(
-        "record import file request action=append_records rg_id=%s filename=%s content_type=%s preventDuplicates=%s user=%s",
-        rg_id,
-        file.filename,
-        file.content_type,
-        preventDuplicates,
-        user_info.get("email"),
-    )
     if not data_manager.hasPermission(user_info["email"], "upload_document"):
         raise HTTPException(
             403,
@@ -947,6 +931,73 @@ async def import_record_file_records(
             rg_id,
             {"import_package": import_package},
             user_info,
+            prevent_duplicates=preventDuplicates,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/preview_record_file_record_group/{project_id}")
+async def preview_record_file_record_group(
+    project_id: str,
+    file: UploadFile = File(...),
+    preventDuplicates: bool = Form(True),
+    user_info: dict = Depends(authenticate),
+):
+    """Preview import counts for a new processorless record group."""
+    if not data_manager.hasPermission(user_info["email"], "create_record_group"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to create record groups for this team. Please contact a team lead.",
+        )
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+    if not data_manager.userCanAccessProject(project_id, user_info):
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
+
+    try:
+        import_package = data_manager.parseImportFile(file.filename, await file.read())
+        return data_manager.previewJsonRecords(
+            None,
+            {"import_package": import_package},
+            prevent_duplicates=preventDuplicates,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/preview_record_file_records/{rg_id}")
+async def preview_record_file_records(
+    rg_id: str,
+    file: UploadFile = File(...),
+    preventDuplicates: bool = Form(True),
+    user_info: dict = Depends(authenticate),
+):
+    """Preview import counts for appending JSON or CSV records."""
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    _, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
+    if rg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+
+    try:
+        import_package = data_manager.parseImportFile(file.filename, await file.read())
+        return data_manager.previewJsonRecords(
+            rg_id,
+            {"import_package": import_package},
             prevent_duplicates=preventDuplicates,
         )
     except ValueError as e:
