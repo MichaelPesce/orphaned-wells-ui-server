@@ -2331,7 +2331,6 @@ class DataManager:
         )
         update = {
             "processorId": processor.get("processorId") or processor_id,
-            "processor_id": processor.get("processorId") or processor_id,
             "documentType": processor_document_type,
             "attributes": processor.get("attributes") or [],
             "source_type": record_group.get("source_type") or "processor_connected",
