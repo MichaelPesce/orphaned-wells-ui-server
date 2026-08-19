@@ -1216,7 +1216,11 @@ class DataManager:
             if "projects" in document:
                 del document["projects"]
             columns.add("record_notes")
-            return {"columns": list(columns), "doc_type_columns": doc_type_columns, "obj": document}
+            return {
+                "columns": list(columns),
+                "doc_type_columns": doc_type_columns,
+                "obj": document,
+            }
 
         elif location == "record_group":
             columns = []
