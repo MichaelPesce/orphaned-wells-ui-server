@@ -8,9 +8,11 @@ from fastapi import (
     APIRouter,
     HTTPException,
     File,
+    Form,
     UploadFile,
     BackgroundTasks,
     Depends,
+    Query,
 )
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
@@ -20,10 +22,14 @@ from ogrre.internal.data_manager import DEFAULT_UNAUTHENTICATED_TEAM, data_manag
 from ogrre.internal.image_handling import (
     process_document,
     process_zip,
+    convert_pdf,
+    convert_tiff,
     deployProcessor,
     undeployProcessor,
     check_if_processor_is_deployed,
 )
+from ogrre.internal.storage_api import rotate_images_in_storage
+from ogrre.internal import batch_document_processing, storage_api
 import ogrre.internal.util as util
 from ogrre.internal.identity_provider import (
     IdentityProviderError,
@@ -47,19 +53,26 @@ ACCESS_COOKIE = "ogrre_session"
 REFRESH_COOKIE = "ogrre_refresh_session"
 CSRF_COOKIE = "ogrre_csrf"
 CSRF_HEADER = "X-CSRF-Token"
+ANONYMOUS_TEAM_COOKIE = "ogrre_anonymous_team"
+ANONYMOUS_COLLABORATOR_COOKIE = "ogrre_anonymous_collaborator"
 COOKIE_MAX_AGE_SECONDS = int(os.getenv("SESSION_COOKIE_MAX_AGE_SECONDS", "3600"))
 REFRESH_COOKIE_MAX_AGE_SECONDS = int(
     os.getenv("REFRESH_COOKIE_MAX_AGE_SECONDS", "2592000")
 )
 
 
-def anonymous_user():
+def anonymous_user(
+    default_team: Optional[str] = None, collaborator: Optional[str] = None
+):
     return {
         "email": "anonymous",
         "roles": {},
         "permissions": [],
         "anonymous": True,
-        "default_team": DEFAULT_UNAUTHENTICATED_TEAM["name"],
+        "default_team": default_team or DEFAULT_UNAUTHENTICATED_TEAM["name"],
+        "collaborator": data_manager.getCollaboratorForUser(
+            {"collaborator": collaborator}
+        ),
     }
 
 
@@ -77,6 +90,67 @@ def _build_auth_failure(detail_key: str, message: str):
         "detail_key": detail_key,
         "message": message,
     }
+
+
+def _set_csrf_cookie(response: JSONResponse, csrf_token: Optional[str] = None) -> str:
+    csrf_token = csrf_token or secrets.token_urlsafe(32)
+    response.set_cookie(
+        key=CSRF_COOKIE,
+        value=csrf_token,
+        httponly=False,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
+    response.headers[CSRF_HEADER] = csrf_token
+    return csrf_token
+
+
+def _get_anonymous_team_from_request(request: Request) -> str:
+    team = (request.cookies.get(ANONYMOUS_TEAM_COOKIE) or "").strip()
+    if team and team in data_manager.fetchTeams():
+        return team
+    return DEFAULT_UNAUTHENTICATED_TEAM["name"]
+
+
+def _get_anonymous_collaborator_from_request(request: Request) -> str:
+    collaborator = (request.cookies.get(ANONYMOUS_COLLABORATOR_COOKIE) or "").strip()
+    return data_manager.getCollaboratorForUser({"collaborator": collaborator})
+
+
+def _get_anonymous_user_from_request(request: Request):
+    return anonymous_user(
+        _get_anonymous_team_from_request(request),
+        _get_anonymous_collaborator_from_request(request),
+    )
+
+
+def _set_anonymous_team_cookie(response: JSONResponse, team: str):
+    response.set_cookie(
+        key=ANONYMOUS_TEAM_COOKIE,
+        value=team,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
+
+
+def _set_anonymous_collaborator_cookie(response: JSONResponse, collaborator: str):
+    response.set_cookie(
+        key=ANONYMOUS_COLLABORATOR_COOKIE,
+        value=collaborator,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
+        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+        domain=COOKIE_DOMAIN,
+        path="/",
+    )
 
 
 def _set_auth_cookies(
@@ -103,30 +177,55 @@ def _set_auth_cookies(
             domain=COOKIE_DOMAIN,
             path="/",
         )
-    response.set_cookie(
-        key=CSRF_COOKIE,
-        value=secrets.token_urlsafe(32),
-        httponly=False,
-        secure=COOKIE_SECURE,
-        samesite=COOKIE_SAMESITE,
-        max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
-        domain=COOKIE_DOMAIN,
-        path="/",
-    )
+    _set_csrf_cookie(response)
 
 
-def _clear_auth_cookies(response: JSONResponse):
-    # Clear cookies with and without domain to cover host-only and domain cookies.
-    response.delete_cookie(ACCESS_COOKIE, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(REFRESH_COOKIE, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(CSRF_COOKIE, domain=COOKIE_DOMAIN, path="/")
-    response.delete_cookie(ACCESS_COOKIE, path="/")
-    response.delete_cookie(REFRESH_COOKIE, path="/")
-    response.delete_cookie(CSRF_COOKIE, path="/")
+def _cookie_delete_domains(request: Optional[Request] = None) -> list[str]:
+    domains: list[str] = []
+    if COOKIE_DOMAIN:
+        domains.append(COOKIE_DOMAIN)
+
+    request_host = request.url.hostname if request else None
+    if request_host:
+        domains.append(request_host)
+        if request_host.endswith(".uow-carbon.org"):
+            domains.extend([".uow-carbon.org", "uow-carbon.org"])
+
+    unique_domains: list[str] = []
+    for domain in domains:
+        if domain and domain not in unique_domains:
+            unique_domains.append(domain)
+    return unique_domains
+
+
+def _clear_auth_cookies(response: JSONResponse, request: Optional[Request] = None):
+    # Clear host-only cookies and the domain cookies we may have used during rollout.
+    for cookie_name in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE):
+        response.delete_cookie(
+            cookie_name,
+            path="/",
+            secure=COOKIE_SECURE,
+            samesite=COOKIE_SAMESITE,
+        )
+        for domain in _cookie_delete_domains(request):
+            response.delete_cookie(
+                cookie_name,
+                domain=domain,
+                path="/",
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE,
+            )
 
 
 def _is_csrf_exempt_path(path: str) -> bool:
-    return path in {"/auth_login"}
+    normalized_path = path.rstrip("/") or "/"
+    return normalized_path in {
+        "/token",
+        "/auth_login",
+        "/auth_refresh",
+        "/check_auth",
+        "/logout",
+    }
 
 
 async def csrf_protect(request: Request):
@@ -168,7 +267,7 @@ async def authenticate(request: Request, token: str = Depends(oauth2_scheme)):
         user account information
     """
     if not REQUIRE_AUTH:
-        return anonymous_user()
+        return _get_anonymous_user_from_request(request)
     token_to_verify = get_bearer_or_session_token(request, token)
     if not token_to_verify:
         raise HTTPException(status_code=401, detail="missing authentication token")
@@ -314,7 +413,9 @@ async def auth_refresh(request: Request):
 
 
 @router.post("/check_auth")
-async def check_authorization(user_info: dict = Depends(authenticate)):
+async def check_authorization(
+    request: Request, user_info: dict = Depends(authenticate)
+):
     """Ensure user is authorized.
 
     Args:
@@ -330,7 +431,7 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
     else:
         environment = os.environ.get("ENVIRONMENT", None)
     if not REQUIRE_AUTH:
-        user = anonymous_user()
+        user = user_info
     else:
         user = data_manager.getUser(email)
         if user is None:
@@ -341,7 +442,9 @@ async def check_authorization(user_info: dict = Depends(authenticate)):
                     "Your identity is valid, but this account is not registered for this application.",
                 ),
             )
-    return {"user_data": user, "environment": environment}
+    response = JSONResponse({"user_data": user, "environment": environment})
+    _set_csrf_cookie(response, request.cookies.get(CSRF_COOKIE))
+    return response
 
 
 @router.post("/logout")
@@ -364,7 +467,7 @@ async def logout(request: Request):
         )
         logout_status = response.status_code
     json_response = JSONResponse({"logout_status": logout_status})
-    _clear_auth_cookies(json_response)
+    _clear_auth_cookies(json_response, request)
     return json_response
 
 
@@ -461,7 +564,7 @@ async def get_processors(user_info: dict = Depends(authenticate)):
     Returns:
         List containing processors and metadata
     """
-    resp = data_manager.fetchProcessors(user_info.get("email", ""))
+    resp = data_manager.fetchProcessors(user_info)
     return resp
 
 
@@ -532,12 +635,9 @@ async def get_record_data(
             detail=f"You do not have access to this record, please contact the project creator to gain access.",
         )
 
-    ## get record schema
-    _, _, processor_attributes = data_manager.getProcessorByRecordGroupID(
-        record["rg_id"]
-    )
-    processor_attributes = util.convert_processor_attributes_to_dict(
-        processor_attributes
+    ## get record schema, if this record group has one
+    processor_attributes = data_manager.getRecordGroupSchemaMap(
+        record["rg_id"], user=user_info
     )
 
     ## lock record if it is awaiting verification and user does not have permission to verify
@@ -613,20 +713,25 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.getProcessorByGoogleId(google_id)
+    resp = data_manager.getProcessorById(google_id, user_info)
     return resp
 
 
-@router.get("/get_column_data/{location}/{_id}", response_model=dict or None)
+@router.get("/get_column_data/{location}/{_id}", response_model=Optional[dict])
 async def get_column_data(
-    location: str, _id: str, user_info: dict = Depends(authenticate)
+    location: str,
+    _id: str,
+    selected_record_groups: list[str] = Query(None),
+    user_info: dict = Depends(authenticate),
 ):
     """Fetch processor data for provided id.
 
     Returns:
         Dictionary containing processor data
     """
-    resp = data_manager.fetchColumnData(location, _id)
+    resp = data_manager.fetchColumnData(
+        location, _id, user=user_info, selected_record_groups=selected_record_groups
+    )
     return resp
 
 
@@ -637,7 +742,7 @@ async def get_team_info(user_info: dict = Depends(authenticate)):
     Returns:
         Dictionary containing team information
     """
-    resp = data_manager.fetchTeamInfo(user_info["email"])
+    resp = data_manager.fetchTeamInfo(user_info["email"], user_info.get("default_team"))
     return resp
 
 
@@ -683,6 +788,328 @@ async def add_record_group(request: Request, user_info: dict = Depends(authentic
     return new_id
 
 
+@router.post("/import_json_record_group/{project_id}")
+async def import_json_record_group(
+    project_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    """Create a processorless record group and import records from JSON."""
+    if not data_manager.hasPermission(user_info["email"], "create_record_group"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to create record groups for this team. Please contact a team lead.",
+        )
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="JSON import request body is required.")
+
+    try:
+        return data_manager.createRecordGroupFromJsonImport(project_id, data, user_info)
+    except PermissionError:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/import_json_records/{rg_id}")
+async def import_json_records(
+    rg_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    """Append records to an existing record group from JSON."""
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    _, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
+    if rg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, detail="JSON import request body is required.")
+
+    prevent_duplicates = True
+    if isinstance(data, dict):
+        prevent_duplicates = data.get(
+            "preventDuplicates", data.get("prevent_duplicates", True)
+        )
+    try:
+        return data_manager.importJsonRecords(
+            rg_id, data, user_info, prevent_duplicates=prevent_duplicates
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/import_record_file_record_group/{project_id}")
+async def import_record_file_record_group(
+    project_id: str,
+    file: UploadFile = File(...),
+    record_group_name: str = Form(...),
+    record_group_description: str = Form(""),
+    document_type: str = Form("JSON Import"),
+    preventDuplicates: bool = Form(True),
+    user_info: dict = Depends(authenticate),
+):
+    """Create a processorless record group from an uploaded JSON or CSV export."""
+    if not data_manager.hasPermission(user_info["email"], "create_record_group"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to create record groups for this team. Please contact a team lead.",
+        )
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    try:
+        import_package = data_manager.parseImportFile(file.filename, await file.read())
+        return data_manager.createRecordGroupFromJsonImport(
+            project_id,
+            {
+                "record_group": {
+                    "name": record_group_name,
+                    "description": record_group_description,
+                    "documentType": document_type,
+                },
+                "import_package": import_package,
+                "preventDuplicates": preventDuplicates,
+            },
+            user_info,
+        )
+    except PermissionError:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/import_record_file_records/{rg_id}")
+async def import_record_file_records(
+    rg_id: str,
+    file: UploadFile = File(...),
+    preventDuplicates: bool = Form(True),
+    user_info: dict = Depends(authenticate),
+):
+    """Append records to an existing record group from an uploaded JSON or CSV file."""
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    _, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
+    if rg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+
+    try:
+        import_package = data_manager.parseImportFile(file.filename, await file.read())
+        return data_manager.importJsonRecords(
+            rg_id,
+            {"import_package": import_package},
+            user_info,
+            prevent_duplicates=preventDuplicates,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/preview_record_file_record_group/{project_id}")
+async def preview_record_file_record_group(
+    project_id: str,
+    file: UploadFile = File(...),
+    preventDuplicates: bool = Form(True),
+    user_info: dict = Depends(authenticate),
+):
+    """Preview import counts for a new processorless record group."""
+    if not data_manager.hasPermission(user_info["email"], "create_record_group"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to create record groups for this team. Please contact a team lead.",
+        )
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+    if not data_manager.userCanAccessProject(project_id, user_info):
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this project, please contact the project creator to gain access.",
+        )
+
+    try:
+        import_package = data_manager.parseImportFile(file.filename, await file.read())
+        return data_manager.previewJsonRecords(
+            None,
+            {"import_package": import_package},
+            prevent_duplicates=preventDuplicates,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/preview_record_file_records/{rg_id}")
+async def preview_record_file_records(
+    rg_id: str,
+    file: UploadFile = File(...),
+    preventDuplicates: bool = Form(True),
+    user_info: dict = Depends(authenticate),
+):
+    """Preview import counts for appending JSON or CSV records."""
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    _, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
+    if rg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+
+    try:
+        import_package = data_manager.parseImportFile(file.filename, await file.read())
+        return data_manager.previewJsonRecords(
+            rg_id,
+            {"import_package": import_package},
+            prevent_duplicates=preventDuplicates,
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/connect_record_group_processor/{rg_id}")
+async def connect_record_group_processor(
+    rg_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    """Connect or replace the processor associated with a record group."""
+    if not data_manager.hasPermission(user_info["email"], "create_record_group"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to connect processors for this team. Please contact a team lead.",
+        )
+
+    data = await request.json()
+    processor_id = data.get("processorId") or data.get("processor_id")
+    try:
+        return data_manager.connectRecordGroupProcessor(rg_id, processor_id, user_info)
+    except PermissionError:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+    except ValueError as e:
+        raise HTTPException(400, detail=str(e))
+
+
+@router.post("/upload_record_images/{record_id}")
+async def upload_record_images(
+    record_id: str,
+    files: list[UploadFile] = File(...),
+    user_info: dict = Depends(authenticate),
+):
+    """Attach display image files to an existing record."""
+    if not data_manager.hasPermission(user_info["email"], "upload_document"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    record = data_manager.fetchRecordForUser(record_id, user_info)
+    if record is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record, please contact the project creator to gain access.",
+        )
+    if not files:
+        raise HTTPException(400, detail="At least one image file is required.")
+
+    allowed_extensions = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".pdf"}
+    output_paths = []
+    files_to_delete = []
+    try:
+        for idx, file in enumerate(files):
+            original_name = os.path.basename(file.filename or f"image-{idx + 1}.png")
+            base_name, file_ext = os.path.splitext(original_name)
+            file_ext = file_ext.lower()
+            if file_ext not in allowed_extensions:
+                raise HTTPException(
+                    400,
+                    detail=f"{original_name} is not a supported image or PDF file.",
+                )
+
+            unique_base_name = f"{base_name or 'image'}-{secrets.token_hex(4)}"
+            original_output_path = (
+                f"{data_manager.app_settings.img_dir}/{unique_base_name}{file_ext}"
+            )
+            async with aiofiles.open(original_output_path, "wb") as out_file:
+                chunk_size = 1024 * 1024
+                while True:
+                    chunk = await file.read(chunk_size)
+                    if not chunk:
+                        break
+                    await out_file.write(chunk)
+            files_to_delete.append(original_output_path)
+
+            if file_ext in (".tif", ".tiff"):
+                converted_paths = convert_tiff(
+                    unique_base_name, file_ext, data_manager.app_settings.img_dir
+                )
+                output_paths.extend(converted_paths)
+                files_to_delete.extend(converted_paths)
+            elif file_ext == ".pdf":
+                converted_paths = convert_pdf(
+                    unique_base_name, file_ext, data_manager.app_settings.img_dir
+                )
+                output_paths.extend(converted_paths)
+                files_to_delete.extend(converted_paths)
+            else:
+                output_paths.append(original_output_path)
+
+        image_file_names = [
+            os.path.basename(output_path) for output_path in output_paths
+        ]
+        await storage_api.upload_files(
+            file_paths=output_paths,
+            file_names=image_file_names,
+            folder=storage_api.get_record_image_directory(
+                record.get("record_group_id"), record_id
+            ),
+        )
+        return data_manager.appendRecordImages(record_id, image_file_names, user_info)
+    finally:
+        for file_path in set(files_to_delete):
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            except OSError as e:
+                _log.info(f"unable to delete temporary image file {file_path}: {e}")
+
+
 @router.post("/upload_document/{rg_id}/{user_email}")
 async def upload_document(
     rg_id: str,
@@ -706,7 +1133,7 @@ async def upload_document(
     """
     user_email = user_email.lower()
     if not REQUIRE_AUTH:
-        user_info = anonymous_user()
+        user_info = _get_anonymous_user_from_request(request)
     elif not data_manager.hasPermission(user_email, "upload_document"):
         raise HTTPException(
             403,
@@ -768,6 +1195,161 @@ async def upload_document(
             raise HTTPException(400, detail=f"Unable to process image file: {e}")
 
 
+@router.post("/batch_process_documents/{rg_id}")
+async def batch_process_documents(
+    rg_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_info: dict = Depends(authenticate),
+):
+    """Process documents from a GCS bucket/prefix with Document AI Batch API.
+
+    Request body:
+        {
+            "bucketName": "source-bucket-name",
+            "prefix": "optional/folder/path/",
+            "run_cleaning_functions": true,
+            "preventDuplicates": true,
+            "outputBucketName": "optional-output-bucket-name",
+            "outputPrefix": "optional/output/folder/"
+        }
+
+    Notes:
+        - bucketName is required. Send only the bucket name, not a gs:// URI.
+        - prefix is optional. Omit it or send "" to process the whole bucket.
+          When present, send only the folder path inside the bucket.
+          Trailing slash is optional; the backend normalizes it to a folder
+          boundary so "folder/name" does not also match "folder/name_extra".
+          Example: "incoming/well-records/".
+        - run_cleaning_functions defaults to true.
+        - preventDuplicates defaults to false for API compatibility. When true,
+          files with names that already exist in the record group are skipped.
+        - outputBucketName/outputPrefix are optional and control where Document AI
+          batch JSON output is written. They do not control frontend display PNGs.
+        - The backend stores PNG display copies at:
+          uploads/{record-group-id}/{record-id}/{png-files}
+          and does not delete or modify source files in the request bucket.
+    """
+    if not REQUIRE_AUTH:
+        user_info = _get_anonymous_user_from_request(request)
+
+    user_email = user_info["email"].lower()
+    if not data_manager.hasPermission(user_email, "upload_document"):
+        raise HTTPException(
+            403,
+            detail="You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
+    if not project_is_valid:
+        raise HTTPException(404, detail="Project not found")
+
+    req = await request.json()
+    bucket_name = req.get("bucketName") or req.get("bucket_name") or req.get("bucket")
+    prefix = req.get("prefix") or req.get("folderPath") or req.get("folder") or ""
+    output_bucket_name = req.get("outputBucketName") or req.get("output_bucket_name")
+    output_prefix = req.get("outputPrefix") or req.get("output_prefix")
+    run_cleaning_functions = req.get(
+        "run_cleaning_functions", req.get("runCleaningFunctions", True)
+    )
+    prevent_duplicates = req.get(
+        "prevent_duplicates", req.get("preventDuplicates", False)
+    )
+
+    if not bucket_name:
+        raise HTTPException(400, detail="bucketName is required")
+
+    job_id = batch_document_processing.create_batch_document_job(
+        rg_id=rg_id,
+        user_info=user_info,
+        bucket_name=bucket_name,
+        prefix=prefix,
+        output_bucket_name=output_bucket_name,
+        output_prefix=output_prefix,
+        prevent_duplicates=prevent_duplicates,
+    )
+    background_tasks.add_task(
+        batch_document_processing.process_batch_document_job,
+        job_id=job_id,
+        rg_id=rg_id,
+        user_info=user_info,
+        data_manager=data_manager,
+        bucket_name=bucket_name,
+        prefix=prefix,
+        output_bucket_name=output_bucket_name,
+        output_prefix=output_prefix,
+        run_cleaning_functions=run_cleaning_functions,
+        prevent_duplicates=prevent_duplicates,
+    )
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.post("/batch_process_documents/{rg_id}/check_gcs_path")
+async def check_batch_process_documents_gcs_path(
+    rg_id: str,
+    request: Request,
+    user_info: dict = Depends(authenticate),
+):
+    """Count documents that would be submitted for a GCS batch request.
+
+    Request body matches /batch_process_documents/{rg_id}:
+        {
+            "bucketName": "source-bucket-name",
+            "prefix": "optional/folder/path/",
+            "preventDuplicates": true
+        }
+
+    The backend applies the same prefix normalization, Document AI Toolbox
+    filtering, and duplicate filename detection as the batch processor.
+    """
+    if not REQUIRE_AUTH:
+        user_info = _get_anonymous_user_from_request(request)
+
+    user_email = user_info["email"].lower()
+    if not data_manager.hasPermission(user_email, "upload_document"):
+        raise HTTPException(
+            403,
+            detail="You are not authorized to upload records for this project. Please contact a team lead or project manager.",
+        )
+
+    project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
+    if not project_is_valid:
+        raise HTTPException(404, detail="Project not found")
+
+    req = await request.json()
+    bucket_name = req.get("bucketName") or req.get("bucket_name") or req.get("bucket")
+    prefix = req.get("prefix") or req.get("folderPath") or req.get("folder") or ""
+    prevent_duplicates = req.get(
+        "prevent_duplicates", req.get("preventDuplicates", False)
+    )
+
+    if not bucket_name:
+        raise HTTPException(400, detail="bucketName is required")
+
+    try:
+        return batch_document_processing.get_gcs_path_document_summary(
+            bucket_name=bucket_name,
+            prefix=prefix,
+            rg_id=rg_id,
+            data_manager=data_manager,
+            prevent_duplicates=prevent_duplicates,
+        )
+    except Exception as e:
+        _log.error(f"unable to check GCS bucket/path: {e}")
+        raise HTTPException(400, detail=f"Unable to check GCS bucket/path: {e}")
+
+
+@router.get("/batch_process_documents/{job_id}/status")
+async def get_batch_process_documents_status(
+    job_id: str, user_info: dict = Depends(authenticate)
+):
+    """Return status for a batch Document AI processing job."""
+    job = batch_document_processing.get_batch_document_job(job_id)
+    if job is None:
+        raise HTTPException(404, detail="Batch document processing job not found")
+    return job
+
+
 @router.post("/deploy_processor/{rg_id}")
 async def deploy_processor(
     rg_id: str,
@@ -790,7 +1372,10 @@ async def deploy_processor(
         )
     try:
         background_tasks.add_task(
-            deployProcessor, rg_id=rg_id, data_manager=data_manager
+            deployProcessor,
+            rg_id=rg_id,
+            data_manager=data_manager,
+            user_info=user_info,
         )
         return 2
     except Exception as e:
@@ -815,7 +1400,7 @@ async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)
             detail=f"You are not authorized to deploy processors. Please contact a team lead or project manager.",
         )
     try:
-        undeployed = undeployProcessor(rg_id, data_manager)
+        undeployed = undeployProcessor(rg_id, data_manager, user_info=user_info)
         if undeployed:
             return 3
         else:
@@ -826,7 +1411,7 @@ async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)
 
 
 @router.get("/check_processor_status/{rg_id}")
-async def check_processor_status(rg_id: str):
+async def check_processor_status(rg_id: str, user_info: dict = Depends(authenticate)):
     """Check status of processor model.
 
     Args:
@@ -836,7 +1421,7 @@ async def check_processor_status(rg_id: str):
         Boolean indicating deployed or not
     """
     try:
-        return check_if_processor_is_deployed(rg_id, data_manager)
+        return check_if_processor_is_deployed(rg_id, data_manager, user_info=user_info)
     except Exception as e:
         _log.error(f"unable to undeploy processor: {e}")
         return 10
@@ -1004,6 +1589,47 @@ async def delete_record_group(
     return {"response": "success"}
 
 
+@router.post("/delete_record_group_records/{rg_id}")
+async def delete_record_group_records(
+    rg_id: str,
+    request: Request,
+    user_info: dict = Depends(authenticate),
+):
+    """Delete records in a record group, optionally scoped by current filters.
+
+    Args:
+        rg_id: record group identifier
+        request.filter: Optional record filter
+
+    Returns:
+        Success response
+    """
+    if not data_manager.hasPermission(user_info["email"], "delete"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to delete records. Please contact a team lead or project manager.",
+        )
+
+    try:
+        req = await request.json()
+    except Exception:
+        req = {}
+
+    filter_by = req.get("filter", {})
+    if not isinstance(filter_by, dict):
+        raise HTTPException(400, detail=f"Filter must be an object.")
+
+    _, rg_data = data_manager.fetchRecordGroupData(rg_id, user_info)
+    if rg_data is None:
+        raise HTTPException(
+            403,
+            detail=f"You do not have access to this record group, please contact the project creator to gain access.",
+        )
+
+    data_manager.deleteRecordsByRecordGroup(rg_id, filter_by, user_info)
+    return {"response": "success"}
+
+
 @router.post("/delete_record/{record_id}")
 async def delete_record(record_id: str, user_info: dict = Depends(authenticate)):
     """Delete record.
@@ -1090,9 +1716,16 @@ async def get_download_size(
 
     filter_by = req.get("filter", {})
     sort_by = req.get("sort", ["dateCreated", 1])
+    document_types = req.get("document_types", [])
 
     json_fields_to_include = {
-        "topLevelFields": ["name", "filename", "image_files", "record_group_id"],
+        "topLevelFields": [
+            "name",
+            "filename",
+            "image_files",
+            "record_group_id",
+            "record_notes",
+        ],
         "attributesList": ["key", "value", "normalized_vertices", "subattributes"],
     }
 
@@ -1117,6 +1750,16 @@ async def get_download_size(
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
             user_info,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+    elif location == "documentType":
+        records, _ = data_manager.fetchRecordsByProjectAndDocumentTypes(
+            user_info,
+            _id,
+            document_types,
             filter_by=filter_by,
             sort_by=sort_by,
             include_attribute_fields=json_fields_to_include,
@@ -1172,17 +1815,34 @@ async def download_records(
 
     filter_by = req.get("filter", {})
     sort_by = req.get("sort", ["dateCreated", 1])
+    document_types = req.get("document_types", [])
 
     json_fields_to_include = {
-        "topLevelFields": ["name", "filename", "image_files", "record_group_id"],
+        "topLevelFields": [
+            "name",
+            "filename",
+            "image_files",
+            "record_group_id",
+            "record_notes",
+        ],
         "attributesList": [
             "key",
             "value",
             "normalized_vertices",
             "subattributes",
             "page",
+            "parentAttribute",
+            "topLevelAttribute",
         ],
-        "subattributes": ["key", "value", "normalized_vertices", "page"],
+        "subattributes": [
+            "key",
+            "value",
+            "normalized_vertices",
+            "page",
+            "subattributes",
+            "parentAttribute",
+            "topLevelAttribute",
+        ],
     }
 
     output_file_id = util.last4_before_decimal()
@@ -1220,9 +1880,21 @@ async def download_records(
             forDownload=True,
         )
         setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
+    elif location == "documentType":
+        records, _ = data_manager.fetchRecordsByProjectAndDocumentTypes(
+            user_info,
+            _id,
+            document_types,
+            filter_by=filter_by,
+            sort_by=sort_by,
+            include_attribute_fields=json_fields_to_include,
+            forDownload=True,
+        )
+        setsOfRecords[output_name] = records
     else:
         raise HTTPException(
-            status_code=400, detail=f"Location must be project, record_group, or team"
+            status_code=400,
+            detail=f"Location must be project, record_group, documentType, or team",
         )
     try:
         filepaths = []
@@ -1265,6 +1937,105 @@ async def download_records(
         background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=60)
         headers = {"Content-Disposition": "attachment; filename=records.zip"}
         # _log.info(f"returning streaming response")
+        return StreamingResponse(z, media_type="application/zip", headers=headers)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Server error: {e}")
+
+
+@router.post(
+    "/download_project_records_by_document_types/{project_id}",
+    response_class=StreamingResponse,
+)
+async def download_project_records_by_document_types(
+    project_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    export_csv: bool = True,
+    export_json: bool = False,
+    export_images: bool = False,
+    output_name: str = None,
+    user_info: dict = Depends(authenticate),
+):
+    req = await request.json()
+
+    request_origin = request.headers.get("origin")
+    selectedColumns = req.get("columns", [])
+    document_types = req.get("document_types", [])
+
+    filter_by = req.get("filter", {})
+    sort_by = req.get("sort", ["dateCreated", 1])
+
+    json_fields_to_include = {
+        "topLevelFields": [
+            "name",
+            "filename",
+            "image_files",
+            "record_group_id",
+            "record_notes",
+        ],
+        "attributesList": [
+            "key",
+            "value",
+            "normalized_vertices",
+            "subattributes",
+            "page",
+        ],
+        "subattributes": ["key", "value", "normalized_vertices", "page"],
+    }
+
+    output_file_id = util.last4_before_decimal()
+
+    keep_all_columns = len(selectedColumns) == 0
+
+    # Fetch records filtered by project and document types
+    records, _ = data_manager.fetchRecordsByProjectAndDocumentTypes(
+        user_info,
+        project_id,
+        document_types,
+        filter_by=filter_by,
+        sort_by=sort_by,
+        include_attribute_fields=json_fields_to_include,
+        forDownload=True,
+    )
+
+    try:
+        filepaths = []
+        if export_csv:
+            csv_file = data_manager.downloadRecords(
+                records,
+                "csv",
+                user_info,
+                project_id,
+                "project",
+                selectedColumns=selectedColumns,
+                keep_all_columns=keep_all_columns,
+                output_filename=f"{output_name or 'records'}_{output_file_id}",
+                request_origin=request_origin,
+            )
+            filepaths.append(csv_file)
+        if export_json:
+            json_file = data_manager.downloadRecords(
+                records,
+                "json",
+                user_info,
+                project_id,
+                "project",
+                selectedColumns=selectedColumns,
+                keep_all_columns=keep_all_columns,
+                output_filename=f"{output_name or 'records'}_{output_file_id}",
+            )
+            filepaths.append(json_file)
+        if export_images:
+            documents = util.compileDocumentImageList(records)
+        else:
+            documents = []
+
+        download_log_file = f"zip_log_{output_file_id}.txt"
+        z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
+
+        filepaths.append(download_log_file)
+        background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=60)
+        headers = {"Content-Disposition": "attachment; filename=records.zip"}
         return StreamingResponse(z, media_type="application/zip", headers=headers)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
@@ -1411,6 +2182,17 @@ async def get_cleaning_functions(user_info: dict = Depends(authenticate)):
             detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
         )
     return {"cleaning_functions": list(util.CLEANING_FUNCTIONS.keys())}
+
+
+@router.get("/get_ogrre_version")
+async def get_ogrre_version(user_info: dict = Depends(authenticate)):
+    """Get backend package and OGRRE data cleaning version metadata."""
+    if not data_manager.hasPermission(user_info.get("email"), "manage_schema"):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
+        )
+    return util.build_ogrre_version_info()
 
 
 @router.post("/upload_processor_schema")
@@ -1634,6 +2416,59 @@ async def update_default_team(
     Returns:
         result
     """
+    if REQUIRE_AUTH and not data_manager.hasPermission(
+        user_info["email"], "manage_system"
+    ):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
+        )
+
+    req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
+        )
+
+    new_team = req.get("new_team", None)
+
+    if isinstance(new_team, str):
+        if not REQUIRE_AUTH:
+            team = new_team.strip()
+            if team == "":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Please provide a new team in the request body",
+                )
+            if team not in data_manager.fetchTeams():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Team not found",
+                )
+            response = JSONResponse(
+                {
+                    "team": team,
+                    "created_team": False,
+                    "added_to_team": False,
+                }
+            )
+            _set_anonymous_team_cookie(response, team)
+            return response
+        try:
+            return data_manager.changeUserTeam(user_info["email"], new_team)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
+        )
+
+
+@router.post("/change_team")
+async def change_team(request: Request, user_info: dict = Depends(authenticate)):
+    """Change the current user's default team, creating membership if needed."""
     require_authenticated_admin_route()
     if not data_manager.hasPermission(user_info["email"], "manage_system"):
         raise HTTPException(
@@ -1642,16 +2477,67 @@ async def update_default_team(
         )
 
     req = await request.json()
-    new_team = req.get("new_team", None)
-
-    if new_team:
-        data_manager.updateDefaultTeam(user_info["email"], new_team)
-        return new_team
-    else:
+    if not isinstance(req, dict):
         raise HTTPException(
             status_code=400,
             detail=f"Please provide a new team in the request body",
         )
+
+    new_team = req.get("new_team", None)
+    if not isinstance(new_team, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new team in the request body",
+        )
+
+    try:
+        return data_manager.changeUserTeam(user_info["email"], new_team)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/change_collaborator")
+async def change_collaborator(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    """Change the current user's processor collaborator override."""
+    if REQUIRE_AUTH and not data_manager.hasPermission(
+        user_info["email"], "system_administration"
+    ):
+        raise HTTPException(
+            403,
+            detail=f"You are not authorized to perform this action. Please contact a team lead or project manager.",
+        )
+
+    req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new collaborator in the request body",
+        )
+
+    new_collaborator = req.get("new_collaborator", None)
+    if not isinstance(new_collaborator, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Please provide a new collaborator in the request body",
+        )
+
+    if not REQUIRE_AUTH:
+        collaborator = new_collaborator.strip()
+        if collaborator == "":
+            raise HTTPException(
+                status_code=400,
+                detail=f"Please provide a new collaborator in the request body",
+            )
+        response = JSONResponse({"collaborator": collaborator})
+        _set_anonymous_collaborator_cookie(response, collaborator)
+        return response
+
+    try:
+        return data_manager.changeUserCollaborator(user_info["email"], new_collaborator)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/fetch_roles", response_model=list)
@@ -1677,19 +2563,92 @@ async def fetch_roles(request: Request, user_info: dict = Depends(authenticate))
 
 @router.get("/fetch_teams", response_model=list)
 async def fetch_teams(user_info: dict = Depends(authenticate)):
-    """Fetch all teams that a user is on.
+    """Fetch all available teams.
 
     Returns:
         List containing teams
     """
-    require_authenticated_admin_route()
-    if not data_manager.hasPermission(user_info["email"], "manage_system"):
+    if REQUIRE_AUTH and not data_manager.hasPermission(
+        user_info["email"], "manage_system"
+    ):
         raise HTTPException(
             403,
             detail=f"You are not authorized to manage system. Please contact a team lead or project manager.",
         )
-    resp = data_manager.fetchTeams(user_info)
+    resp = data_manager.fetchTeams()
     return resp
+
+
+@router.post("/rotate_images/{record_id}")
+async def rotate_record_images(
+    record_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    """Rotate selected images in a record.
+
+    Args:
+        record_id: Record identifier
+        request body:
+            selectedImageIndices: List of indices of images to rotate
+            rotationDegrees: Degrees to rotate (90, 180, or 270)
+
+    Returns:
+        Success response with new image URLs
+    """
+    if not data_manager.hasPermission(user_info["email"], "review_record"):
+        raise HTTPException(
+            403,
+            detail="You are not authorized to rotate images. Please contact a team lead or project manager.",
+        )
+
+    try:
+        req = await request.json()
+        selected_image_indices = req.get("selectedImageIndices", [])
+        rotation_degrees = req.get("rotationDegrees", 90)
+        rg_id = req.get("recordGroupId")
+
+        if not selected_image_indices or not rg_id:
+            raise HTTPException(status_code=400, detail="Missing required parameters")
+
+        # Get the current image URLs
+        image_urls = data_manager.getRecordImageFileUrlPairs(record_id, rg_id)
+        if not image_urls:
+            raise HTTPException(
+                status_code=404, detail="No images found for this record"
+            )
+
+        # Extract the URLs for the selected images
+        selected_image_urls = [image_urls[idx][1] for idx in selected_image_indices]
+
+        # Rotate the images in storage
+        rotated_urls = rotate_images_in_storage(
+            selected_image_urls, rotation_degrees, overwrite=True
+        )
+
+        # Extract the filenames from the URLs and build the new image_files list
+        # Keep the old filenames for non-rotated images
+        new_image_urls = []
+        new_image_files = []
+        for idx, (filename, url) in enumerate(image_urls):
+            if idx in selected_image_indices:
+                # For rotated images, keep the original filename
+                new_image_files.append(filename)
+                new_image_urls.append(url)
+            else:
+                new_image_files.append(filename)
+                new_image_urls.append(url)
+
+        return {
+            "success": True,
+            "message": "Images rotated successfully",
+            "newImageFiles": new_image_files,
+            "rotatedUrls": rotated_urls,
+            "new_image_urls": new_image_urls,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        _log.error(f"Error rotating images: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/delete_user/{email}")

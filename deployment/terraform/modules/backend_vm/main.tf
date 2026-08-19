@@ -1,28 +1,30 @@
 resource "google_compute_address" "ip" {
   name = "${var.collaborator}-static-ip-address"
 
+  # count = var.enable_gke ? 0 : 1
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all # TODO: if we disable gke, remove this line
   }
 }
 
 resource "google_compute_instance" "vm" {
-  name         = "${var.collaborator}-uow-server"
-  zone         = var.zone
+  name = "${var.collaborator}-uow-server"
+  zone = var.zone
 
   tags = ["backend", "http-server", "https-server"]
 
   machine_type = var.machine_type
 
   boot_disk {
-    auto_delete  = true
-    device_name  = var.boot_disk_device_name
+    auto_delete = true
+    device_name = var.boot_disk_device_name
 
     initialize_params {
-        image            = var.boot_image
-        size             = var.boot_disk_size
-        type             = "pd-balanced"
-        resource_policies = var.boot_resource_policies
+      image             = var.boot_image
+      size              = var.boot_disk_size
+      type              = "pd-balanced"
+      resource_policies = var.boot_resource_policies
     }
   }
 
@@ -45,9 +47,10 @@ resource "google_compute_instance" "vm" {
 
   lifecycle {
     prevent_destroy = true
-    ignore_changes = [
-      metadata["ssh-keys"],
-    ]
+    # ignore_changes = [
+    #   metadata["ssh-keys"],
+    # ]
+    ignore_changes = all # TODO: if we disable gke, remove this line
   }
 
   shielded_instance_config {
@@ -64,11 +67,13 @@ resource "google_compute_instance" "vm" {
 }
 
 resource "google_dns_record_set" "dns" {
-  name = "${var.collaborator}-server.uow-carbon.org."
+  count = var.create_dns_record ? 1 : 0
+
+  name = "${var.collaborator}-server.${var.backend_dns_domain}."
   type = "A"
   ttl  = 300
 
-  managed_zone = "uow-carbon-org"
+  managed_zone = var.dns_managed_zone
 
   rrdatas = [
     google_compute_address.ip.address
@@ -76,5 +81,6 @@ resource "google_dns_record_set" "dns" {
 
   lifecycle {
     prevent_destroy = true
+    ignore_changes  = all # TODO: if we disable gke, remove this line
   }
 }

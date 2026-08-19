@@ -2,13 +2,16 @@ import logging
 import time
 import os
 import csv
+import io
 import json
 import re
+from collections import Counter
 
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
 
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
+from ogrre.internal import storage_api
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
@@ -17,7 +20,7 @@ from ogrre.internal.util import time_it
 
 _log = logging.getLogger(__name__)
 REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("1", "true", "yes")
-COLLABORATORS = ["isgs", "calgem", "osage"]
+
 DEFAULT_UNAUTHENTICATED_TEAM = {
     "name": "default",
     "display_name": "Default",
@@ -62,6 +65,210 @@ class DataManager:
         self.ensureDefaultUnauthenticatedTeam()
         self.createProcessorsList()
 
+    def _createEmptyRecordAttribute(
+        self,
+        key,
+        is_subattribute=False,
+        top_level_attribute=None,
+        parent_attribute=None,
+    ):
+        new_field = {
+            "key": key,
+            "ai_confidence": None,
+            "confidence": None,
+            "raw_text": None,
+            "text_value": None,
+            "value": "",
+            "normalized_vertices": None,
+            "normalized_value": None,
+            "subattributes": [],
+            "isSubattribute": is_subattribute,
+            "edited": False,
+            "page": None,
+            "user_added": True,
+        }
+        if is_subattribute:
+            new_field["topLevelAttribute"] = top_level_attribute
+            new_field["parentAttribute"] = parent_attribute
+        return new_field
+
+    def _getFieldIndexes(self, data):
+        data = data or {}
+        field_id = data.get("fieldID") or {}
+        index_source = {**data, **field_id} if field_id else data
+        indexes = index_source.get("indexes")
+
+        ## 6/25/26: Added indexes to fieldID. This contains all indexes for attribute and subattributes
+        ## Keep the following block to ensure backwards compatibility
+        if indexes is None:
+            primary_index = index_source.get("primaryIndex", index_source.get("idx"))
+            if primary_index is None:
+                return []
+
+            indexes = [primary_index]
+            indexes.extend(
+                util.normalize_subattribute_index_path(
+                    index_source,
+                    index_source.get("subIndex"),
+                )
+            )
+
+        if not isinstance(indexes, list):
+            indexes = [indexes]
+
+        normalized_indexes = []
+        for idx in indexes:
+            if idx is None:
+                continue
+            normalized_indexes.append(int(idx))
+        return normalized_indexes
+
+    def _getAttributeAtPath(self, attributes, indexes):
+        if not indexes:
+            return None, None
+
+        try:
+            if indexes[0] < 0:
+                return None, None
+
+            attribute = attributes[indexes[0]]
+            attribute_identifier = attribute.get("key")
+            for sub_index in indexes[1:]:
+                if sub_index < 0:
+                    return None, None
+                subattributes = attribute.get("subattributes") or []
+                attribute = subattributes[sub_index]
+                attribute_identifier = util.get_attribute_identifier(
+                    attribute, attribute_identifier
+                )
+            return attribute, attribute_identifier
+        except (IndexError, TypeError):
+            return None, None
+
+    def _getAttributeParentList(self, attributes, indexes):
+        if len(indexes) <= 1:
+            return attributes, None, None
+
+        parent_attribute, parent_identifier = self._getAttributeAtPath(
+            attributes, indexes[:-1]
+        )
+        if parent_attribute is None:
+            return None, None, None
+        parent_list = parent_attribute.setdefault("subattributes", [])
+
+        return parent_list, parent_attribute, parent_identifier
+
+    def _markAttributePathEdited(self, attributes, indexes, current_time, user):
+        for path_length in range(1, len(indexes) + 1):
+            attribute, _ = self._getAttributeAtPath(attributes, indexes[:path_length])
+            if attribute is None:
+                return False
+            attribute["lastUpdated"] = current_time
+            attribute["lastUpdatedUser"] = user
+            attribute["edited"] = True
+        return True
+
+    def _updateRecordAttributesForFieldOperation(
+        self,
+        _id,
+        new_data,
+        update_type,
+        user=None,
+    ):
+        record_doc = self.db.records.find_one({"_id": _id}, {"attributesList": 1})
+        if not record_doc:
+            _log.info("record lookup returned no document for field operation")
+            return False
+
+        attributes = util.normalize_record_attribute_tree(
+            record_doc.get("attributesList") or []
+        )
+        fieldID = new_data.get("fieldID") or {}
+        key = fieldID.get("key")
+        field_indexes = self._getFieldIndexes(new_data)
+        if len(field_indexes) == 0:
+            _log.info("field operation missing indexes")
+            return False
+
+        if update_type == "insertField":
+            if field_indexes[-1] < -1:
+                _log.info("insertField received an invalid negative index")
+                return False
+
+            if len(field_indexes) == 1:
+                newIndex = field_indexes[0] + 1
+                attributes.insert(
+                    newIndex,
+                    self._createEmptyRecordAttribute(key, is_subattribute=False),
+                )
+            else:
+                parent_list, _, parent_identifier = self._getAttributeParentList(
+                    attributes, field_indexes
+                )
+                if parent_list is None:
+                    _log.info("insertField could not locate parent attribute")
+                    return False
+
+                newSubIndex = max(field_indexes[-1] + 1, 0)
+                top_level_attribute = attributes[field_indexes[0]].get("key")
+                parent_attribute = (
+                    parent_identifier
+                    or new_data.get("parentAttribute")
+                    or top_level_attribute
+                )
+                parent_list.insert(
+                    newSubIndex,
+                    self._createEmptyRecordAttribute(
+                        key,
+                        is_subattribute=True,
+                        top_level_attribute=top_level_attribute,
+                        parent_attribute=parent_attribute,
+                    ),
+                )
+        elif update_type == "deleteField":
+            if field_indexes[-1] < 0:
+                _log.info("deleteField received an invalid negative index")
+                return False
+
+            if len(field_indexes) == 1:
+                if field_indexes[0] >= len(attributes):
+                    _log.info("deleteField top-level index is out of range")
+                    return False
+                del attributes[field_indexes[0]]
+            else:
+                parent_list, _, _ = self._getAttributeParentList(
+                    attributes, field_indexes
+                )
+                if parent_list is None:
+                    _log.info("deleteField could not locate parent attribute")
+                    return False
+                if field_indexes[-1] >= len(parent_list):
+                    _log.info("deleteField subattribute index is out of range")
+                    return False
+                del parent_list[field_indexes[-1]]
+        elif update_type == "updateFieldCoordinates":
+            current_time = time.time()
+            new_coordinates = new_data.get("new_coordinates")
+            pageNumber = new_data.get("pageNumber")
+            if field_indexes[-1] < 0:
+                _log.info("updateFieldCoordinates received an invalid negative index")
+                return False
+
+            target_attribute, _ = self._getAttributeAtPath(attributes, field_indexes)
+            if target_attribute is None:
+                _log.info("updateFieldCoordinates could not locate target attribute")
+                return False
+
+            target_attribute["user_provided_coordinates"] = new_coordinates
+            target_attribute["page"] = pageNumber
+            self._markAttributePathEdited(attributes, field_indexes, current_time, user)
+        else:
+            _log.info(f"unsupported field operation update type: {update_type}")
+            return False
+
+        util.normalize_record_attribute_tree(attributes)
+        return {"attributesList": attributes}
+
     def ensureDefaultUnauthenticatedTeam(self):
         if REQUIRE_AUTH:
             return
@@ -72,9 +279,9 @@ class DataManager:
         if result.upserted_id:
             _log.info("created default unauthenticated team")
 
-    def getDefaultTeamForUser(self, email):
+    def getDefaultTeamForUser(self, email, anonymous_team=None):
         if not REQUIRE_AUTH and email == "anonymous":
-            return DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            return anonymous_team or DEFAULT_UNAUTHENTICATED_TEAM["name"]
 
         user_document = self.getDocument("users", ({"email": email}))
         if user_document is None:
@@ -96,12 +303,58 @@ class DataManager:
         processors = list(self.db.processors.find(query, projection=projection))
         return processors
 
-    def getProcessorById(self, google_id=None):
+    def _normalizeCollaborator(self, collaborator):
+        if not isinstance(collaborator, str):
+            return None
+        collaborator = collaborator.strip()
+
+        ## There WAS a naming convention disparity between OGRRE (rrc) and OGRRE data cleaning (texas_rrc), which is now fixed. leave this in as a fallback for now
+        if collaborator == "texas_rrc":
+            collaborator = "rrc"
+        return collaborator or None
+
+    def getCollaboratorForUser(self, user=None):
+        collaborator = None
+        email = None
+
+        if isinstance(user, dict):
+            collaborator = self._normalizeCollaborator(user.get("collaborator"))
+            email = user.get("email")
+        elif isinstance(user, str):
+            email = user
+
+        if collaborator:
+            return collaborator
+
+        if REQUIRE_AUTH and email and email != "anonymous":
+            user_document = self.getDocument("users", {"email": email})
+            if user_document is not None:
+                collaborator = self._normalizeCollaborator(
+                    user_document.get("collaborator")
+                )
+                if collaborator:
+                    return collaborator
+
+        return self._normalizeCollaborator(self.collaborator)
+
+    def getProcessorById(self, google_id=None, user=None):
         if USE_DB_PROCESSORS:
             processor = self.getMongoProcessorByID(google_id=google_id)
         else:
-            processor = processor_api.get_processor_by_id(self.collaborator, google_id)
+            collaborator = self.getCollaboratorForUser(user)
+            processor = processor_api.get_processor_by_id(collaborator, google_id)
         return processor
+
+    def getProcessorsByIds(self, google_ids=None, user=None):
+        if USE_DB_PROCESSORS:
+            processors = self.getMongoProcessorsByIDs(google_ids)
+        else:
+            collaborator = self.getCollaboratorForUser(user)
+            processors = []
+            for google_id in google_ids:
+                processor = processor_api.get_processor_by_id(collaborator, google_id)
+                processors.append(processor)
+        return processors
 
     def createProcessorsListFromDB(self):
         projection = {"_id": 0, "attributes": 0}
@@ -109,37 +362,28 @@ class DataManager:
         processor_list = list(self.db.processors.find({}, projection=projection))
         return processor_list
 
-    def createProcessorsList(self):
+    def createProcessorsList(self, user=None, update_state=True):
         if USE_DB_PROCESSORS:
             _log.info(f"creating processor list using db")
             processor_list = self.createProcessorsListFromDB()
         else:
-            _log.info(f"creating processor list using processor_api")
-            processor_list = processor_api.get_processor_list(self.collaborator)
+            collaborator = self.getCollaboratorForUser(user)
+            _log.info(f"creating processor list using processor_api for {collaborator}")
+            processor_list = processor_api.get_processor_list(collaborator)
 
         if not processor_list:
             _log.info(f"no processors found, using default extractor")
             processor_list = DEFAULT_PROCESSORS
-            self.using_default_processor = True
+            using_default_processor = True
         else:
-            self.using_default_processor = False
-        self.processor_list = processor_list
+            using_default_processor = False
+
+        if update_state:
+            self.using_default_processor = using_default_processor
+            self.processor_list = processor_list
         return processor_list
 
     ## lock functions
-    def fetchLock(self, user):
-        ## Can't use variable stored in memory for this
-        while self.LOCKED and self.LOCKED != user:
-            _log.info(f"{user} waiting for lock")
-            time.sleep(0.1)
-        self.LOCKED = user
-        _log.info(f"{user} grabbed lock")
-
-    def releaseLock(self, user):
-        ## Can't use variable stored in memory for this
-        _log.info(f"{user} releasing lock")
-        self.LOCKED = False
-
     def lockRecord(self, record_id, user, release_previous_record=True):
         _log.info(f"{user} locking {record_id}")
         if release_previous_record:
@@ -163,7 +407,6 @@ class DataManager:
     @time_it
     def tryLockingRecord(self, record_id, user):
         try:
-            # self.fetchLock(user)
             attained_lock = False
             locked_record_cursor = self.db.locked_records.find({"record_id": record_id})
             record_is_locked = False
@@ -199,7 +442,6 @@ class DataManager:
                     record_id=record_id, user=user, release_previous_record=True
                 )
                 attained_lock = True
-            # self.releaseLock(user)
             return attained_lock
         except Exception as e:
             _log.error(f"error trying to lock record: {e}")
@@ -374,6 +616,7 @@ class DataManager:
             user = document
             user["_id"] = str(user["_id"])
             user["permissions"] = self.getUserPermissions(user)
+            user["collaborator"] = self.getCollaboratorForUser(user)
             return user
         return None
 
@@ -399,11 +642,70 @@ class DataManager:
         self.db.users.update_one(myquery, newvalues)
         return user
 
-    def updateDefaultTeam(self, email, new_team):
-        query = {"email": email}
-        update = {"$set": {"default_team": new_team}}
-        # _log.info(f"{query}, {update}")
-        self.db.users.update_one(query, update)
+    def ensureTeamExists(self, team):
+        team_document = {
+            "name": team,
+            "users": [],
+            "project_list": [],
+        }
+        result = self.db.teams.update_one(
+            {"name": team},
+            {"$setOnInsert": team_document},
+            upsert=True,
+        )
+        return result.upserted_id is not None
+
+    def changeUserTeam(self, email, new_team):
+        team = new_team.strip()
+        if team == "":
+            raise ValueError("Please provide a new team in the request body")
+
+        user_doc = self.getDocument("users", {"email": email})
+        if user_doc is None:
+            raise ValueError(f"Unable to find user {email}")
+
+        created_team = self.ensureTeamExists(team)
+        membership_result = self.addUserToTeam(email, team)
+        self.db.users.update_one(
+            {"email": email},
+            {"$set": {"default_team": team}},
+        )
+
+        response = {
+            "team": team,
+            "created_team": created_team,
+            "added_to_team": membership_result == "success",
+        }
+        self.recordHistory(
+            "changeUserTeam",
+            user=email,
+            query=response,
+        )
+        return response
+
+    def changeUserCollaborator(self, email, new_collaborator):
+        collaborator = self._normalizeCollaborator(new_collaborator)
+        if collaborator is None:
+            raise ValueError("Please provide a new collaborator in the request body")
+
+        user_doc = self.getDocument("users", {"email": email})
+        if user_doc is None:
+            raise ValueError(f"Unable to find user {email}")
+
+        self.db.users.update_one(
+            {"email": email},
+            {"$set": {"collaborator": collaborator}},
+        )
+
+        response = {
+            "collaborator": collaborator,
+        }
+        self.recordHistory(
+            "changeUserCollaborator",
+            user=email,
+            query=response,
+        )
+        return response
 
     def addUser(self, user_info, team, team_lead=False, sys_admin=False):
         if team is None:
@@ -419,6 +721,7 @@ class DataManager:
 
         if sys_admin:
             roles["system"].append("sys_admin")
+        self.ensureTeamExists(team)
         user = {
             "email": user_info.get("email", ""),
             "name": user_info.get("name", ""),
@@ -429,14 +732,7 @@ class DataManager:
             "time_created": time.time(),
         }
         db_response = self.db.users.insert_one(user)
-
-        ## add user to team's users
-        team_query = {"name": team}
-        team_document = self.getDocument("teams", team_query)
-        team_users = team_document.get("users", [])
-        team_users.append(user_info.get("email", ""))
-        newvalues = {"$set": {"users": team_users}}
-        self.db.teams.update_one(team_query, newvalues)
+        self.addUserToTeam(user_info.get("email", ""), team)
 
         return db_response
 
@@ -444,9 +740,6 @@ class DataManager:
         ## CHECK IF USER IS NOT ALREADY ON THIS TEAM
         checkvalues = {"name": team, "users": email}
         found_user = self.db.teams.count_documents(checkvalues)
-        if found_user > 0:
-            _log.info(f"found {email} on {team}")
-            return "already_exists"
 
         # Keep user role maps in sync with team membership.
         user_doc = self.getDocument("users", {"email": email})
@@ -461,23 +754,15 @@ class DataManager:
                 update_payload["default_team"] = team
             self.db.users.update_one({"email": email}, {"$set": update_payload})
 
+        if found_user > 0:
+            _log.info(f"found {email} on {team}")
+            return "already_exists"
+
         ## update team's users
         myquery = {"name": team}
-        newvalues = {"$push": {"users": email}}
+        newvalues = {"$addToSet": {"users": email}}
         self.db.teams.update_one(myquery, newvalues)
         return "success"
-
-    def updateUser(self, user_info):
-        email = user_info.get("email", "")
-        user = {
-            "name": user_info.get("name", ""),
-            "picture": user_info.get("picture", ""),
-            "hd": user_info.get("hd", ""),
-        }
-        myquery = {"email": email}
-        newvalues = {"$set": user}
-        cursor = self.db.users.update_one(myquery, newvalues)
-        return cursor
 
     def updateUserRole(self, email, team, role_category, new_roles):
         try:
@@ -551,35 +836,15 @@ class DataManager:
         self.recordHistory("deleteUser", user=admin_email)
         return email
 
-    def addUsersToProject(self, users, project_id):
-        ## TODO:
-        ## (1) change project to team
-        _id = ObjectId(project_id)
-        try:
-            for user in users:
-                email = user.get("email", "")
-                query = {"email": email}
-                cursor = self.db.users.find(query)
-                user_object = cursor.next()
-                user_projects = user_object.get("projects", [])
-                user_projects.append(_id)
-                update_query = {"projects": user_projects}
-                self.updateUserProjects(email, update_query)
-            return {"result": "success"}
-        except Exception as e:
-            _log.error(f"unable to add users: {e}")
-            return {"result": f"{e}"}
-
     ## Fetch/get functions
-    def getDocument(self, collection, query, clean_id=False, return_list=False):
+    def getDocument(self, collection, query, clean_id=False):
         try:
             cursor = self.db[collection].find(query)
-            if not return_list:
-                document = cursor.next()
-                if clean_id:
-                    document_id = document.get("_id", "")
-                    document["_id"] = str(document_id)
-                return document
+            document = cursor.next()
+            if clean_id:
+                document_id = document.get("_id", "")
+                document["_id"] = str(document_id)
+            return document
         except Exception as e:
             _log.error(f"unable to find {query} in {collection}: {e}")
             return None
@@ -619,8 +884,8 @@ class DataManager:
         stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
         return stats
 
-    def fetchTeamInfo(self, email):
-        team_name = self.getDefaultTeamForUser(email)
+    def fetchTeamInfo(self, email, anonymous_team=None):
+        team_name = self.getDefaultTeamForUser(email, anonymous_team)
         if team_name is None:
             _log.error(f"unable to find default team for user {email}")
             return None
@@ -640,15 +905,14 @@ class DataManager:
         ]
         return team_doc
 
-    def fetchTeams(self, user_info):
-        email = user_info.get("email", None)
-        query = {"users": email}
+    def fetchTeams(self):
         teams = []
-        teams_cursor = self.db.teams.find(query)
+        teams_cursor = self.db.teams.find()
         for document in teams_cursor:
-            team_name = document["name"]
-            teams.append(team_name)
-        return teams
+            team_name = document.get("name", "")
+            if team_name != "":
+                teams.append(team_name)
+        return sorted(teams)
 
     def fetchProject(self, project_id):
         cursor = self.db.projects.find({"_id": ObjectId(project_id)})
@@ -661,10 +925,9 @@ class DataManager:
     def fetchProjects(self, user):
         projects = []
         if user.get("anonymous", False) and not REQUIRE_AUTH:
-            _log.info(f"getting projects for anonymous user - default team")
-            user_projects = self.getTeamProjectList(
-                DEFAULT_UNAUTHENTICATED_TEAM["name"]
-            )
+            team_name = user.get("default_team") or DEFAULT_UNAUTHENTICATED_TEAM["name"]
+            _log.info(f"getting projects for anonymous user - team {team_name}")
+            user_projects = self.getTeamProjectList(team_name)
         else:
             _log.info(f"user is not anonymous")
             user_email = user.get("email", None)
@@ -750,7 +1013,7 @@ class DataManager:
         exclude_attribute_fields=None,
         forDownload=False,
     ):
-        team_info = self.fetchTeamInfo(user["email"])
+        team_info = self.fetchTeamInfo(user["email"], user.get("default_team"))
         rg_list = self.getTeamRecordGroupsList(team_info["name"])
         filter_by["record_group_id"] = {"$in": rg_list}
         return self.fetchRecords(
@@ -812,6 +1075,59 @@ class DataManager:
             forDownload=forDownload,
         )
 
+    def fetchRecordsByProjectAndDocumentTypes(
+        self,
+        user,
+        project_id,
+        document_types,
+        page=None,
+        records_per_page=None,
+        sort_by=["dateCreated", 1],
+        filter_by=None,
+        include_attribute_fields=None,
+        exclude_attribute_fields=None,
+        forDownload=False,
+    ):
+        if filter_by is None:
+            filter_by = {}
+        else:
+            filter_by = filter_by.copy()
+
+        # Remove documentType filter because records collection doesn't contain this field
+        if "documentType" in filter_by:
+            filter_by.pop("documentType")
+
+        # 1. Get all record group IDs for the project
+        project_rg_ids = self.getProjectRecordGroupsList(project_id)
+        project_rg_object_ids = [ObjectId(rg) for rg in project_rg_ids]
+
+        # 2. Filter record groups by allowed document types
+        rg_query = {
+            "_id": {"$in": project_rg_object_ids},
+            "documentType": {"$in": document_types},
+        }
+        cursor = self.db.record_groups.find(rg_query)
+        filtered_rg_ids = [str(doc["_id"]) for doc in cursor]
+
+        # 3. Add or intersect record_group_id in filter_by
+        if "record_group_id" in filter_by:
+            frontend_rg_ids = filter_by["record_group_id"].get("$in", [])
+            intersected_rg_ids = list(set(frontend_rg_ids) & set(filtered_rg_ids))
+            filter_by["record_group_id"] = {"$in": intersected_rg_ids}
+        else:
+            filter_by["record_group_id"] = {"$in": filtered_rg_ids}
+
+        # 4. Fetch the records
+        return self.fetchRecords(
+            sort_by,
+            filter_by,
+            page,
+            records_per_page,
+            include_attribute_fields=include_attribute_fields,
+            exclude_attribute_fields=exclude_attribute_fields,
+            forDownload=forDownload,
+        )
+
     @time_it
     def fetchRecordGroups(self, project_id, user):
         project = self.fetchProject(project_id)
@@ -838,8 +1154,8 @@ class DataManager:
         return {"project": project, "record_groups": record_groups}
 
     @time_it
-    def fetchColumnData(self, location, _id):
-        if location == "project" or location == "team":
+    def fetchColumnData(self, location, _id, user=None, selected_record_groups=None):
+        if location == "project" or location == "team" or location == "documentType":
             columns = set()
             if location == "project":
                 # get project, set name and settings
@@ -847,52 +1163,113 @@ class DataManager:
                 document["_id"] = _id
                 # get all record groups
                 record_groups = self.getProjectRecordGroupsList(_id)
-            else:
+            elif location == "team":
                 document = self.db.teams.find({"name": _id}).next()
                 document["_id"] = str(document["_id"])
                 ##TODO: fix object ids in team project list?
                 for i in range(len(document["project_list"])):
                     document["project_list"][i] = str(document["project_list"][i])
                 record_groups = self.getTeamRecordGroupsList(_id)
+            elif location == "documentType":
+                # get project, set name and settings
+                document = self.db.projects.find({"_id": ObjectId(_id)}).next()
+                document["_id"] = _id
+                record_groups = selected_record_groups or []
 
             rg_ids = []
             for rg in record_groups:
                 rg_ids.append(ObjectId(rg))
-
             rg_documents = list(self.db.record_groups.find({"_id": {"$in": rg_ids}}))
-            processor_ids = []
+            schema_less_record_groups = []
             for doc in rg_documents:
-                google_id = doc["processorId"]
-                processor_ids.append(google_id)
-            processors = self.getMongoProcessorsByIDs(processor_ids)
-            for proc in processors:
-                for attr in proc.get("attributes"):
-                    columns.add(attr["name"])
+                rg_schema = self.getRecordGroupSchemaAttributes(
+                    user=user, rg_document=doc
+                )
+                if rg_schema:
+                    for attr in rg_schema:
+                        attr_name = attr.get("name")
+                        if attr_name:
+                            columns.add(attr_name)
+                else:
+                    schema_less_record_groups.append(str(doc["_id"]))
+            if schema_less_record_groups:
+                columns.update(
+                    self.deriveRecordColumnsFromRecordGroups(schema_less_record_groups)
+                )
             if "projects" in document:
                 del document["projects"]
+            columns.add("record_notes")
             return {"columns": list(columns), "obj": document}
 
         elif location == "record_group":
             columns = []
             rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
+            data_fusion = rg_document.get("data_fusion", None)
             rg_document["_id"] = _id
-            google_id = rg_document["processorId"]
-            processor = self.getProcessorByGoogleId(google_id)
-            if processor is None:
-                return None
-            for attr in processor["attributes"]:
-                columns.append(attr["name"])
+            rg_schema = self.getRecordGroupSchemaAttributes(
+                user=user, rg_document=rg_document
+            )
+            if rg_schema:
+                for attr in rg_schema:
+                    attr_name = attr["name"]
+                    if data_fusion and attr_name not in data_fusion:
+                        continue
+                    columns.append(attr["name"])
+            else:
+                columns = self.deriveRecordColumnsFromRecordGroups([_id])
+            columns.append("record_notes")
             return {"columns": columns, "obj": rg_document}
         return None
 
-    def getProcessorByGoogleId(self, google_id):
-        processor = self.getProcessorById(google_id)
-        return processor
+    def getRecordGroupSchemaAttributes(self, rg_id=None, user=None, rg_document=None):
+        try:
+            document = rg_document
+            if document is None and rg_id is not None:
+                document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
+            if document is None:
+                return []
+
+            processor_id = document.get("processorId")
+            if processor_id:
+                processor_document = self.getProcessorById(processor_id, user)
+                if processor_document and "attributes" in processor_document:
+                    return processor_document.get("attributes") or []
+
+            attributes = document.get("attributes") or []
+            if isinstance(attributes, list):
+                return attributes
+            return []
+        except Exception as e:
+            _log.error(f"unable to get record group schema attributes: {e}")
+            return []
+
+    def getRecordGroupSchemaMap(self, rg_id, user=None):
+        return util.convert_processor_attributes_to_dict(
+            self.getRecordGroupSchemaAttributes(rg_id=rg_id, user=user)
+        )
+
+    def deriveRecordColumnsFromRecordGroups(self, record_group_ids):
+        columns = set()
+        if not record_group_ids:
+            return []
+
+        cursor = self.db.records.find(
+            {"record_group_id": {"$in": record_group_ids}},
+            {"attributesList": 1},
+        )
+        for record in cursor:
+            for _, attribute_identifier in util.iter_attribute_tree(
+                record.get("attributesList") or []
+            ):
+                if attribute_identifier:
+                    columns.add(attribute_identifier)
+        return list(columns)
 
     def fetchProcessors(self, user):
-        processor_list = self.createProcessorsList()
+        processor_list = self.createProcessorsList(user, update_state=False)
         return {
             "USE_DB_PROCESSORS": USE_DB_PROCESSORS,
+            "collaborator": self.getCollaboratorForUser(user),
             "processor_list": processor_list,
         }
 
@@ -967,6 +1344,10 @@ class DataManager:
         document["rg_name"] = rg_name
         document["rg_id"] = rg_id
 
+        ## 06/17/2026: add functionality for data fusion
+        ## if data_fusion exists, only use subset of processor attributes
+        data_fusion = rg.get("data_fusion", None)
+
         ## get project name
         project_document = self.getProjectFromRecordGroup(rg_id)
         project_name = project_document.get("name", "")
@@ -1003,10 +1384,13 @@ class DataManager:
 
         ## sort record attributes
         try:
-            google_id = rg["processorId"]
-            processor_doc = self.getProcessorById(google_id)
+            processor_attributes = self.getRecordGroupSchemaAttributes(
+                user=user_info, rg_document=rg
+            )
             sorted_attributes, update_db = util.sortRecordAttributes(
-                document["attributesList"], processor_doc
+                document["attributesList"],
+                {"attributes": processor_attributes},
+                data_fusion=data_fusion,
             )
             document["attributesList"] = sorted_attributes
 
@@ -1101,13 +1485,20 @@ class DataManager:
 
         return document
 
-    def getProcessorByRecordGroupID(self, rg_id, returnNameOnly=False):
+    def getProcessorByRecordGroupID(self, rg_id, returnNameOnly=False, user=None):
         _id = ObjectId(rg_id)
         try:
             cursor = self.db.record_groups.find({"_id": _id})
             document = cursor.next()
             google_id = document.get("processorId", None)
-            processor_document = self.getProcessorById(google_id)
+            if not google_id:
+                processor_attributes = self.getRecordGroupSchemaAttributes(
+                    user=user, rg_document=document
+                )
+                if returnNameOnly:
+                    return document.get("documentType") or document.get("name")
+                return None, None, processor_attributes
+            processor_document = self.getProcessorById(google_id, user)
             if not processor_document:
                 processor_document = DEFAULT_PROCESSORS[0]
             processor_attributes = processor_document.get("attributes", None)
@@ -1124,22 +1515,693 @@ class DataManager:
             _log.error(f"unable to find processor: {e}")
             return None, None, None
 
-    def getProcessorByRecordID(self, record_id):
+    def getProcessorByRecordID(self, record_id, user=None):
         _id = ObjectId(record_id)
         try:
             cursor = self.db.records.find({"_id": _id})
             document = cursor.next()
             rg_id = document["record_group_id"]
-            return self.getProcessorByRecordGroupID(rg_id)
+            return self.getProcessorByRecordGroupID(rg_id, user=user)
         except Exception as e:
             _log.error(f"unable to find processor id: {e}")
             return None, None, None
+
+    def userCanAccessProject(self, project_id, user_info):
+        try:
+            ObjectId(project_id)
+        except Exception:
+            return False
+        return project_id in {
+            project["_id"] for project in self.fetchProjects(user_info)
+        }
+
+    def _getImportPackage(self, import_request):
+        if isinstance(import_request, dict):
+            return (
+                import_request.get("import_package")
+                or import_request.get("package")
+                or import_request.get("data")
+                or import_request
+            )
+        return import_request
+
+    def _getImportPackageRecords(self, import_package):
+        if isinstance(import_package, list):
+            records = import_package
+        elif isinstance(import_package, dict):
+            records = import_package.get("records")
+        else:
+            raise ValueError("JSON import must be an object or an array of records.")
+
+        if not isinstance(records, list):
+            raise ValueError("JSON import must include a records array.")
+        if len(records) == 0:
+            raise ValueError("JSON import must include at least one record.")
+        return records
+
+    def _getImportPackageFormat(self, import_package):
+        if isinstance(import_package, dict):
+            return import_package.get("format") or import_package.get("version")
+        return None
+
+    def _getImportRecordMetadataKeys(self):
+        return {
+            "_id",
+            "id",
+            "record_id",
+            "record_group_id",
+            "rg_id",
+            "project_id",
+            "name",
+            "file",
+            "filename",
+            "original_filename",
+            "api_number",
+            "contributor",
+            "status",
+            "review_status",
+            "verification_status",
+            "URL",
+            "url",
+            "image_files",
+            "img_urls",
+            "image_whitespace",
+            "source_type",
+            "dateCreated",
+            "lastUpdated",
+            "lastUpdatedBy",
+            "record_notes",
+            "notes",
+            "previous_id",
+            "next_id",
+            "rank",
+            "record_number",
+        }
+
+    def _looksLikeImportedAttribute(self, value):
+        if not isinstance(value, dict):
+            return False
+        return any(
+            key in value
+            for key in (
+                "key",
+                "name",
+                "value",
+                "raw_text",
+                "text_value",
+                "normalized_value",
+                "normalized_vertices",
+                "coordinates",
+                "subattributes",
+                "properties",
+                "page",
+                "confidence",
+                "ai_confidence",
+            )
+        )
+
+    def _getImportPackageSchemaFields(self, import_package):
+        if not isinstance(import_package, dict):
+            return []
+
+        schema = import_package.get("schema")
+        if isinstance(schema, dict):
+            fields = schema.get("fields") or schema.get("attributes") or []
+        else:
+            fields = import_package.get("schema_fields") or []
+
+        if not isinstance(fields, list):
+            return []
+
+        allowed_keys = {
+            "name",
+            "alias",
+            "data_type",
+            "google_data_type",
+            "database_data_type",
+            "cleaning_function",
+            "accepted_range",
+            "field_specific_notes",
+            "grouping",
+            "model_enabled",
+            "occurrence",
+            "page_order_sort",
+        }
+        normalized_fields = []
+        for idx, field in enumerate(fields):
+            if not isinstance(field, dict):
+                continue
+            field_name = field.get("name") or field.get("key")
+            if not field_name:
+                continue
+            normalized_field = {
+                key: value
+                for key, value in field.items()
+                if key in allowed_keys and value is not None
+            }
+            normalized_field["name"] = str(field_name)
+            if "data_type" not in normalized_field and field.get("Google Data Type"):
+                normalized_field["data_type"] = field.get("Google Data Type")
+            if "page_order_sort" not in normalized_field:
+                normalized_field["page_order_sort"] = idx + 1
+            normalized_fields.append(normalized_field)
+        return normalized_fields
+
+    def _getImportPackageDocumentType(self, import_package):
+        if not isinstance(import_package, dict):
+            return None
+        schema = import_package.get("schema")
+        if isinstance(schema, dict):
+            return schema.get("documentType") or schema.get("document_type")
+        return import_package.get("documentType") or import_package.get("document_type")
+
+    def _coerceImportedValue(self, value):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return json.dumps(value, default=util.defaultJSONDumpHandler)
+
+    def _simpleFieldsToAttributes(self, fields):
+        attributes = []
+        for key, value in fields.items():
+            if isinstance(value, dict) and not any(
+                field_key in value
+                for field_key in (
+                    "key",
+                    "name",
+                    "value",
+                    "raw_text",
+                    "normalized_value",
+                    "subattributes",
+                    "properties",
+                )
+            ):
+                subattributes = self._simpleFieldsToAttributes(value)
+                attributes.append(
+                    {
+                        "key": key,
+                        "value": None,
+                        "raw_text": None,
+                        "normalized_value": None,
+                        "subattributes": subattributes,
+                    }
+                )
+            else:
+                attributes.append(
+                    {
+                        "key": key,
+                        "value": value,
+                        "raw_text": value,
+                        "normalized_value": value,
+                        "subattributes": [],
+                    }
+                )
+        return attributes
+
+    def _attributeMapToAttributes(self, record):
+        attributes = []
+        metadata_keys = self._getImportRecordMetadataKeys()
+        for key, value in record.items():
+            if key in metadata_keys:
+                continue
+            if self._looksLikeImportedAttribute(value):
+                attribute = value.copy()
+                if not attribute.get("key") and not attribute.get("name"):
+                    attribute["key"] = key
+                attributes.append(attribute)
+            else:
+                attributes.append(
+                    {
+                        "key": key,
+                        "value": value,
+                        "raw_text": value,
+                        "normalized_value": value,
+                        "subattributes": [],
+                    }
+                )
+        return attributes
+
+    def _normalizeImportedAttribute(self, attribute, record_idx):
+        if not isinstance(attribute, dict):
+            raise ValueError(f"Record {record_idx + 1} has a non-object attribute.")
+
+        key = attribute.get("key") or attribute.get("name")
+        if not key:
+            raise ValueError(f"Record {record_idx + 1} has an attribute without a key.")
+
+        subattributes = (
+            attribute.get("subattributes")
+            if "subattributes" in attribute
+            else attribute.get("properties", [])
+        )
+        if subattributes is None:
+            subattributes = []
+        if not isinstance(subattributes, list):
+            raise ValueError(
+                f"Record {record_idx + 1} attribute {key} has non-array subattributes."
+            )
+
+        value = attribute.get("value")
+        if "value" not in attribute:
+            value = attribute.get("normalized_value", attribute.get("raw_text"))
+
+        raw_text = attribute.get("raw_text", attribute.get("text_value", value))
+        normalized_value = attribute.get("normalized_value", value)
+        normalized_attribute = {
+            "key": str(key),
+            "ai_confidence": attribute.get(
+                "ai_confidence", attribute.get("confidence")
+            ),
+            "confidence": attribute.get("confidence"),
+            "raw_text": self._coerceImportedValue(raw_text),
+            "text_value": self._coerceImportedValue(attribute.get("text_value")),
+            "value": self._coerceImportedValue(value),
+            "normalized_vertices": attribute.get(
+                "normalized_vertices", attribute.get("coordinates")
+            ),
+            "normalized_value": self._coerceImportedValue(normalized_value),
+            "subattributes": [
+                self._normalizeImportedAttribute(subattribute, record_idx)
+                for subattribute in subattributes
+            ],
+            "edited": bool(attribute.get("edited", False)),
+            "page": attribute.get("page"),
+        }
+        if "user_added" in attribute:
+            normalized_attribute["user_added"] = bool(attribute.get("user_added"))
+        return normalized_attribute
+
+    def _normalizeImportedRecordAttributes(self, record, record_idx):
+        attributes = record.get("attributesList")
+        if attributes is None:
+            attributes = record.get("attributes")
+        if attributes is None and isinstance(record.get("fields"), dict):
+            attributes = self._simpleFieldsToAttributes(record.get("fields"))
+        if attributes is None:
+            attributes = self._attributeMapToAttributes(record)
+
+        if not isinstance(attributes, list):
+            raise ValueError(
+                f"Record {record_idx + 1} must include attributesList, attributes, fields, or exported attribute columns."
+            )
+        if len(attributes) == 0:
+            raise ValueError(f"Record {record_idx + 1} does not contain attributes.")
+
+        normalized_attributes = [
+            self._normalizeImportedAttribute(attribute, record_idx)
+            for attribute in attributes
+        ]
+        return util.normalize_record_attribute_tree(normalized_attributes)
+
+    def _buildImportedRecords(self, rg_id, import_package, user_info):
+        records = self._getImportPackageRecords(import_package)
+        normalized_records = []
+        for idx, record in enumerate(records):
+            if not isinstance(record, dict):
+                raise ValueError(f"Record {idx + 1} must be an object.")
+
+            source_filename = (
+                record.get("filename")
+                or record.get("file")
+                or record.get("original_filename")
+            )
+            name = record.get("name") or source_filename or f"record-{idx + 1}"
+            name = str(name).strip() or f"record-{idx + 1}"
+            filename = str(source_filename or f"{name}.json").strip()
+            if not filename:
+                filename = f"{name}.json"
+            if name == filename:
+                name = os.path.splitext(os.path.basename(filename))[0] or name
+
+            normalized_records.append(
+                {
+                    "record_group_id": rg_id,
+                    "name": name,
+                    "filename": filename,
+                    "api_number": record.get("api_number"),
+                    "contributor": user_info,
+                    "status": record.get("status") or "digitized",
+                    "review_status": record.get("review_status") or "unreviewed",
+                    "verification_status": record.get("verification_status"),
+                    "original_filename": record.get("original_filename")
+                    or record.get("file")
+                    or filename,
+                    "image_files": record.get("image_files") or [],
+                    "attributesList": self._normalizeImportedRecordAttributes(
+                        record, idx
+                    ),
+                    "source_type": record.get("source_type") or "json_import",
+                }
+            )
+        return normalized_records
+
+    def analyzeImportedRecordDuplicates(
+        self, rg_id, normalized_records, prevent_duplicates=True
+    ):
+        filenames = [record.get("filename") for record in normalized_records]
+        existing_duplicate_bases = set(
+            self.checkIfRecordsExist(filenames, rg_id) if rg_id else []
+        )
+        duplicate_filename_bases = {
+            filename_base: count
+            for filename_base, count in Counter(
+                self.getFilenameBase(filename) for filename in filenames
+            ).items()
+            if filename_base and count > 1
+        }
+
+        seen_import_bases = set()
+        existing_duplicates = []
+        internal_duplicates = []
+        importable_records = []
+
+        for idx, record in enumerate(normalized_records):
+            filename = record.get("filename")
+            filename_base = self.getFilenameBase(filename)
+            duplicate_item = {
+                "index": idx,
+                "filename": filename,
+                "filename_base": filename_base,
+                "name": record.get("name"),
+            }
+
+            is_existing_duplicate = (
+                bool(filename_base) and filename_base in existing_duplicate_bases
+            )
+            is_internal_duplicate = (
+                bool(filename_base) and filename_base in seen_import_bases
+            )
+
+            if is_existing_duplicate:
+                existing_duplicates.append(duplicate_item)
+            elif is_internal_duplicate:
+                internal_duplicates.append(duplicate_item)
+
+            if prevent_duplicates and (is_existing_duplicate or is_internal_duplicate):
+                continue
+
+            importable_records.append(record)
+            if filename_base:
+                seen_import_bases.add(filename_base)
+
+        skipped_duplicate_count = (
+            len(existing_duplicates) + len(internal_duplicates)
+            if prevent_duplicates
+            else 0
+        )
+        return {
+            "record_count": len(normalized_records),
+            "requested_count": len(normalized_records),
+            "importable_records": importable_records,
+            "importable_count": len(importable_records),
+            "existing_duplicates": existing_duplicates,
+            "existing_duplicate_count": len(existing_duplicates),
+            "internal_duplicates": internal_duplicates,
+            "internal_duplicate_count": len(internal_duplicates),
+            "skipped_duplicates": [
+                duplicate["filename"]
+                for duplicate in existing_duplicates + internal_duplicates
+            ]
+            if prevent_duplicates
+            else [],
+            "skipped_duplicate_count": skipped_duplicate_count,
+            "duplicate_filename_bases_in_file": duplicate_filename_bases,
+            "duplicate_filename_base_count_in_file": len(duplicate_filename_bases),
+            "prevent_duplicates": prevent_duplicates,
+        }
+
+    def previewJsonRecords(self, rg_id, import_request, prevent_duplicates=True):
+        import_package = self._getImportPackage(import_request)
+        normalized_records = self._buildImportedRecords(rg_id, import_package, {})
+        preview = self.analyzeImportedRecordDuplicates(
+            rg_id, normalized_records, prevent_duplicates=prevent_duplicates
+        )
+        preview.pop("importable_records", None)
+        _log.info(
+            "record import preview rg_id=%s requested_count=%s importable_count=%s skipped_duplicate_count=%s existing_duplicate_count=%s internal_duplicate_count=%s prevent_duplicates=%s",
+            rg_id,
+            preview["requested_count"],
+            preview["importable_count"],
+            preview["skipped_duplicate_count"],
+            preview["existing_duplicate_count"],
+            preview["internal_duplicate_count"],
+            prevent_duplicates,
+        )
+        return preview
+
+    def importJsonRecords(
+        self, rg_id, import_request, user_info, prevent_duplicates=True
+    ):
+        import_package = self._getImportPackage(import_request)
+        normalized_records = self._buildImportedRecords(
+            rg_id, import_package, user_info
+        )
+        duplicate_preview = self.analyzeImportedRecordDuplicates(
+            rg_id, normalized_records, prevent_duplicates=prevent_duplicates
+        )
+        records_to_create = duplicate_preview.pop("importable_records", [])
+
+        schema_fields = self._getImportPackageSchemaFields(import_package)
+        if schema_fields:
+            rg_document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
+            if rg_document and not rg_document.get("processorId"):
+                self.db.record_groups.update_one(
+                    {"_id": ObjectId(rg_id)},
+                    {"$set": {"attributes": schema_fields}},
+                )
+
+        created_record_ids = []
+        for record in records_to_create:
+            created_record_ids.append(self.createRecord(record, user_info))
+
+        _log.info(
+            "record import complete rg_id=%s requested_count=%s created_count=%s skipped_duplicate_count=%s existing_duplicate_count=%s internal_duplicate_count=%s prevent_duplicates=%s duplicate_filename_base_count_in_file=%s",
+            rg_id,
+            duplicate_preview["requested_count"],
+            len(created_record_ids),
+            duplicate_preview["skipped_duplicate_count"],
+            duplicate_preview["existing_duplicate_count"],
+            duplicate_preview["internal_duplicate_count"],
+            prevent_duplicates,
+            duplicate_preview["duplicate_filename_base_count_in_file"],
+        )
+
+        self.recordHistory(
+            "importJsonRecords",
+            user_info.get("email", None),
+            rg_id=rg_id,
+            notes={
+                "requested_count": duplicate_preview["requested_count"],
+                "created_count": len(created_record_ids),
+                "skipped_duplicate_count": duplicate_preview["skipped_duplicate_count"],
+                "format": self._getImportPackageFormat(import_package),
+                "duplicate_filename_base_count_in_file": duplicate_preview[
+                    "duplicate_filename_base_count_in_file"
+                ],
+            },
+        )
+        return {
+            "record_group_id": rg_id,
+            "created_record_ids": created_record_ids,
+            "requested_count": duplicate_preview["requested_count"],
+            "created_count": len(created_record_ids),
+            "skipped_duplicates": duplicate_preview["skipped_duplicates"],
+            "skipped_duplicate_count": duplicate_preview["skipped_duplicate_count"],
+            "existing_duplicate_count": duplicate_preview["existing_duplicate_count"],
+            "internal_duplicate_count": duplicate_preview["internal_duplicate_count"],
+            "duplicate_filename_bases_in_file": duplicate_preview[
+                "duplicate_filename_bases_in_file"
+            ],
+        }
+
+    def _parseCsvAttributePath(self, column_name):
+        parts = []
+        current = ""
+        for char in str(column_name):
+            if char == "[":
+                if current:
+                    parts.append(current.strip())
+                current = ""
+            elif char == "]":
+                if current:
+                    parts.append(current.strip())
+                current = ""
+            else:
+                current += char
+        if current.strip():
+            parts.append(current.strip())
+        return [part for part in parts if part]
+
+    def _addCsvAttributeValue(self, attributes, path, value):
+        if not path:
+            return
+        key = path[0]
+        attribute = next(
+            (existing for existing in attributes if existing.get("key") == key),
+            None,
+        )
+        if attribute is None:
+            attribute = {
+                "key": key,
+                "value": None if len(path) > 1 else value,
+                "raw_text": None if len(path) > 1 else value,
+                "normalized_value": None if len(path) > 1 else value,
+                "subattributes": [],
+            }
+            attributes.append(attribute)
+        elif len(path) == 1:
+            attribute["value"] = value
+            attribute["raw_text"] = value
+            attribute["normalized_value"] = value
+
+        if len(path) > 1:
+            self._addCsvAttributeValue(attribute["subattributes"], path[1:], value)
+
+    def _csvRowsToImportPackage(self, rows):
+        records = []
+        metadata_keys = self._getImportRecordMetadataKeys()
+        for idx, row in enumerate(rows):
+            attributes = []
+            for column, value in row.items():
+                if column is None or column in metadata_keys:
+                    continue
+                if value is None or str(value).strip() == "":
+                    continue
+                self._addCsvAttributeValue(
+                    attributes,
+                    self._parseCsvAttributePath(column),
+                    value,
+                )
+
+            filename = row.get("filename") or row.get("file") or f"record-{idx + 1}.csv"
+            records.append(
+                {
+                    "name": row.get("name")
+                    or os.path.splitext(os.path.basename(filename))[0]
+                    or f"record-{idx + 1}",
+                    "filename": filename,
+                    "original_filename": row.get("original_filename") or filename,
+                    "api_number": row.get("api_number"),
+                    "status": row.get("status"),
+                    "review_status": row.get("review_status"),
+                    "verification_status": row.get("verification_status"),
+                    "attributesList": attributes,
+                    "source_type": "csv_import",
+                }
+            )
+        return {"format": "ogrre-csv-records-v1", "records": records}
+
+    def parseImportFile(self, filename, file_bytes):
+        size_bytes = len(file_bytes) if isinstance(file_bytes, bytes) else None
+        if isinstance(file_bytes, bytes):
+            text = file_bytes.decode("utf-8-sig")
+        else:
+            text = str(file_bytes)
+        extension = os.path.splitext(filename or "")[1].lower()
+
+        if extension == ".csv":
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            _log.info(
+                "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s",
+                filename,
+                extension,
+                size_bytes,
+                len(rows),
+                len(reader.fieldnames or []),
+            )
+            return self._csvRowsToImportPackage(rows)
+
+        try:
+            parsed = json.loads(text)
+            try:
+                record_count = len(self._getImportPackageRecords(parsed))
+            except Exception:
+                record_count = "unknown"
+            _log.info(
+                "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=json package_format=%s record_count=%s",
+                filename,
+                extension,
+                size_bytes,
+                self._getImportPackageFormat(parsed),
+                record_count,
+            )
+            return parsed
+        except json.JSONDecodeError as json_error:
+            if extension == ".json":
+                raise ValueError(f"Invalid JSON import file: {json_error}")
+            reader = csv.DictReader(io.StringIO(text))
+            rows = list(reader)
+            if rows:
+                _log.info(
+                    "record import parsed file filename=%s extension=%s size_bytes=%s detected_format=csv row_count=%s header_count=%s",
+                    filename,
+                    extension,
+                    size_bytes,
+                    len(rows),
+                    len(reader.fieldnames or []),
+                )
+                return self._csvRowsToImportPackage(rows)
+            raise ValueError("Import file must be valid JSON or CSV.")
+
+    def createRecordGroupFromJsonImport(self, project_id, import_request, user_info):
+        if not self.userCanAccessProject(project_id, user_info):
+            raise PermissionError("User does not have access to this project.")
+
+        import_package = self._getImportPackage(import_request)
+        self._getImportPackageRecords(import_package)
+
+        record_group_info = (
+            import_request.get("record_group")
+            if isinstance(import_request, dict)
+            else {}
+        )
+        if not isinstance(record_group_info, dict):
+            record_group_info = {}
+
+        name = str(record_group_info.get("name") or "").strip()
+        if not name:
+            raise ValueError("Record group name is required.")
+
+        document_type = (
+            record_group_info.get("documentType")
+            or record_group_info.get("document_type")
+            or self._getImportPackageDocumentType(import_package)
+            or "JSON Import"
+        )
+        rg_info = {
+            "name": name,
+            "description": record_group_info.get("description", ""),
+            "history": [],
+            "documentType": document_type,
+            "processorId": None,
+            "processor_id": None,
+            "project_id": project_id,
+            "source_type": "json_import",
+            "import_format": self._getImportPackageFormat(import_package),
+            "attributes": self._getImportPackageSchemaFields(import_package),
+        }
+        rg_id = self.createRecordGroup(rg_info, user_info)
+        prevent_duplicates = True
+        if isinstance(import_request, dict):
+            prevent_duplicates = import_request.get(
+                "preventDuplicates", import_request.get("prevent_duplicates", True)
+            )
+        import_summary = self.importJsonRecords(
+            rg_id,
+            import_request,
+            user_info,
+            prevent_duplicates=prevent_duplicates,
+        )
+        import_summary["record_group_id"] = rg_id
+        return import_summary
 
     ## create/add functions
     def createProject(self, project_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
-        default_team = self.getDefaultTeamForUser(user_email)
+        default_team = self.getDefaultTeamForUser(
+            user_email, user_info.get("default_team")
+        )
         if default_team is None:
             _log.info(f"user {user_email} has no default team")
             return False
@@ -1172,7 +2234,9 @@ class DataManager:
     def createRecordGroup(self, rg_info, user_info):
         ## get user's default team
         user_email = user_info.get("email", "")
-        default_team = self.getDefaultTeamForUser(user_email)
+        default_team = self.getDefaultTeamForUser(
+            user_email, user_info.get("default_team")
+        )
         if default_team is None:
             _log.info(f"user {user_email} has no default team")
             return False
@@ -1203,6 +2267,16 @@ class DataManager:
         user = user_info.get("email", None)
         ## add timestamp to project
         record["dateCreated"] = time.time()
+
+        # Atomically increment the counter and get the next number
+        next_doc = self.db.counters.find_one_and_update(
+            {"_id": "records"},
+            {"$inc": {"record_number": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        record["record_number"] = next_doc["record_number"]
+
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
@@ -1238,24 +2312,82 @@ class DataManager:
             return document
         return None
 
-    def updateUserProjects(self, email, new_data):
-        _log.info(f"updating {email} to be {new_data}")
-        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
-        myquery = {"email": email}
-        newvalues = {"$set": new_data}
-        self.db.users.update_one(myquery, newvalues)
-        # _log.info(f"successfully updated project? cursor is : {cursor}")
-        return "success"
+    def connectRecordGroupProcessor(self, rg_id, processor_id, user_info):
+        _, record_group = self.fetchRecordGroupData(rg_id, user_info)
+        if record_group is None:
+            raise PermissionError("User does not have access to this record group.")
+        if not processor_id:
+            raise ValueError("Processor ID is required.")
 
-    def updateRecordReviewStatus(self, record_id, review_status, user_info):
-        new_data = {"review_status": review_status}
-        self.updateRecord(
-            record_id,
-            new_data,
-            "record",
-            user_info,
-            calling_function="updateRecordReviewStatus",
+        processor = self.getProcessorById(processor_id, user_info)
+        if not processor:
+            raise ValueError("Processor not found.")
+
+        processor_document_type = (
+            processor.get("documentType")
+            or processor.get("displayName")
+            or processor.get("name")
+            or "Connected Processor"
         )
+        update = {
+            "processorId": processor.get("processorId") or processor_id,
+            "documentType": processor_document_type,
+            "attributes": processor.get("attributes") or [],
+            "source_type": record_group.get("source_type") or "processor_connected",
+        }
+        return self.updateRecordGroup(rg_id, update, user_info)
+
+    def fetchRecordForUser(self, record_id, user_info):
+        try:
+            record = self.getDocument("records", {"_id": ObjectId(record_id)})
+        except Exception:
+            return None
+        if not record:
+            return None
+        rg_id = record.get("record_group_id")
+        if rg_id not in self.getUserRecordGroups(user_info):
+            return None
+        record["_id"] = str(record["_id"])
+        return record
+
+    def getRecordDisplayImageUrls(self, record):
+        image_urls = []
+        rg_id = record.get("record_group_id")
+        record_id = str(record.get("_id"))
+        for image in record.get("image_files") or []:
+            if util.imageIsValid(image):
+                image_urls.append(get_document_image(rg_id, record_id, image))
+        return image_urls
+
+    def appendRecordImages(self, record_id, image_files, user_info):
+        record = self.fetchRecordForUser(record_id, user_info)
+        if record is None:
+            raise PermissionError("User does not have access to this record.")
+
+        existing_image_files = record.get("image_files") or []
+        next_image_files = existing_image_files[:]
+        for image_file in image_files:
+            if image_file and image_file not in next_image_files:
+                next_image_files.append(image_file)
+
+        self.db.records.update_one(
+            {"_id": ObjectId(record_id)},
+            {"$set": {"image_files": next_image_files}},
+        )
+        self.recordHistory(
+            "appendRecordImages",
+            user_info.get("email", None),
+            record_id=record_id,
+            notes={
+                "added_image_count": len(next_image_files) - len(existing_image_files)
+            },
+        )
+        record["image_files"] = next_image_files
+        return {
+            "record_id": record_id,
+            "image_files": next_image_files,
+            "img_urls": self.getRecordDisplayImageUrls(record),
+        }
 
     @time_it
     def updateRecordInternal(self, record_id, field, value):
@@ -1310,235 +2442,39 @@ class DataManager:
                 ## call cleaning functions
                 if field_to_clean:
                     attributeToClean = new_data["v"]
-                    self.cleanAttribute(attributeToClean, record_id=record_id)
+                    self.cleanAttribute(
+                        attributeToClean,
+                        record_id=record_id,
+                        user_info=user_info,
+                    )
 
                 if update_type == "attribute":
-                    is_subattribute = new_data.get("isSubattribute", False)
-                    idx = new_data.get("idx", None)
                     v = new_data.get("v", None)
                     reviewStatus = new_data.get("review_status", None)
-                    subIndex = new_data.get("subIndex", None)
-                    ## update can be in the form of 'attributesList.[idx]?.subattributes?.[subidx]
-                    if not is_subattribute:
-                        attr_key = f"attributesList.{idx}"
-                        data_update = {
-                            attr_key: v,
-                        }
-                        update_key_parts = attr_key.split(".")
-                    else:
-                        attr_key = f"attributesList.{idx}.subattributes.{subIndex}"
-                        data_update = {
-                            attr_key: v,
-                        }
-                        update_key_parts = attr_key.split(".")
+                    field_indexes = self._getFieldIndexes(new_data)
+                    if len(field_indexes) == 0 or field_indexes[-1] < 0:
+                        _log.info("attribute update missing valid indexes")
+                        return False
+
+                    attr_key = util.attribute_index_path_to_mongo_path(
+                        field_indexes[0], field_indexes[1:]
+                    )
+                    data_update = {
+                        attr_key: v,
+                    }
+                    update_key_parts = attr_key.split(".")
                     if reviewStatus == "unreviewed":
                         data_update["review_status"] = "incomplete"
 
                 elif is_insert_delete_or_coordinates_update:
-                    fieldID = new_data.get("fieldID")
-                    parentAttribute = new_data.get("parentAttribute")
-                    k = fieldID.get("key")
-                    primaryIndex = fieldID.get("primaryIndex")
-                    isSubattribute = fieldID.get("isSubattribute")
-                    subIndex = fieldID.get("subIndex")
-                    if update_type == "insertField":
-                        if not isSubattribute:
-                            newIndex = primaryIndex + 1
-                            newField = {
-                                "key": k,
-                                "ai_confidence": None,
-                                "confidence": None,
-                                "raw_text": None,
-                                "text_value": None,
-                                "value": "",
-                                "normalized_vertices": None,
-                                "normalized_value": None,
-                                "subattributes": None,
-                                "isSubattribute": False,
-                                "edited": False,
-                                "page": None,
-                                "user_added": True,
-                            }
-                            data_update = {
-                                "$push": {
-                                    "attributesList": {
-                                        "$each": [newField],
-                                        "$position": newIndex,
-                                    }
-                                }
-                            }
-                        else:
-                            newSubIndex = subIndex + 1
-                            newSubField = {
-                                "key": k,
-                                "ai_confidence": None,
-                                "confidence": None,
-                                "raw_text": None,
-                                "text_value": None,
-                                "value": "",
-                                "normalized_vertices": None,
-                                "normalized_value": None,
-                                "subattributes": None,
-                                "isSubattribute": True,
-                                "edited": False,
-                                "page": None,
-                                "user_added": True,
-                                "topLevelAttribute": parentAttribute,
-                            }
-                            parent_attribute_doc = self.db.records.find_one(
-                                {"_id": _id},
-                                {
-                                    "_id": 0,
-                                    "attributesList": {"$slice": [primaryIndex, 1]},
-                                },
-                            )
-                            parent_attribute = (
-                                parent_attribute_doc.get("attributesList", [None])[0]
-                                if parent_attribute_doc
-                                else None
-                            )
-                            _log.info(f"parent_attribute: {parent_attribute}")
-                            if not parent_attribute:
-                                _log.info(
-                                    f"Error: tried to insert child attribute to a parent attribute that doesn't exist"
-                                )
-                                return False
-                            subattributes = parent_attribute.get("subattributes")
-                            if subattributes is not None:
-                                data_update = {
-                                    "$push": {
-                                        f"attributesList.{primaryIndex}.subattributes": {
-                                            "$each": [newSubField],
-                                            "$position": newSubIndex,
-                                        }
-                                    }
-                                }
-                            else:
-                                data_update = {
-                                    "$set": {
-                                        f"attributesList.{primaryIndex}.subattributes": [
-                                            newSubField
-                                        ]
-                                    }
-                                }
-                    elif update_type == "deleteField":
-                        if not isSubattribute:
-                            data_update = {
-                                "attributesList": {
-                                    "$concatArrays": [
-                                        {"$slice": ["$attributesList", primaryIndex]},
-                                        {
-                                            "$slice": [
-                                                "$attributesList",
-                                                primaryIndex + 1,
-                                                {"$size": "$attributesList"},
-                                            ]
-                                        },
-                                    ]
-                                }
-                            }
-                        else:
-                            data_update = {
-                                "attributesList": {
-                                    "$let": {
-                                        "vars": {
-                                            "targetAttribute": {
-                                                "$arrayElemAt": [
-                                                    "$attributesList",
-                                                    primaryIndex,
-                                                ]
-                                            }
-                                        },
-                                        "in": {
-                                            "$concatArrays": [
-                                                {
-                                                    "$slice": [
-                                                        "$attributesList",
-                                                        primaryIndex,
-                                                    ]
-                                                },
-                                                [
-                                                    {
-                                                        "$mergeObjects": [
-                                                            "$$targetAttribute",
-                                                            {
-                                                                "subattributes": {
-                                                                    "$concatArrays": [
-                                                                        {
-                                                                            "$slice": [
-                                                                                "$$targetAttribute.subattributes",
-                                                                                subIndex,
-                                                                            ]
-                                                                        },
-                                                                        {
-                                                                            "$slice": [
-                                                                                "$$targetAttribute.subattributes",
-                                                                                subIndex
-                                                                                + 1,
-                                                                                {
-                                                                                    "$size": "$$targetAttribute.subattributes"
-                                                                                },
-                                                                            ]
-                                                                        },
-                                                                    ]
-                                                                }
-                                                            },
-                                                        ]
-                                                    }
-                                                ],
-                                                {
-                                                    "$slice": [
-                                                        "$attributesList",
-                                                        primaryIndex + 1,
-                                                        {"$size": "$attributesList"},
-                                                    ]
-                                                },
-                                            ]
-                                        },
-                                    }
-                                }
-                            }
-                    elif update_type == "updateFieldCoordinates":
-                        current_time = time.time()
-                        new_coordinates = new_data.get("new_coordinates")
-                        pageNumber = new_data.get("pageNumber")
-                        if not isSubattribute:
-                            data_update = {
-                                f"attributesList.{primaryIndex}.user_provided_coordinates": new_coordinates
-                            }
-                            data_update[
-                                f"attributesList.{primaryIndex}.page"
-                            ] = pageNumber
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdated"
-                            ] = current_time
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdatedUser"
-                            ] = user
-                            data_update[f"attributesList.{primaryIndex}.edited"] = True
-                        else:
-                            data_update = {
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.user_provided_coordinates": new_coordinates
-                            }
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.page"
-                            ] = pageNumber
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdated"
-                            ] = current_time
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdated"
-                            ] = current_time
-                            data_update[
-                                f"attributesList.{primaryIndex}.lastUpdatedUser"
-                            ] = user
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.lastUpdatedUser"
-                            ] = user
-                            data_update[f"attributesList.{primaryIndex}.edited"] = True
-                            data_update[
-                                f"attributesList.{primaryIndex}.subattributes.{subIndex}.edited"
-                            ] = True
+                    data_update = self._updateRecordAttributesForFieldOperation(
+                        _id,
+                        new_data,
+                        update_type,
+                        user=user,
+                    )
+                    if not data_update:
+                        return False
 
                 elif update_type == "verification_status" and new_data.get(
                     "review_status", None
@@ -1566,15 +2502,12 @@ class DataManager:
                     )
                 elif update_type == "review_status":
                     data_update["review_status"] = new_data["review_status"]
+                elif update_type == "name" or update_type == "verification_status":
+                    data_update[update_type] = new_data[update_type]
                 elif update_type != "attributesList":
                     _log.info(f"invalid update type: {update_type}")
                     return False
-                if update_type == "insertField":
-                    update_query = data_update
-                elif update_type == "deleteField":
-                    update_query = [{"$set": data_update}]
-                else:
-                    update_query = {"$set": data_update}
+                update_query = {"$set": data_update}
             if not forceUpdate:
                 ## fetch record's current data so we know what changed in the future
                 try:
@@ -1720,23 +2653,15 @@ class DataManager:
                 {
                     "_id": 1,
                     "processorId": 1,
+                    "attributes": 1,
                 },
             )
             rg_processor_attribute_map = {}
             for rg in cursor:
                 rg_id = str(rg["_id"])
-                google_id = str(rg.get("processorId"))
-                if not google_id:
-                    rg_processor_attribute_map[rg_id] = {}
-                    continue
-
-                processor_document = self.getProcessorById(google_id)
-                if not processor_document:
-                    print("processor lookup returned no document for ")
-                    rg_processor_attribute_map[rg_id] = {}
-                    continue
-
-                processor_attributes = processor_document.get("attributes", None) or []
+                processor_attributes = self.getRecordGroupSchemaAttributes(
+                    rg_document=rg
+                )
                 rg_processor_attribute_map[
                     rg_id
                 ] = util.convert_processor_attributes_to_dict(processor_attributes)
@@ -1748,54 +2673,40 @@ class DataManager:
 
     def resetRecord(self, record_id, record_data, user):
         # print(f"resetting record: {record_id}")
-        record_attributes = record_data["attributesList"]
-        indexes_to_delete = []
-        idx = 0
-        for attribute in record_attributes:
-            if attribute.get("user_added", False):
-                indexes_to_delete.append(idx)
-                idx += 1
-                continue
-            attribute_name = attribute["key"]
-            original_value = attribute["raw_text"]
+        record_attributes = util.normalize_record_attribute_tree(
+            record_data["attributesList"]
+        )
+
+        def reset_attribute(attribute):
+            original_value = attribute.get("raw_text")
             attribute["value"] = original_value
-            attribute["confidence"] = attribute["ai_confidence"]
+            attribute["confidence"] = attribute.get("ai_confidence", None)
             attribute["edited"] = False
             attribute["cleaning_error"] = False
             attribute["uncleaned_value"] = None
             attribute["cleaned"] = False
             attribute["last_cleaned"] = None
-            ## check for subattributes and reset those
-            if attribute["subattributes"] is not None:
-                record_subattributes = attribute["subattributes"]
-                subindexes_to_delete = []
-                subidx = 0
-                for subattribute in record_subattributes:
-                    if subattribute.get("user_added", False):
-                        subindexes_to_delete.append(subidx)
-                        subidx += 1
-                        continue
-                    original_value = subattribute["raw_text"]
-                    subattribute["value"] = original_value
-                    subattribute["confidence"] = subattribute.get("ai_confidence", None)
-                    subattribute["edited"] = False
-                    subattribute["cleaning_error"] = False
-                    subattribute["uncleaned_value"] = None
-                    subattribute["cleaned"] = False
-                    subattribute["last_cleaned"] = None
-                    subidx += 1
-                subindexes_to_delete.reverse()
-                for i in subindexes_to_delete:
-                    _log.info(f"deleting {i}th subfield: {record_subattributes[i]}")
-                    del record_subattributes[i]
-            idx += 1
-        indexes_to_delete.reverse()
-        for i in indexes_to_delete:
-            _log.info(f"deleting {i}th field: {record_attributes[i]}")
-            del record_attributes[i]
+
+            kept_subattributes = []
+            for subattribute in attribute.get("subattributes") or []:
+                if subattribute.get("user_added", False):
+                    _log.info(f"deleting user-added subfield: {subattribute}")
+                    continue
+                reset_attribute(subattribute)
+                kept_subattributes.append(subattribute)
+            attribute["subattributes"] = kept_subattributes
+
+        kept_attributes = []
+        for attribute in record_attributes:
+            if attribute.get("user_added", False):
+                _log.info(f"deleting user-added field: {attribute}")
+                continue
+            reset_attribute(attribute)
+            kept_attributes.append(attribute)
+
         update = {
             "review_status": "unreviewed",
-            "attributesList": record_attributes,
+            "attributesList": kept_attributes,
             "verification_status": None,
         }
         # history is recorded in the function that calls this
@@ -1854,7 +2765,7 @@ class DataManager:
         ## add records to deleted records collection and remove from records collection
         background_tasks.add_task(
             self._deleteRecords,
-            query={"record_group": rg_id},
+            query={"record_group_id": rg_id},
             deletedBy=user_info,
         )
 
@@ -1877,6 +2788,45 @@ class DataManager:
         )
         return "success"
 
+    def deleteRecordsByRecordGroup(self, rg_id, filter_by, user_info):
+        query = dict(filter_by or {})
+        query["record_group_id"] = rg_id
+        self._deleteRecords(query=query, deletedBy=user_info)
+        self.recordHistory(
+            "deleteRecordGroupRecords",
+            user=user_info.get("email", None),
+            rg_id=rg_id,
+            notes=query,
+        )
+        return "success"
+
+    def _moveDeletedRecordImages(self, record_document):
+        record_id = str(record_document.get("_id", ""))
+        record_group_id = record_document.get("record_group_id")
+        if not record_id or not record_group_id:
+            _log.info(
+                f"cannot move deleted record images without record id and record group id: {record_document}"
+            )
+            return
+
+        try:
+            moved = storage_api.move_record_images_to_deleted(
+                record_group_id, record_id
+            )
+            if moved:
+                _log.info(
+                    f"moved deleted record images from "
+                    f"{storage_api.get_record_image_directory(record_group_id, record_id)} "
+                    f"to {storage_api.get_deleted_record_image_directory(record_id)}"
+                )
+            else:
+                _log.info(
+                    f"no record image directory found at "
+                    f"{storage_api.get_record_image_directory(record_group_id, record_id)}"
+                )
+        except Exception as e:
+            _log.error(f"unable to move deleted record images for {record_id}: {e}")
+
     def _deleteRecords(self, query, deletedBy):
         user = deletedBy.get("email", None)
         _log.info(f"deleting records with query: {query}")
@@ -1886,10 +2836,12 @@ class DataManager:
             for record_document in record_cursor:
                 record_document["deleted_by"] = user
                 self.db.deleted_records.insert_one(record_document)
+                # Storage key layout is owned by storage_api.
+                self._moveDeletedRecordImages(record_document)
         except Exception as e:
             _log.error(f"unable to move all deleted records: {e}")
 
-        ## Delete records associated with this project
+        ## Delete active records after archiving their documents and images.
         resp = self.db.records.delete_many(query)
         _log.info(f"delete resp = {resp}")
 
@@ -1960,9 +2912,10 @@ class DataManager:
         output_filename=None,
         request_origin="",
     ):
+        ## TODO: Should we use aliases for export?
+        USE_ALIASES = True
         user = user_info.get("email", None)
         rg_attribute_map = self.create_record_group_processor_attribute_map()
-        ## TODO: check if user is a part of the team who owns this project
         today = time.time()
         output_dir = self.app_settings.export_dir
         if output_filename is None:
@@ -1972,6 +2925,64 @@ class DataManager:
         attributes = ["file"]
         subattributes = []
         record_attributes = []
+
+        def add_subattributes_to_csv_row(
+            record_attribute,
+            subattribute_columns,
+            parent_column_name,
+            document_subattributes,
+            record_group_id,
+        ):
+            for document_subattribute in document_subattributes or []:
+                subattribute_key = document_subattribute["key"]
+
+                ## TODO: use alias?
+                rg_schema = rg_attribute_map.get(record_group_id, {})
+                subattribute_alias = self._getAttributeAlias(
+                    document_subattribute, rg_schema
+                )
+                # if not subattribute_alias:
+                #     _log.info(f"could not find subattribute_alias for {subattribute_key}")
+                if USE_ALIASES and subattribute_alias:
+                    subattribute_name = f"{parent_column_name}[{subattribute_alias}"
+                else:
+                    subattribute_name = f"{parent_column_name}[{subattribute_key}"
+
+                original_subattribute_name = subattribute_name
+                i = 2
+                while (
+                    subattribute_name in current_attributes
+                    or subattribute_name in current_parent_attributes
+                ):
+                    ## add a number to the end of the attribute so it
+                    ## is differentiable from other instances of the attribute
+                    subattribute_name = f"{original_subattribute_name}_{i}"
+                    i += 1
+                current_attributes.add(subattribute_name)
+                subattribute_name = f"{subattribute_name}]"
+
+                subattribute_contains_subattributes = len(
+                    document_subattribute.get("subattributes") or []
+                )
+                if not subattribute_contains_subattributes:
+                    record_attribute[subattribute_name] = document_subattribute.get(
+                        "value"
+                    )
+                    if subattribute_name not in subattribute_columns:
+                        subattribute_columns.append(subattribute_name)
+                else:
+                    _log.info(
+                        f"subattribute {subattribute_name} contains subattributes, not adding it"
+                    )
+
+                add_subattributes_to_csv_row(
+                    record_attribute,
+                    subattribute_columns,
+                    subattribute_name,
+                    document_subattribute.get("subattributes") or [],
+                    record_group_id=record_group_id,
+                )
+
         if exportType == "csv":
             for document in records:
                 record_group_id = document["record_group_id"]
@@ -1981,11 +2992,28 @@ class DataManager:
                     current_parent_attributes = set()
                     record_attribute = {}
                     for document_attribute in document.get("attributesList", []):
-                        attribute_name = document_attribute["key"].replace(" ", "")
-                        if attribute_name in selectedColumns or keep_all_columns:
-                            field_schema = rg_attribute_map.get(
-                                record_group_id, {}
-                            ).get(attribute_name)
+                        attribute_key = document_attribute["key"].replace(" ", "")
+
+                        ## TODO: use alias?
+                        rg_schema = rg_attribute_map.get(record_group_id, {})
+                        attribute_alias = self._getAttributeAlias(
+                            document_attribute, rg_schema
+                        )
+                        if USE_ALIASES and attribute_alias:
+                            attribute_name = f"{attribute_alias}"
+                        else:
+                            attribute_name = attribute_key
+
+                        if (
+                            document_attribute["key"] in selectedColumns
+                            or keep_all_columns
+                        ):
+                            field_schema = (
+                                rg_attribute_map.get(record_group_id, {}).get(
+                                    attribute_name
+                                )
+                                or {}
+                            )
                             database_type = field_schema.get("database_data_type")
                             if str(database_type).lower() == "table":
                                 isParent = True
@@ -2003,15 +3031,13 @@ class DataManager:
                                 i += 1
                             if document_attribute.get("subattributes", None):
                                 current_parent_attributes.add(attribute_name)
-                                for document_subattribute in document_attribute[
-                                    "subattributes"
-                                ]:
-                                    subattribute_name = f"{attribute_name}[{document_subattribute['key']}]"
-                                    record_attribute[
-                                        subattribute_name
-                                    ] = document_subattribute["value"]
-                                    if subattribute_name not in subattributes:
-                                        subattributes.append(subattribute_name)
+                                add_subattributes_to_csv_row(
+                                    record_attribute,
+                                    subattributes,
+                                    attribute_name,
+                                    document_attribute.get("subattributes") or [],
+                                    record_group_id=record_group_id,
+                                )
                             elif not isParent:
                                 current_attributes.add(attribute_name)
                                 if attribute_name not in attributes:
@@ -2021,11 +3047,25 @@ class DataManager:
                                 ]
 
                     record_attribute["file"] = document.get("filename", "")
+                    if "record_notes" in selectedColumns or keep_all_columns:
+                        notes_list = document.get("record_notes") or []
+                        active_notes = [
+                            note
+                            for note in notes_list
+                            if not note.get("deleted", False)
+                        ]
+                        formatted_notes = []
+                        for note in active_notes:
+                            creator = note.get("creator", "Unknown")
+                            text = note.get("text", "")
+                            formatted_notes.append(f"{creator}: {text}")
+                        record_attribute["record_notes"] = "; ".join(formatted_notes)
+                        if "record_notes" not in attributes:
+                            attributes.append("record_notes")
                     record_attribute["URL"] = f"{request_origin}/record/{document_id}"
                     record_attributes.append(record_attribute)
                 except Exception as e:
                     _log.info(f"unable to add {document_id}: {e}")
-
             # compute the output file directory and name
             with open(output_file, "w", newline="") as csvfile:
                 writer = csv.DictWriter(
@@ -2042,6 +3082,14 @@ class DataManager:
                         attribute_name = document_attribute["key"]
                         if attribute_name in selectedColumns or keep_all_columns:
                             record_attribute[attribute_name] = document_attribute
+                    if "record_notes" in selectedColumns or keep_all_columns:
+                        notes_list = document.get("record_notes") or []
+                        active_notes = [
+                            note
+                            for note in notes_list
+                            if not note.get("deleted", False)
+                        ]
+                        record_attribute["record_notes"] = active_notes
                     record_attribute["file"] = document.get("filename", "")
                     record_attributes.append(record_attribute)
                 except Exception as e:
@@ -2094,35 +3142,26 @@ class DataManager:
 
     @time_it
     def checkIfRecordExists(self, filename, rg_id):
-        ## remove file extension
-        filename = filename.split(".")[0]
-
-        ## query database
-        query = {"filename": {"$regex": f"^{filename}$"}, "record_group_id": rg_id}
-        found_document = self.db.records.count_documents(query)
-        if found_document > 0:
-            return True
-        else:
-            return False
+        return len(self.checkIfRecordsExist([filename], rg_id)) > 0
 
     @time_it
     def checkIfRecordsExist(self, filenames, rg_id):
-        # Convert filenames into regex patterns
+        bases = {self.getFilenameBase(f) for f in filenames if self.getFilenameBase(f)}
+        if not bases:
+            return []
 
-        bases = [f.split(".")[0] for f in filenames]
-
-        query = {
-            "record_group_id": rg_id,
-            "$expr": {
-                "$in": [{"$arrayElemAt": [{"$split": ["$filename", "."]}, 0]}, bases]
-            },
-        }
-
-        record_cursor = self.db.records.find(query, {"filename": 1})
+        record_cursor = self.db.records.find(
+            {"record_group_id": rg_id}, {"filename": 1}
+        )
         duplicate_records = set()
         for document in record_cursor:
-            duplicate_records.add(document["filename"].split(".")[0])
+            filename_base = self.getFilenameBase(document.get("filename", ""))
+            if filename_base in bases:
+                duplicate_records.add(filename_base)
         return list(duplicate_records)
+
+    def getFilenameBase(self, filename):
+        return os.path.splitext(os.path.basename(str(filename or "")))[0]
 
     def checkRecordGroupValidity(self, rg_id):
         try:
@@ -2185,6 +3224,27 @@ class DataManager:
                 self._annotateHistoryPayloadNumericTypes(value)
 
         return payload
+
+    def _getAttributeAlias(self, attribute, schema):
+        attribute_key = attribute.get("key")
+        # _log.info(f"{attribute}")
+        parentAttribute = attribute.get("parentAttribute") or attribute.get(
+            "topLevelAttribute"
+        )
+        schemaKey = (
+            attribute_key
+            if not parentAttribute
+            else f"{parentAttribute}::{attribute_key}"
+        )
+        attribute_schema = schema.get(schemaKey)
+        if attribute_schema:
+            alias = attribute_schema.get("alias")
+            _log.info(f"we found an attribute schema: {alias}")
+            return alias
+        else:
+            _log.info(f"NO attribute schema for: {schemaKey}")
+            _log.info(attribute)
+        return None
 
     def _buildHistoryItem(
         self,
@@ -2272,13 +3332,17 @@ class DataManager:
         except Exception as e:
             _log.error(f"unable to record bulk history items: {e}")
 
-    def cleanAttribute(self, attribute, record_id=None, rg_id=None):
+    def cleanAttribute(self, attribute, record_id=None, rg_id=None, user_info=None):
         if record_id is None and rg_id is None:
             return None
         if rg_id is not None:
-            _, _, processor_attributes = self.getProcessorByRecordGroupID(rg_id)
+            _, _, processor_attributes = self.getProcessorByRecordGroupID(
+                rg_id, user=user_info
+            )
         else:
-            _, _, processor_attributes = self.getProcessorByRecordID(record_id)
+            _, _, processor_attributes = self.getProcessorByRecordID(
+                record_id, user=user_info
+            )
 
         ## convert processor attributes to dict
         processor_attributes = util.convert_processor_attributes_to_dict(
@@ -2286,9 +3350,7 @@ class DataManager:
         )
 
         if attribute.get("isSubattribute", False):
-            parentAttribute = attribute.get("topLevelAttribute", "")
-            subattributeKey = attribute["key"]
-            subattribute_identifier = f"{parentAttribute}::{subattributeKey}"
+            subattribute_identifier = util.get_attribute_identifier(attribute)
             util.cleanRecordAttribute(
                 processor_attributes=processor_attributes,
                 attribute=attribute,
@@ -2304,18 +3366,26 @@ class DataManager:
         try:
             if location == "record":
                 _log.info(f"cleaning record {_id}")
-                _, _, processor_attributes = self.getProcessorByRecordID(_id)
+                _, _, processor_attributes = self.getProcessorByRecordID(
+                    _id, user=user_info
+                )
                 object_id = ObjectId(_id)
                 query = {"_id": object_id}
                 documents.append(self.db.records.find(query).next())
             elif location == "record_group":
                 _log.info(f"cleaning record group {_id}")
-                _, _, processor_attributes = self.getProcessorByRecordGroupID(_id)
+                _, _, processor_attributes = self.getProcessorByRecordGroupID(
+                    _id, user=user_info
+                )
                 cursor = self.db.records.find({"record_group_id": _id})
                 for each in cursor:
                     documents.append(each)
             else:
                 _log.error(f"clean {location} is not supported")
+                return False
+
+            if not processor_attributes:
+                _log.info(f"no schema-backed cleaning rules found for {location} {_id}")
                 return False
 
             ## convert processor attributes to dict
@@ -2354,6 +3424,79 @@ class DataManager:
             self.recordHistoryBulk(history_ops)
         except Exception as e:
             _log.error(f"error on cleaning {location}: {e}")
+
+    def getRecordImageFileUrlPairs(self, record_id, rg_id):
+        """
+        Get the URLs for all images in a record.
+
+        Args:
+            record_id: The record ID
+            rg_id: The record group ID
+
+        Returns:
+            A list of tuples: [(image_filename, image_url), ...]
+        """
+        try:
+            _id = ObjectId(record_id)
+            document = self.db.records.find_one({"_id": _id})
+            if not document:
+                return []
+
+            image_urls = []
+            image_files = document.get("image_files", [])
+            for image in image_files:
+                if util.imageIsValid(image):
+                    image_url = get_document_image(rg_id, record_id, image)
+                    image_urls.append((image, image_url))
+
+            # Fallback to filename if no image_files
+            if len(image_urls) == 0 and document.get("filename"):
+                image_url = get_document_image(rg_id, record_id, document["filename"])
+                image_urls.append((document["filename"], image_url))
+
+            return image_urls
+        except Exception as e:
+            _log.error(f"Error getting record image URLs: {e}")
+            return []
+
+    def updateRecordImageFiles(self, record_id, new_image_filenames, user_info):
+        """
+        Update the image_files list for a record after rotation.
+
+        Args:
+            record_id: The record ID
+            new_image_filenames: List of new image filenames
+            user_info: User information for logging/history
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            _id = ObjectId(record_id)
+            search_query = {"_id": _id}
+            user = user_info.get("email", None) if user_info else None
+
+            # Update the image_files field
+            update_query = {"$set": {"image_files": new_image_filenames}}
+            result = self.db.records.update_one(search_query, update_query)
+
+            if result.modified_count > 0:
+                # Record history of the update
+                self.recordHistory(
+                    action="rotateImages",
+                    user=user,
+                    record_id=record_id,
+                    query={"image_files": new_image_filenames},
+                    calling_function="updateRecordImageFiles",
+                )
+                _log.info(f"Updated image files for record {record_id}")
+                return True
+            else:
+                _log.warning(f"No records updated for {record_id}")
+                return False
+        except Exception as e:
+            _log.error(f"Error updating record image files: {e}")
+            return False
 
 
 data_manager = DataManager()

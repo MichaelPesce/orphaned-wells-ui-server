@@ -3,20 +3,43 @@ storage_api.py
 
 Handles the file storage for uploaded documents through OGRRE.
 Supports configurations for google cloud storage and local file storage.
+
+Also includes utilities for rotating images stored in either backend.
+
+Storage keys are relative paths inside the configured backend. For Google
+Cloud Storage, keys are blob names in STORAGE_BUCKET_NAME. For local storage,
+keys are paths under LOCAL_STORAGE_ROOT.
+
+Record display images use this canonical layout:
+    uploads/{record-group-id}/{record-id}/{image-files}
+
+When a record is deleted, its whole record image directory is moved to:
+    deleted/{record-id}/{image-files}
+
+Keep record-image path changes centralized in this module so callers do not
+need to know the storage backend or key layout.
 """
 
 import datetime
+import io
 import logging
 import os
+import re
 import sys
 from pathlib import Path
-from urllib.parse import quote
+from typing import NamedTuple
+from urllib.parse import quote, urlparse, unquote
 
 import aiofiles
 import aiohttp
 from gcloud.aio.storage import Storage
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
 
 _log = logging.getLogger(__name__)
 
@@ -30,6 +53,9 @@ LOCAL_STORAGE_ROOT = os.path.expanduser(
 LOCAL_STORAGE_URL_BASE = os.getenv(
     "LOCAL_STORAGE_URL_BASE", "http://localhost:8001/local-storage"
 ).rstrip("/")
+
+UPLOADS_PREFIX = "uploads"
+DELETED_PREFIX = "deleted"
 
 
 def _storage_path(key):
@@ -165,6 +191,106 @@ def delete_directory(prefix, bucket_name=BUCKET_NAME):
     return True
 
 
+def move_directory(prefix, destination_prefix, bucket_name=BUCKET_NAME):
+    """
+    Move all files under one storage key prefix to another prefix.
+
+    GCS does not have real directories, so this performs copy-then-delete for
+    every blob under the source prefix. Local storage performs the equivalent
+    filesystem move while preserving paths below the source directory.
+    """
+    source_prefix = prefix.strip("/")
+    target_prefix = destination_prefix.strip("/")
+
+    if not source_prefix or not target_prefix:
+        raise ValueError("source and destination storage prefixes are required")
+
+    if _is_local():
+        source = _storage_path(source_prefix)
+        destination = _storage_path(target_prefix)
+        if not os.path.exists(source):
+            _log.info(f"local storage prefix not found: {source}")
+            return False
+
+        if os.path.isfile(source):
+            files_to_move = [(source, os.path.basename(source))]
+            cleanup_root = os.path.dirname(source)
+        else:
+            files_to_move = []
+            cleanup_root = source
+            for root, _, files in os.walk(source):
+                for name in files:
+                    source_file = os.path.join(root, name)
+                    relative_path = os.path.relpath(source_file, source)
+                    files_to_move.append((source_file, relative_path))
+
+        moved_files = 0
+        for source_file, relative_path in files_to_move:
+            destination_file = os.path.join(destination, relative_path)
+            _ensure_local_dir(destination_file)
+            os.replace(source_file, destination_file)
+            moved_files += 1
+
+        for root, _, _ in os.walk(cleanup_root, topdown=False):
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
+
+        return moved_files > 0
+
+    _log.info(
+        f"moving storage prefix {source_prefix} to {target_prefix} in google storage"
+    )
+    _, bucket = _get_bucket(bucket_name=bucket_name)
+    source_prefix = f"{source_prefix.rstrip('/')}/"
+    target_prefix = f"{target_prefix.rstrip('/')}/"
+    blobs = list(bucket.list_blobs(prefix=source_prefix))
+    moved_files = 0
+
+    for blob in blobs:
+        relative_path = blob.name[len(source_prefix) :]
+        if not relative_path:
+            continue
+        destination_name = f"{target_prefix}{relative_path}"
+        bucket.copy_blob(blob, bucket, destination_name)
+        blob.delete()
+        moved_files += 1
+
+    return moved_files > 0
+
+
+def get_record_image_directory(record_group_id, record_id):
+    """
+    Return the storage prefix for display images generated for one record:
+        uploads/{record-group-id}/{record-id}
+    """
+    return f"{UPLOADS_PREFIX}/{record_group_id}/{record_id}"
+
+
+def get_deleted_record_image_directory(record_id):
+    """
+    Return the storage prefix for display images moved out of active uploads:
+        deleted/{record-id}
+    """
+    return f"{DELETED_PREFIX}/{record_id}"
+
+
+def move_record_images_to_deleted(record_group_id, record_id, bucket_name=BUCKET_NAME):
+    """
+    Move a record's display-image directory from active uploads to deleted
+    storage. This is the record-delete archive path; callers should not build
+    record image keys themselves.
+    """
+    source_prefix = get_record_image_directory(record_group_id, record_id)
+    destination_prefix = get_deleted_record_image_directory(record_id)
+    return move_directory(
+        source_prefix,
+        destination_prefix,
+        bucket_name=bucket_name,
+    )
+
+
 def get_file_url(key, bucket_name=BUCKET_NAME):
     if _is_local():
         return f"{LOCAL_STORAGE_URL_BASE}/{quote(key, safe='/')}"
@@ -184,7 +310,7 @@ def get_file_url(key, bucket_name=BUCKET_NAME):
 
 
 def get_document_image(rg_id, record_id, filename, bucket_name=BUCKET_NAME):
-    path = f"uploads/{rg_id}/{record_id}/{filename}"
+    path = f"{get_record_image_directory(rg_id, record_id)}/{filename}"
     return get_file_url(path, bucket_name=bucket_name)
 
 
@@ -302,3 +428,209 @@ def download_file_bytes(key, bucket_name=None, storage_service_key=None):
     )
     blob = bucket.blob(key)
     return blob.download_as_bytes()
+
+
+# ------------------------------------------------------------------------------
+# Image rotation
+# ------------------------------------------------------------------------------
+
+
+class GCSLocation(NamedTuple):
+    bucket: str
+    blob_path: str
+
+
+def _require_pillow():
+    if Image is None:  # pragma: no cover
+        raise ImportError("Pillow is required for rotating images.")
+
+
+def parse_gcs_url(url: str) -> GCSLocation:
+    """
+    Parse a GCS URL into bucket + blob_path, ignoring query params.
+
+    Supports:
+      - gs://bucket/path/to/file.jpg
+      - https://storage.googleapis.com/bucket/path/to/file.jpg
+      - signed URLs like:
+        https://storage.googleapis.com/bucket/path/to/file.png?X-Goog-...
+    """
+    parsed = urlparse(url)
+
+    # gs://bucket/path/to/object
+    if parsed.scheme == "gs":
+        bucket = parsed.netloc
+        blob_path = unquote(parsed.path.lstrip("/"))
+        return GCSLocation(bucket=bucket, blob_path=blob_path)
+
+    # https://storage.googleapis.com/bucket/path/to/object
+    if parsed.scheme in ("http", "https") and parsed.netloc == "storage.googleapis.com":
+        # parsed.path is "/bucket/path/to/object"
+        path = unquote(parsed.path.lstrip("/"))
+        bucket, _, blob_path = path.partition("/")
+        if not bucket or not blob_path:
+            raise ValueError(f"Invalid GCS URL format: {url!r}")
+        return GCSLocation(bucket=bucket, blob_path=blob_path)
+
+    # https://{bucket}.storage.googleapis.com/path/to/object
+    m = re.match(r"^([^.]+)\.storage\.googleapis\.com$", parsed.netloc)
+    if parsed.scheme in ("http", "https") and m:
+        bucket = m.group(1)
+        blob_path = unquote(parsed.path.lstrip("/"))
+        if not blob_path:
+            raise ValueError(f"Invalid GCS URL format: {url!r}")
+        return GCSLocation(bucket=bucket, blob_path=blob_path)
+
+    raise ValueError(
+        f"Unrecognised GCS URL format: {url!r}. "
+        "Expected 'gs://bucket/path' or "
+        "'https://storage.googleapis.com/bucket/path'."
+    )
+
+
+def rotate_image(image, degrees: float, expand: bool = True):
+    """
+    Rotate a PIL Image by the given number of degrees.
+    """
+    _require_pillow()
+    return image.rotate(degrees, expand=expand)
+
+
+def _build_destination_path(blob_path: str, suffix: str) -> str:
+    """
+    Insert *suffix* before the file extension of *blob_path*.
+
+    Example:
+        "photos/beach.jpg", "_rotated"  →  "photos/beach_rotated.jpg"
+    """
+    # Keep same behavior as the incoming rotator
+    filename = blob_path.rsplit("/", 1)[-1]
+    if "." in filename:
+        base, ext = blob_path.rsplit(".", 1)
+        return f"{base}{suffix}.{ext}"
+    return f"{blob_path}{suffix}"
+
+
+def _guess_format_and_content_type(key: str):
+    ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
+    pil_format_map = {
+        "jpg": "JPEG",
+        "jpeg": "JPEG",
+        "png": "PNG",
+        "gif": "GIF",
+        "webp": "WEBP",
+        "bmp": "BMP",
+        "tif": "TIFF",
+        "tiff": "TIFF",
+    }
+    pil_format = pil_format_map.get(ext, "JPEG")
+
+    content_type_map = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+        "bmp": "image/bmp",
+        "tif": "image/tiff",
+        "tiff": "image/tiff",
+    }
+    content_type = content_type_map.get(ext, "image/jpeg")
+    return pil_format, content_type
+
+
+def _load_pil_image_from_bytes(image_bytes: bytes):
+    _require_pillow()
+    image = Image.open(io.BytesIO(image_bytes))
+    image.load()  # ensure fully decoded
+    return image
+
+
+def _save_pil_image_to_bytes(image, pil_format: str) -> bytes:
+    buf = io.BytesIO()
+    image.save(buf, format=pil_format)
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def rotate_images_in_storage(
+    image_keys_or_urls: list[str],
+    degrees: float,
+    *,
+    overwrite: bool = True,
+    destination_suffix: str = "_rotated",
+    expand: bool = True,
+    bucket_name: str = BUCKET_NAME,
+    storage_service_key: str | None = None,
+) -> dict[str, str]:
+    """
+    Rotate images stored in either local filesystem storage or Google Cloud Storage.
+
+    Inputs may be either:
+      - Storage keys (e.g. "uploads/rg1/rec1/image.jpg")
+      - GCS URLs (gs://... or https://storage.googleapis.com/... )
+
+    Returns:
+        A dict mapping each input to the destination URL (local URL for local backend,
+        and signed URL for cloud backend).
+    """
+    results: dict[str, str] = {}
+
+    for original in image_keys_or_urls:
+        _log.info(f"[rotate_images_in_storage] Processing: {original}")
+
+        if original.startswith("gs://") or original.startswith(
+            "https://storage.googleapis.com/"
+        ):
+            loc = parse_gcs_url(original)
+            src_bucket = loc.bucket
+            src_key = loc.blob_path
+        else:
+            src_bucket = bucket_name
+            src_key = original
+
+        dest_key = (
+            src_key
+            if overwrite
+            else _build_destination_path(src_key, destination_suffix)
+        )
+
+        # Download bytes using existing storage API read helper
+        if _is_local():
+            src_bytes = download_file_bytes(src_key)
+        else:
+            src_bytes = download_file_bytes(
+                src_key, bucket_name=src_bucket, storage_service_key=storage_service_key
+            )
+
+        image = _load_pil_image_from_bytes(src_bytes)
+
+        rotated = rotate_image(image, degrees, expand=expand)
+
+        pil_format, content_type = _guess_format_and_content_type(dest_key)
+
+        # JPEG cannot represent alpha
+        if pil_format == "JPEG" and rotated.mode in ("RGBA", "LA", "P"):
+            rotated = rotated.convert("RGB")
+
+        rotated_bytes = _save_pil_image_to_bytes(rotated, pil_format=pil_format)
+
+        # Upload back to the appropriate storage backend
+        if _is_local():
+            destination = _storage_path(dest_key)
+            _ensure_local_dir(destination)
+            with open(destination, "wb") as f:
+                f.write(rotated_bytes)
+        else:
+            _, dest_bucket = _get_bucket(
+                bucket_name=src_bucket, storage_service_key=storage_service_key
+            )
+            blob = dest_bucket.blob(dest_key)
+            blob.upload_from_string(rotated_bytes, content_type=content_type)
+
+        dest_url = get_file_url(dest_key, bucket_name=src_bucket)
+        results[original] = dest_url
+
+        _log.info(f"[rotate_images_in_storage]   Saved to: {dest_url}")
+
+    return results

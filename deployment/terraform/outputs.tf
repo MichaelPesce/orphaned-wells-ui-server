@@ -1,8 +1,6 @@
-# module "backend_vms" {
-#   for_each = local.collaborators
-# }
-
 output "server_ips" {
+  description = "Enabled legacy VM external IPs. GKE backend IPs are exposed separately by gke_backend_static_ips."
+
   value = {
     for name, vm in module.backend_vms :
     name => vm.ip
@@ -10,12 +8,78 @@ output "server_ips" {
 }
 
 output "isgs_ip" {
-  value = module.backend_vms["isgs"].ip
+  description = "Legacy ISGS VM external IP, when that legacy VM is enabled."
+
+  value = try(module.backend_vms["isgs"].ip, null)
 }
 
 output "dns_names" {
-  value = {
+  description = "Primary backend DNS records, including GKE-owned records and any remaining legacy VM-owned records."
+
+  value = merge({
     for name, vm in module.backend_vms :
     name => vm.dns_name
-  }
+    if vm.dns_name != null
+    }, var.enable_gke ? {
+    for name, dns in google_dns_record_set.gke_backend_primary :
+    name => dns.name
+  } : {})
+}
+
+output "gke_cluster_name" {
+  value = var.enable_gke ? google_container_cluster.backend[0].name : null
+}
+
+output "gke_cluster_location" {
+  value = var.enable_gke ? google_container_cluster.backend[0].location : null
+}
+
+output "gke_backend_static_ips" {
+  value = var.enable_gke ? {
+    for name, address in google_compute_global_address.gke_backend :
+    name => address.address
+  } : {}
+}
+
+output "gke_backend_upload_buckets" {
+  value = var.enable_gke ? {
+    for name, backend in local.gke_backends :
+    name => backend.upload_bucket_name
+  } : {}
+}
+
+output "gke_primary_dns_names" {
+  value = var.enable_gke ? {
+    for name, dns in google_dns_record_set.gke_backend_primary :
+    name => dns.name
+  } : {}
+}
+
+output "gke_test_dns_names" {
+  value = var.enable_gke && var.create_gke_test_dns_records ? {
+    for name, backend in local.gke_test_dns_backends :
+    name => "${backend.test_hostname}."
+  } : {}
+}
+
+output "kubernetes_deploy_targets" {
+  value = var.enable_gke ? {
+    for name, backend in local.gke_backends :
+    name => {
+      cluster_name         = google_container_cluster.backend[0].name
+      cluster_location     = google_container_cluster.backend[0].location
+      namespace            = backend.namespace
+      host                 = backend.hostname
+      test_host            = backend.test_hostname
+      static_ip_name       = google_compute_global_address.gke_backend[name].name
+      static_ip_address    = google_compute_global_address.gke_backend[name].address
+      storage_bucket_name  = backend.upload_bucket_name
+      replicas             = backend.replicas
+      cpu_request          = backend.cpu_request
+      memory_request       = backend.memory_request
+      cpu_limit            = backend.cpu_limit
+      memory_limit         = backend.memory_limit
+      persistent_disk_size = backend.persistent_disk_size
+    }
+  } : {}
 }
