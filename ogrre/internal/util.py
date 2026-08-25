@@ -168,6 +168,14 @@ def last4_before_decimal(ts=None):
     return int(ts) % 10000
 
 
+def sanitize_filename_component(name, default=""):
+    """Strip characters that are unsafe to use in a filename/path segment."""
+    if not name:
+        return default
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", str(name)).strip()
+    return cleaned or default
+
+
 def time_it(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
