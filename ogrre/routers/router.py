@@ -1900,6 +1900,15 @@ async def download_records(
         filepaths = []
         if export_csv:
             for set_identifier in setsOfRecords:
+                if location == "project":
+                    project_name = util.sanitize_filename_component(output_name)
+                    filename_prefix = (
+                        f"{project_name}_{set_identifier}"
+                        if project_name
+                        else set_identifier
+                    )
+                else:
+                    filename_prefix = set_identifier
                 csv_file = data_manager.downloadRecords(
                     setsOfRecords[set_identifier],
                     "csv",
@@ -1908,7 +1917,7 @@ async def download_records(
                     location,
                     selectedColumns=selectedColumns,
                     keep_all_columns=keep_all_columns,
-                    output_filename=f"{set_identifier}_{output_file_id}",
+                    output_filename=f"{filename_prefix}_{output_file_id}",
                     request_origin=request_origin,
                 )
                 filepaths.append(csv_file)

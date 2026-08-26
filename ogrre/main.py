@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -20,8 +21,10 @@ if PROJECT_ID:
     os.environ["GCLOUD_PROJECT"] = PROJECT_ID
 
 if STORAGE_SERVICE_KEY:
-    dirname = os.path.dirname(os.path.abspath(__file__))
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f"{dirname}/{STORAGE_SERVICE_KEY}"
+    credential_path = Path(STORAGE_SERVICE_KEY).expanduser()
+    if not credential_path.is_absolute():
+        credential_path = Path(__file__).resolve().parent / credential_path
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(credential_path)
 
 _log = logging.getLogger(__name__)
 
