@@ -1947,7 +1947,10 @@ async def download_records(
         ## TODO: make this file name more unique, so multiple downloads dont have the same name
         download_log_file = f"zip_log_{output_file_id}.txt"
         z = util.zip_files_stream(
-            filepaths, documents, log_to_file=download_log_file, embedded_pdfs=embedded_pdfs
+            filepaths,
+            documents,
+            log_to_file=download_log_file,
+            embedded_pdfs=embedded_pdfs,
         )
 
         ## remove file after 60 seconds to allow for the user download to finish
@@ -2056,7 +2059,10 @@ async def download_project_records_by_document_types(
 
         download_log_file = f"zip_log_{output_file_id}.txt"
         z = util.zip_files_stream(
-            filepaths, documents, log_to_file=download_log_file, embedded_pdfs=embedded_pdfs
+            filepaths,
+            documents,
+            log_to_file=download_log_file,
+            embedded_pdfs=embedded_pdfs,
         )
 
         filepaths.append(download_log_file)

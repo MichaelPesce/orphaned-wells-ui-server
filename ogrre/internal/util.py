@@ -432,7 +432,9 @@ def compile_embedded_pdfs(records):
     try:
         from ogrre_embed import make_pdf_searchable
     except ImportError:
-        _log.error("ogrre_embed package is not installed; cannot generate embedded PDFs.")
+        _log.error(
+            "ogrre_embed package is not installed; cannot generate embedded PDFs."
+        )
         return []
 
     embedded_pdfs = []
@@ -467,7 +469,9 @@ def compile_embedded_pdfs(records):
                 img_pdf.close()
                 pages_added += 1
             except Exception as e:
-                _log.warning(f"Unable to add image {blob_key} to PDF for embedded pdf: {e}")
+                _log.warning(
+                    f"Unable to add image {blob_key} to PDF for embedded pdf: {e}"
+                )
 
         if pages_added == 0:
             doc.close()
@@ -485,7 +489,9 @@ def compile_embedded_pdfs(records):
 
 
 @time_it
-def zip_files_stream(local_file_paths, documents=[], log_to_file="zip_log.txt", embedded_pdfs=[]):
+def zip_files_stream(
+    local_file_paths, documents=[], log_to_file="zip_log.txt", embedded_pdfs=[]
+):
     """
     Streams a ZIP file directly without writing to temp files.
     Includes optional local files (JSON and/or csv), skips missing ones gracefully.
