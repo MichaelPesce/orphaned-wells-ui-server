@@ -1789,6 +1789,7 @@ async def download_records(
     export_csv: bool = True,
     export_json: bool = False,
     export_images: bool = False,
+    export_embedded_pdfs: bool = False,
     output_name: str = None,
     user_info: dict = Depends(authenticate),
 ):
@@ -1937,9 +1938,17 @@ async def download_records(
             documents = util.compileDocumentImageList(records)
         else:
             documents = []
+
+        if export_embedded_pdfs:
+            embedded_pdfs = util.compile_embedded_pdfs(records)
+        else:
+            embedded_pdfs = []
+
         ## TODO: make this file name more unique, so multiple downloads dont have the same name
         download_log_file = f"zip_log_{output_file_id}.txt"
-        z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
+        z = util.zip_files_stream(
+            filepaths, documents, log_to_file=download_log_file, embedded_pdfs=embedded_pdfs
+        )
 
         ## remove file after 60 seconds to allow for the user download to finish
         filepaths.append(download_log_file)
@@ -1962,6 +1971,7 @@ async def download_project_records_by_document_types(
     export_csv: bool = True,
     export_json: bool = False,
     export_images: bool = False,
+    export_embedded_pdfs: bool = False,
     output_name: str = None,
     user_info: dict = Depends(authenticate),
 ):
@@ -2039,8 +2049,15 @@ async def download_project_records_by_document_types(
         else:
             documents = []
 
+        if export_embedded_pdfs:
+            embedded_pdfs = util.compile_embedded_pdfs(records)
+        else:
+            embedded_pdfs = []
+
         download_log_file = f"zip_log_{output_file_id}.txt"
-        z = util.zip_files_stream(filepaths, documents, log_to_file=download_log_file)
+        z = util.zip_files_stream(
+            filepaths, documents, log_to_file=download_log_file, embedded_pdfs=embedded_pdfs
+        )
 
         filepaths.append(download_log_file)
         background_tasks.add_task(util.deleteFiles, filepaths=filepaths, sleep_time=60)
