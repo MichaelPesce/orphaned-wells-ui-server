@@ -59,6 +59,7 @@ COOKIE_MAX_AGE_SECONDS = int(os.getenv("SESSION_COOKIE_MAX_AGE_SECONDS", "3600")
 REFRESH_COOKIE_MAX_AGE_SECONDS = int(
     os.getenv("REFRESH_COOKIE_MAX_AGE_SECONDS", "2592000")
 )
+ROLE_CATEGORIES = {"system", "team"}
 
 
 def anonymous_user(
@@ -82,6 +83,37 @@ def require_authenticated_admin_route():
             status_code=403,
             detail="This route is disabled when authentication is disabled.",
         )
+
+
+def validate_role_categories(role_categories):
+    if not isinstance(role_categories, list):
+        raise HTTPException(
+            status_code=400,
+            detail="role_categories must be a list",
+        )
+
+    normalized_categories = []
+    for role_category in role_categories:
+        if role_category not in ROLE_CATEGORIES:
+            raise HTTPException(
+                status_code=400,
+                detail="role_categories must contain only: system, team",
+            )
+        if role_category not in normalized_categories:
+            normalized_categories.append(role_category)
+    return normalized_categories
+
+
+def require_role_category_access(user_info, role_categories):
+    if "system" in role_categories:
+        permission = "system_administration"
+        detail = "You are not authorized to manage system roles. Please contact a system administrator."
+    else:
+        permission = "manage_team"
+        detail = "You are not authorized to manage team roles. Please contact a team lead or project manager."
+
+    if not data_manager.hasPermission(user_info["email"], permission):
+        raise HTTPException(403, detail=detail)
 
 
 def _build_auth_failure(detail_key: str, message: str):
@@ -2159,7 +2191,7 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
     """Update roles for a user
 
     Args:
-        role_category: category of role (team, project, system)
+        role_category: category of role (team, system)
         new_role: new list of roles
         email: User email address
 
@@ -2167,19 +2199,35 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
         result
     """
     require_authenticated_admin_route()
-    if not data_manager.hasPermission(user_info["email"], "manage_team"):
+    req = await request.json()
+    if not isinstance(req, dict):
         raise HTTPException(
-            403,
-            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
+            status_code=400,
+            detail=f"Please provide an update and an email in the request body",
         )
 
-    req = await request.json()
     role_category = req.get("role_category", None)
     new_roles = req.get("new_roles", None)
     email = req.get("email", None)
+    if role_category not in ROLE_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail="role_category must be one of: system, team",
+        )
+    require_role_category_access(user_info, [role_category])
+
     team = data_manager.getUserInfo(user_info["email"])["default_team"]
-    if new_roles is not None and role_category and email:
-        data_manager.updateUserRole(email, team, role_category, new_roles)
+    if new_roles is not None and isinstance(email, str) and email != "":
+        try:
+            data_manager.updateUserRole(
+                email,
+                team,
+                role_category,
+                new_roles,
+                updated_by=user_info["email"],
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         return email
     else:
         raise HTTPException(
@@ -2577,20 +2625,68 @@ async def fetch_roles(request: Request, user_info: dict = Depends(authenticate))
     """Fetch all available roles for a certain category.
 
     Args:
-        role_category: category of role (team, project, system)
+        role_category: category of role (team, system)
 
     Returns:
         List containing available roles
     """
     require_authenticated_admin_route()
-    if not data_manager.hasPermission(user_info["email"], "manage_team"):
-        raise HTTPException(
-            403,
-            detail=f"You are not authorized to manage team roles. Please contact a team lead or project manager.",
-        )
-    role_categories = await request.json()
+    role_categories = validate_role_categories(await request.json())
+    require_role_category_access(user_info, role_categories)
     resp = data_manager.fetchRoles(role_categories)
     return resp
+
+
+@router.post("/fetch_permission_catalog", response_model=list)
+async def fetch_permission_catalog(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    """Fetch permissions currently present on system and team roles."""
+    require_authenticated_admin_route()
+    role_categories = validate_role_categories(await request.json())
+    require_role_category_access(user_info, role_categories)
+    return data_manager.fetchPermissionCatalog(role_categories)
+
+
+@router.post("/update_role_permissions")
+async def update_role_permissions(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    """Update the permissions assigned to a system or team role."""
+    require_authenticated_admin_route()
+    if not data_manager.hasPermission(user_info["email"], "system_administration"):
+        raise HTTPException(
+            403,
+            detail="You are not authorized to manage role permissions. Please contact a system administrator.",
+        )
+
+    req = await request.json()
+    if not isinstance(req, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide role_id, category, and permissions in the request body",
+        )
+
+    role_id = req.get("role_id", None)
+    category = req.get("category", None)
+    permissions = req.get("permissions", None)
+    if not isinstance(role_id, str) or role_id.strip() == "":
+        raise HTTPException(status_code=400, detail="role_id is required")
+    if category not in ROLE_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail="category must be one of: system, team",
+        )
+
+    try:
+        return data_manager.updateRolePermissions(
+            role_id.strip(),
+            category,
+            permissions,
+            updated_by=user_info["email"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/fetch_teams", response_model=list)
