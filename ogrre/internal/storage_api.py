@@ -64,8 +64,8 @@ def _storage_path(key):
 def _resolve_service_account_path(service_key=None):
     service_key = (
         service_key
-        or STORAGE_SERVICE_KEY
         or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        or STORAGE_SERVICE_KEY
         or "creds.json"
     )
     service_path = Path(service_key).expanduser()
