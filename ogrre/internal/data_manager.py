@@ -1367,9 +1367,7 @@ class DataManager:
         return sorted(permissions)
 
     def updateRolePermissions(self, role_id, category, permissions, updated_by=None):
-        normalized_permissions = self._normalizeStringList(
-            permissions, "permissions"
-        )
+        normalized_permissions = self._normalizeStringList(permissions, "permissions")
         query = {"id": role_id, "category": category}
         role = self.getDocument("roles", query)
         if role is None:
