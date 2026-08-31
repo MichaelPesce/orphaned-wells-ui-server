@@ -159,7 +159,7 @@ Keep `COLLABORATOR` in the environment secret when the backend needs it.
 
 ## GitHub Actions deployment
 
-The staging workflow builds and pushes both `michaelpescelbl/orphaned-wells-ui-server:latest` and an immutable commit-SHA tag, then deploys staging with the SHA tag. The `latest` tag remains available for environment-specific backend deployments that run later:
+The staging workflow builds and pushes both `michaelpescelbl/orphaned-wells-ui-server:latest` and an immutable commit-SHA tag, then deploys staging with the SHA tag. Environment-specific backend deployments promote an existing commit-SHA tag rather than deploying `latest`:
 
 ```bash
 gh workflow run deploy-k8s-staging.yml \
@@ -167,7 +167,7 @@ gh workflow run deploy-k8s-staging.yml \
   --ref main
 ```
 
-The environment-specific workflows deploy the existing Docker image tag, defaulting to `latest`:
+The environment-specific workflows default `IMAGE_TAG` to `auto`. On collaborator branch merge commits, `auto` resolves to the second parent commit, which is the main commit that staging built and tested. On fast-forward or non-merge commits, `auto` resolves to the current commit. Manually entering `latest` is allowed as an explicit override, but it is a mutable tag and can recreate mixed-image replicas after later pod replacement:
 
 ```bash
 gh workflow run deploy-k8s-isgs.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref isgs
@@ -229,7 +229,8 @@ MEMORY_REQUEST="$(jq -r --arg env "$DEPLOY_ENV" '.[$env].memory_request // "6Gi"
 CPU_LIMIT="$(jq -r --arg env "$DEPLOY_ENV" '.[$env].cpu_limit // "2"' <<< "$TARGETS_JSON")"
 MEMORY_LIMIT="$(jq -r --arg env "$DEPLOY_ENV" '.[$env].memory_limit // "6Gi"' <<< "$TARGETS_JSON")"
 PERSISTENT_DISK_SIZE="$(jq -r --arg env "$DEPLOY_ENV" '.[$env].persistent_disk_size // "20Gi"' <<< "$TARGETS_JSON")"
-IMAGE=michaelpescelbl/orphaned-wells-ui-server:latest
+IMAGE_TAG=<tested-commit-sha>
+IMAGE=michaelpescelbl/orphaned-wells-ui-server:"$IMAGE_TAG"
 DEPLOY_RUN_ID="local-$(date +%s)"
 ```
 
@@ -319,6 +320,19 @@ export DEPLOY_ENV NAMESPACE HOSTNAME STATIC_IP_NAME STORAGE_BUCKET_NAME REPLICAS
 envsubst < deployment/kubernetes/backend.yaml > deployment/kubernetes/rendered/backend.yaml
 kubectl apply -f deployment/kubernetes/rendered/backend.yaml
 kubectl -n "$NAMESPACE" rollout status deployment/backend --timeout=10m
+
+IMAGE_IDS="$(
+  kubectl -n "$NAMESPACE" get pods \
+    -l app.kubernetes.io/name=orphaned-wells-ui-server,app.kubernetes.io/component=api,uow.lbl.gov/environment="$DEPLOY_ENV" \
+    -o json \
+    | jq -r '.items[] | select(.metadata.deletionTimestamp == null) | .status.containerStatuses[]? | select(.name == "backend" and .ready == true) | .imageID' \
+    | sort -u
+)"
+if [ "$(printf '%s\n' "$IMAGE_IDS" | sed '/^$/d' | wc -l | tr -d ' ')" -ne 1 ]; then
+  echo "ready backend pods are running different image IDs"
+  printf '%s\n' "$IMAGE_IDS"
+  exit 1
+fi
 ```
 
 ## Status commands
