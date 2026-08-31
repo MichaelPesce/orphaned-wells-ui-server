@@ -167,7 +167,7 @@ gh workflow run deploy-k8s-staging.yml \
   --ref main
 ```
 
-The environment-specific workflows default `IMAGE_TAG` to `auto`. On collaborator branch merge commits, `auto` resolves to the second parent commit, which is the main commit that staging built and tested. On fast-forward or non-merge commits, `auto` resolves to the current commit. The reusable deploy workflow rejects `latest`:
+The environment-specific workflows default `IMAGE_TAG` to `auto`. On collaborator branch merge commits, `auto` resolves to the second parent commit, which is the main commit that staging built and tested. On fast-forward or non-merge commits, `auto` resolves to the current commit. Manually entering `latest` is allowed as an explicit override, but it is a mutable tag and can recreate mixed-image replicas after later pod replacement:
 
 ```bash
 gh workflow run deploy-k8s-isgs.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref isgs

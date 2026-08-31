@@ -89,8 +89,7 @@ jobs:
           requested_tag="${IMAGE_TAG:-auto}"
 
           if [ "$requested_tag" = "latest" ]; then
-            echo "::error::Refusing to deploy mutable image tag 'latest'. Use 'auto' or an immutable commit SHA tag."
-            exit 1
+            echo "::warning::Deploying mutable image tag 'latest'. This should be used only as an explicit override because replacement pods may pull a newer digest later."
           fi
 
           if [ "$requested_tag" = "auto" ]; then
