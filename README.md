@@ -35,14 +35,15 @@ pip install -r requirements-dev.txt
 
 ### 2. Add credential/environment files
 
-Credentials are necessary for backend functionality. This includes Google Cloud's document AI features, MongoDB database access, and Google Cloud Storage for storing documents/images. To access these functionalities, you must create the following credential files and place them in the **< orphaned-wells-ui-server-path >/ogrre/internal/** directory:
+Credentials are necessary for backend functionality. This includes Google Cloud's Document AI features, MongoDB database access, and Google Cloud Storage for storing documents/images. To access these functionalities, create the following files and place local service-account JSON keys in the **< orphaned-wells-ui-server-path >/ogrre/** directory or use absolute paths in `.env`:
 1. **.env** 
-    - Must contain **PROJECT_ID**, **LOCATION**, **PROCESSOR_ID**, **DB_USERNAME**, **DB_PASSWORD**, **STORAGE_SERVICE_KEY** (3rd item on this list)
-2. **creds.json**
-    - Must contain GCP Storage Bucket credentials. To generate this file using gcloud api, see https://cloud.google.com/document-ai/docs/libraries#authentication.
-3. **STORAGE_SERVICE_KEY** file
-    - Name doesn't matter as long as it matches what you store in .env
-    - Must contain google cloud client credentials. See https://docs.gspread.org/en/latest/oauth2.html#for-bots-using-service-account.
+    - Must contain runtime values such as **PROJECT_ID**, **LOCATION**, **DB_USERNAME**, **DB_PASSWORD**, **DB_CONNECTION**, **DB_NAME**, **STORAGE_BUCKET_NAME**, **STORAGE_SERVICE_KEY**, and **DOCUMENT_AI_SERVICE_KEY** when using Google backends.
+2. **STORAGE_SERVICE_KEY** file
+    - Service-account JSON key used only for Google Cloud Storage.
+    - The filename/path must match `STORAGE_SERVICE_KEY` in `.env`.
+3. **DOCUMENT_AI_SERVICE_KEY** file
+    - Service-account JSON key used only for Google Document AI processing and processor deployment.
+    - The filename/path must match `DOCUMENT_AI_SERVICE_KEY` in `.env`.
 
 # Running the server
 

@@ -76,7 +76,7 @@ The identity running Terraform needs permissions to manage GKE, Compute addresse
 - `roles/storage.admin`
 - `roles/serviceusage.serviceUsageAdmin` if Terraform manages project services
 
-The GitHub Actions service account in `SERVICE_KEY_JSON` needs enough access to fetch GKE credentials, apply Kubernetes resources, and read/write upload bucket objects. `roles/container.admin` plus bucket/project storage object permissions is sufficient for the current deployment path.
+The GitHub Actions service account in `DEPLOYMENT_SERVICE_KEY_JSON` needs enough access to fetch GKE credentials and apply Kubernetes resources. Keep Cloud Storage and Document AI runtime access on the dedicated runtime service accounts, not on the deployment service account.
 
 ## Deploy or update GKE infrastructure
 
@@ -133,8 +133,9 @@ Keep the existing deployment secrets:
 - `PROJECT_ID`
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_ACCESS_TOKEN`
-- `CREDS_JSON`
-- `SERVICE_KEY_JSON`
+- `DEPLOYMENT_SERVICE_KEY_JSON`
+- `STORAGE_SERVICE_KEY_JSON`
+- `DOCUMENT_AI_SERVICE_KEY_JSON`
 - `K8S_DEPLOY_TARGETS`
 
 Each backend environment also needs an environment-file secret:
@@ -242,8 +243,8 @@ Prepare local secrets:
 mkdir -p deployment/secrets deployment/kubernetes/rendered
 
 cp ogrre/.env_"$DEPLOY_ENV" deployment/secrets/runtime.env
-cp ogrre/creds.json deployment/secrets/creds.json
-cp ogrre/michael2-service-key.json deployment/secrets/michael2-service-key.json
+cp ogrre/storage-service-key.json deployment/secrets/storage-service-key.json
+cp ogrre/document-ai-service-key.json deployment/secrets/document-ai-service-key.json
 ```
 
 Normalize the runtime env file the same way the workflow does:
@@ -268,7 +269,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   [[ "$value" == \"*\" && "$value" == *\" ]] && value="${value:1:${#value}-2}"
   [[ "$value" == \'*\' && "$value" == *\' ]] && value="${value:1:${#value}-2}"
   case "$key" in
-    ENVIRONMENT|BACKEND_URL|LOG_DIR|LOCAL_STORAGE_ROOT|LOCAL_STORAGE_URL_BASE|STORAGE_BUCKET_NAME|STORAGE_SERVICE_KEY|GOOGLE_APPLICATION_CREDENTIALS) continue ;;
+    ENVIRONMENT|BACKEND_URL|LOG_DIR|LOCAL_STORAGE_ROOT|LOCAL_STORAGE_URL_BASE|STORAGE_BUCKET_NAME|STORAGE_SERVICE_KEY|DOCUMENT_AI_SERVICE_KEY|GOOGLE_APPLICATION_CREDENTIALS) continue ;;
   esac
   printf '%s=%s\n' "$key" "$value" >> "$k8s_env_file"
 done < "$raw_env_file"
@@ -280,8 +281,8 @@ done < "$raw_env_file"
   echo "LOCAL_STORAGE_ROOT=/data/local-storage"
   echo "LOCAL_STORAGE_URL_BASE=https://$HOSTNAME/local-storage"
   echo "STORAGE_BUCKET_NAME=$STORAGE_BUCKET_NAME"
-  echo "STORAGE_SERVICE_KEY=/code/ogrre/michael2-service-key.json"
-  echo "GOOGLE_APPLICATION_CREDENTIALS=/code/ogrre/michael2-service-key.json"
+  echo "STORAGE_SERVICE_KEY=/code/ogrre/storage-service-key.json"
+  echo "DOCUMENT_AI_SERVICE_KEY=/code/ogrre/document-ai-service-key.json"
 } >> "$k8s_env_file"
 ```
 
@@ -301,8 +302,8 @@ kubectl -n "$NAMESPACE" create secret generic backend-runtime-env \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "$NAMESPACE" create secret generic backend-runtime-files \
-  --from-file=creds.json=deployment/secrets/creds.json \
-  --from-file=michael2-service-key.json=deployment/secrets/michael2-service-key.json \
+  --from-file=storage-service-key.json=deployment/secrets/storage-service-key.json \
+  --from-file=document-ai-service-key.json=deployment/secrets/document-ai-service-key.json \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
@@ -312,8 +313,8 @@ Render and apply the manifest:
 RUNTIME_CONFIG_SHA="$(
   shasum -a 256 \
     deployment/secrets/runtime.k8s.env \
-    deployment/secrets/creds.json \
-    deployment/secrets/michael2-service-key.json \
+    deployment/secrets/storage-service-key.json \
+    deployment/secrets/document-ai-service-key.json \
     | shasum -a 256 \
     | awk '{print $1}'
 )"
@@ -525,5 +526,5 @@ curl -f https://boots-server.uow-carbon.org/health
 - DNS pointing at the load balancer is not enough by itself. The rendered Kubernetes Ingress `host` and ManagedCertificate domain must also match the hostname.
 - The backend timeout is configured to 180 seconds through `BackendConfig`, matching the current nginx timeout.
 - The Kubernetes Deployment uses pod-local `emptyDir` volumes for `/logs` and `/data`. Real document storage should continue using Google Cloud Storage.
-- The app receives `creds.json` and `michael2-service-key.json` at `/code/ogrre/...`. The runtime env sets `STORAGE_SERVICE_KEY` and `GOOGLE_APPLICATION_CREDENTIALS` to the absolute `/code/ogrre/michael2-service-key.json` path so packaged Python imports do not resolve the key relative to `site-packages`.
+- The app receives `storage-service-key.json` and `document-ai-service-key.json` at `/code/ogrre/...`. The runtime env sets `STORAGE_SERVICE_KEY` and `DOCUMENT_AI_SERVICE_KEY` to those absolute paths so packaged Python imports do not resolve key filenames relative to `site-packages`.
 - The default collaborator GKE backend resources request 1850m CPU and 12 GiB memory. Staging is intentionally smaller at 1 replica with 1 CPU and 6 GiB memory.
