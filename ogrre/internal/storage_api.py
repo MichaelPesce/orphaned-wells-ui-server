@@ -76,7 +76,9 @@ def _resolve_service_account_path(service_key=None):
 def _get_storage_client(storage_service_key=None):
     service_path = _resolve_service_account_path(storage_service_key)
     if service_path:
-        return storage.Client.from_service_account_json(service_path, project=PROJECT_ID)
+        return storage.Client.from_service_account_json(
+            service_path, project=PROJECT_ID
+        )
     return storage.Client(project=PROJECT_ID)
 
 
