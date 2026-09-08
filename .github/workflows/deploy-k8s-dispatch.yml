@@ -33,9 +33,11 @@ on:
     secrets:
       K8S_DEPLOY_TARGETS:
         required: true
-      CREDS_JSON:
+      DEPLOYMENT_SERVICE_KEY_JSON:
         required: true
-      SERVICE_KEY_JSON:
+      STORAGE_SERVICE_KEY_JSON:
+        required: true
+      DOCUMENT_AI_SERVICE_KEY_JSON:
         required: true
       PROJECT_ID:
         required: true
@@ -127,17 +129,17 @@ jobs:
       - name: Prepare deployment workspace
         run: mkdir -p deployment/secrets deployment/kubernetes/rendered
 
-      - name: Add runtime creds file
+      - name: Add storage service key json file
         uses: jsdaniell/create-json@v1.2.3
         with:
-          name: "deployment/secrets/creds.json"
-          json: ${{ secrets.CREDS_JSON }}
+          name: "deployment/secrets/storage-service-key.json"
+          json: ${{ secrets.STORAGE_SERVICE_KEY_JSON }}
 
-      - name: Add runtime service key json file
+      - name: Add Document AI service key json file
         uses: jsdaniell/create-json@v1.2.3
         with:
-          name: "deployment/secrets/michael2-service-key.json"
-          json: ${{ secrets.SERVICE_KEY_JSON }}
+          name: "deployment/secrets/document-ai-service-key.json"
+          json: ${{ secrets.DOCUMENT_AI_SERVICE_KEY_JSON }}
 
       - name: Parse GKE deploy target
         id: target
@@ -297,7 +299,7 @@ jobs:
               value="${value:1:${#value}-2}"
             fi
             case "$key" in
-              ENVIRONMENT|BACKEND_URL|LOG_DIR|LOCAL_STORAGE_ROOT|LOCAL_STORAGE_URL_BASE|STORAGE_BUCKET_NAME|STORAGE_SERVICE_KEY|GOOGLE_APPLICATION_CREDENTIALS)
+              ENVIRONMENT|BACKEND_URL|LOG_DIR|LOCAL_STORAGE_ROOT|LOCAL_STORAGE_URL_BASE|STORAGE_BUCKET_NAME|STORAGE_SERVICE_KEY|DOCUMENT_AI_SERVICE_KEY|GOOGLE_APPLICATION_CREDENTIALS)
                 continue
                 ;;
             esac
@@ -311,8 +313,8 @@ jobs:
             echo "LOCAL_STORAGE_ROOT=/data/local-storage"
             echo "LOCAL_STORAGE_URL_BASE=https://$HOSTNAME/local-storage"
             echo "STORAGE_BUCKET_NAME=$STORAGE_BUCKET_NAME"
-            echo "STORAGE_SERVICE_KEY=/code/ogrre/michael2-service-key.json"
-            echo "GOOGLE_APPLICATION_CREDENTIALS=/code/ogrre/michael2-service-key.json"
+            echo "STORAGE_SERVICE_KEY=/code/ogrre/storage-service-key.json"
+            echo "DOCUMENT_AI_SERVICE_KEY=/code/ogrre/document-ai-service-key.json"
           } >> "$k8s_env_file"
 
           required_runtime_keys=(
@@ -337,7 +339,7 @@ jobs:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v3
         with:
-          credentials_json: ${{ secrets.SERVICE_KEY_JSON }}
+          credentials_json: ${{ secrets.DEPLOYMENT_SERVICE_KEY_JSON }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
@@ -370,8 +372,8 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl -n "$NAMESPACE" create secret generic backend-runtime-files \
-            --from-file=creds.json=deployment/secrets/creds.json \
-            --from-file=michael2-service-key.json=deployment/secrets/michael2-service-key.json \
+            --from-file=storage-service-key.json=deployment/secrets/storage-service-key.json \
+            --from-file=document-ai-service-key.json=deployment/secrets/document-ai-service-key.json \
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl -n "$NAMESPACE" get secret dockerhub-pull backend-runtime-env backend-runtime-files
@@ -398,8 +400,8 @@ jobs:
           RUNTIME_CONFIG_SHA="$(
             shasum -a 256 \
               deployment/secrets/runtime.k8s.env \
-              deployment/secrets/creds.json \
-              deployment/secrets/michael2-service-key.json \
+              deployment/secrets/storage-service-key.json \
+              deployment/secrets/document-ai-service-key.json \
               | shasum -a 256 \
               | awk '{print $1}'
           )"
