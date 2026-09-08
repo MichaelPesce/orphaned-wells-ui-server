@@ -76,7 +76,97 @@ The identity running Terraform needs permissions to manage GKE, Compute addresse
 - `roles/storage.admin`
 - `roles/serviceusage.serviceUsageAdmin` if Terraform manages project services
 
-The GitHub Actions service account in `DEPLOYMENT_SERVICE_KEY_JSON` needs enough access to fetch GKE credentials and apply Kubernetes resources. Keep Cloud Storage and Document AI runtime access on the dedicated runtime service accounts, not on the deployment service account.
+## Service Accounts
+
+Use three service accounts for the backend system:
+
+| Service account | Used for | GitHub/local credential |
+| --- | --- | --- |
+| Storage runtime, for example `ogrre-storage-runtime` | Backend Cloud Storage upload bucket reads, writes, deletes, and signed/download URL interactions | `STORAGE_SERVICE_KEY_JSON` in GitHub; local `STORAGE_SERVICE_KEY` in `ogrre/.env` |
+| Document AI runtime, for example `ogrre-document-ai` | Backend online/batch Document AI processing and processor deployment/undeployment | `DOCUMENT_AI_SERVICE_KEY_JSON` in GitHub; local `DOCUMENT_AI_SERVICE_KEY` in `ogrre/.env` |
+| Deployment/Terraform, for example `ogrre-deployment-ci` | Terraform infrastructure changes and GitHub Actions deployments to GKE/App Engine | `DEPLOYMENT_SERVICE_KEY_JSON` in GitHub; optional local `GOOGLE_APPLICATION_CREDENTIALS` for Terraform |
+
+The deployment account must be able to fetch GKE credentials and apply the rendered manifests. In IAM, give it access to the target GKE project, typically the same Terraform roles listed above when the account also manages infrastructure. For Kubernetes itself, bind that Google identity to Kubernetes RBAC in each target namespace so it can apply and inspect:
+
+- namespaces
+- secrets
+- deployments and rollout status
+- services
+- ingresses
+- `BackendConfig`
+- `ManagedCertificate`
+- `FrontendConfig`
+
+There is no Google IAM role that replaces Kubernetes RBAC for namespace-scoped manifest apply. GCP IAM lets the deployment account reach the cluster; Kubernetes RBAC controls what it can change inside the cluster.
+
+Keep Cloud Storage and Document AI runtime access on the dedicated runtime service accounts, not on the deployment service account.
+
+Bootstrap the Kubernetes RBAC once with an existing cluster-admin identity:
+
+```bash
+PROJECT_ID=<PROJECT_ID>
+DEPLOYER_EMAIL="ogrre-deployment-ci@${PROJECT_ID}.iam.gserviceaccount.com"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ogrre-backend-namespace-manager
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ogrre-backend-namespace-manager
+subjects:
+  - kind: User
+    name: ${DEPLOYER_EMAIL}
+roleRef:
+  kind: ClusterRole
+  name: ogrre-backend-namespace-manager
+  apiGroup: rbac.authorization.k8s.io
+EOF
+
+for namespace in uow-staging uow-isgs uow-newts uow-osage uow-ca uow-rrc; do
+  kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
+
+  cat <<EOF | kubectl -n "$namespace" apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ogrre-backend-deployer
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "services"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/status"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["cloud.google.com"]
+    resources: ["backendconfigs"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["networking.gke.io"]
+    resources: ["managedcertificates", "frontendconfigs"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list", "watch"]
+EOF
+
+  kubectl -n "$namespace" create rolebinding ogrre-backend-deployer \
+    --role=ogrre-backend-deployer \
+    --user="$DEPLOYER_EMAIL" \
+    --dry-run=client -o yaml | kubectl apply -f -
+done
+```
+
+`cluster-admin` also works as a single broad binding, but it grants substantially more than this deploy workflow needs.
 
 ## Deploy or update GKE infrastructure
 
@@ -155,8 +245,12 @@ The environment-file secret should contain the same key/value pairs used by the 
 - `LOCAL_STORAGE_ROOT`
 - `LOCAL_STORAGE_URL_BASE`
 - `STORAGE_BUCKET_NAME`
+- `STORAGE_SERVICE_KEY`
+- `DOCUMENT_AI_SERVICE_KEY`
 
 Keep `COLLABORATOR` in the environment secret when the backend needs it.
+
+Use `ogrre/.env.example` as the source of truth for environment-file contents. Omit local file paths and local-only settings that the workflow owns, and store real values in the environment-specific GitHub secret such as `STAGING_ENV` or `ISGS_ENV`.
 
 ## GitHub Actions deployment
 
