@@ -409,7 +409,7 @@ jobs:
           location: ${{ steps.target.outputs.cluster_location }}
           project_id: ${{ secrets.PROJECT_ID }}
 
-      - name: Create namespace and secrets
+      - name: Create deployment secrets
         env:
           NAMESPACE: ${{ steps.target.outputs.namespace }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -417,7 +417,7 @@ jobs:
         run: |
           set -e -o pipefail
 
-          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl get namespace "$NAMESPACE"
 
           kubectl -n "$NAMESPACE" create secret docker-registry dockerhub-pull \
             --docker-server=https://index.docker.io/v1/ \
