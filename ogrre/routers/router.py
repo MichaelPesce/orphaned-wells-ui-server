@@ -1908,6 +1908,7 @@ async def download_records(
             "page",
             "parentAttribute",
             "topLevelAttribute",
+            "user_provided_coordinates",
         ],
         "subattributes": [
             "key",
@@ -1917,6 +1918,7 @@ async def download_records(
             "subattributes",
             "parentAttribute",
             "topLevelAttribute",
+            "user_provided_coordinates",
         ],
     }
 
