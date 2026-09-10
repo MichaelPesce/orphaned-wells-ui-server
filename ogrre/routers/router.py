@@ -1334,7 +1334,9 @@ async def batch_process_documents(
         )
     except Exception as error:
         _log.exception("unable to dispatch batch processing job %s", job_id)
-        raise HTTPException(500, detail="Unable to start document processing") from error
+        raise HTTPException(
+            500, detail="Unable to start document processing"
+        ) from error
     return {"job_id": job_id, "status": job.get("status", "queued")}
 
 
@@ -1416,7 +1418,9 @@ async def get_batch_process_documents_status(
     if job is None:
         raise HTTPException(404, detail="Batch document processing job not found")
     if job.get("record_group_id") not in data_manager.getUserRecordGroups(user_info):
-        raise HTTPException(403, detail="You are not authorized to view this processing job")
+        raise HTTPException(
+            403, detail="You are not authorized to view this processing job"
+        )
     return reconcile_processing_job(job_id, data_manager)
 
 

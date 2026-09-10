@@ -43,6 +43,7 @@ LOG_BLOB_NAME_SAMPLE_LIMIT = int(
     os.getenv("DOCUMENT_AI_BATCH_LOG_BLOB_NAME_SAMPLE_LIMIT", "20")
 )
 
+
 class PreparedDocument(NamedTuple):
     source_uri: str
     record_id: str

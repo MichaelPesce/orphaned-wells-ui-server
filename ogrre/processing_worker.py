@@ -21,7 +21,9 @@ def run_processing_job(job_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Run an OGRRE processing job")
-    parser.add_argument("--job-id", required=True, help="Durable Mongo processing job id")
+    parser.add_argument(
+        "--job-id", required=True, help="Durable Mongo processing job id"
+    )
     args = parser.parse_args()
     _log.info("starting processing worker job_id=%s", args.job_id)
     run_processing_job(args.job_id)

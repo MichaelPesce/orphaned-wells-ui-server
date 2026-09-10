@@ -86,7 +86,10 @@ def _kubernetes_job_manifest(job_id, image):
                             "env": [
                                 {"name": "PROCESSING_JOB_MODE", "value": "worker"},
                                 {"name": "LOG_DIR", "value": "/logs"},
-                                {"name": "LOCAL_STORAGE_ROOT", "value": "/data/local-storage"},
+                                {
+                                    "name": "LOCAL_STORAGE_ROOT",
+                                    "value": "/data/local-storage",
+                                },
                             ],
                             "resources": _processing_job_resources(),
                             "volumeMounts": [
@@ -206,7 +209,9 @@ def reconcile_processing_job(job_id, data_manager):
         )
         for condition in kubernetes_job.status.conditions or []:
             if condition.type == "Failed" and condition.status == "True":
-                reason = condition.message or condition.reason or "Kubernetes worker failed"
+                reason = (
+                    condition.message or condition.reason or "Kubernetes worker failed"
+                )
                 return data_manager.completeProcessingJob(job_id, "error", error=reason)
             if condition.type == "Complete" and condition.status == "True":
                 return data_manager.completeProcessingJob(

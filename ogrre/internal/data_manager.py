@@ -2452,7 +2452,11 @@ class DataManager:
             "createBatchProcessingJob",
             request_user.get("email"),
             rg_id=rg_id,
-            notes={"job_id": job_id, "bucket_name": bucket_name, "prefix": prefix or ""},
+            notes={
+                "job_id": job_id,
+                "bucket_name": bucket_name,
+                "prefix": prefix or "",
+            },
         )
         return self._serializeProcessingJob(job)
 
@@ -2535,7 +2539,9 @@ class DataManager:
         }
         push_values = {}
         if failed_document_uris:
-            push_values["summary.failed_document_uris"] = {"$each": failed_document_uris}
+            push_values["summary.failed_document_uris"] = {
+                "$each": failed_document_uris
+            }
         if skipped_duplicate_uris:
             push_values["summary.skipped_duplicate_uris"] = {
                 "$each": skipped_duplicate_uris
