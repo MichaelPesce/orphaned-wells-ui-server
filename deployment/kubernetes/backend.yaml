@@ -6,6 +6,54 @@ metadata:
     app.kubernetes.io/name: orphaned-wells-ui-server
     app.kubernetes.io/part-of: uow-backends
     uow.lbl.gov/environment: ${DEPLOY_ENV}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-api
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: orphaned-wells-ui-server
+    app.kubernetes.io/component: api
+    uow.lbl.gov/environment: ${DEPLOY_ENV}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: processing-worker
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: orphaned-wells-ui-server
+    app.kubernetes.io/component: processor
+    uow.lbl.gov/environment: ${DEPLOY_ENV}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: processing-job-dispatcher
+  namespace: ${NAMESPACE}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: processing-job-dispatcher
+  namespace: ${NAMESPACE}
+subjects:
+  - kind: ServiceAccount
+    name: backend-api
+    namespace: ${NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: processing-job-dispatcher
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +82,7 @@ spec:
         app.kubernetes.io/component: api
         uow.lbl.gov/environment: ${DEPLOY_ENV}
     spec:
+      serviceAccountName: backend-api
       imagePullSecrets:
         - name: dockerhub-pull
       containers:

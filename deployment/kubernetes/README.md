@@ -28,6 +28,9 @@ Kubernetes creates one namespace per backend environment:
 Each namespace contains:
 
 - `Deployment/backend`
+- `ServiceAccount/backend-api`, which may create and inspect only processing Jobs in its namespace
+- `ServiceAccount/processing-worker`, used by short-lived document-processing Pods
+- `Role` and `RoleBinding` named `processing-job-dispatcher`
 - `Service/backend`
 - `BackendConfig/backend-config`
 - `ManagedCertificate/backend-cert`
@@ -36,6 +39,13 @@ Each namespace contains:
 - `Secret/backend-runtime-env`
 - `Secret/backend-runtime-files`
 - `Secret/dockerhub-pull`
+
+The API is the only always-running workload. When a user submits a GCS batch,
+the API writes a durable MongoDB job record and asks the Kubernetes API to
+create a `batch/v1 Job`. Kubernetes then starts one high-memory worker Pod with
+the same immutable image and runtime secrets. The worker updates the MongoDB
+job record, exits, and Kubernetes removes it after the configured retention
+period. The worker does not serve HTTP and is not a second Deployment.
 
 ## Rendered manifests
 
@@ -140,7 +150,10 @@ metadata:
   name: ogrre-backend-deployer
 rules:
   - apiGroups: [""]
-    resources: ["secrets", "services"]
+    resources: ["secrets", "services", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "patch", "update"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
     verbs: ["get", "list", "watch", "create", "patch", "update"]
   - apiGroups: ["apps"]
     resources: ["deployments", "deployments/status"]
@@ -167,6 +180,12 @@ done
 ```
 
 `cluster-admin` also works as a single broad binding, but it grants substantially more than this deploy workflow needs.
+
+Existing clusters that ran the previous manifest must apply this RBAC update
+with a cluster-admin identity before the first worker-capable GitHub Actions
+deployment. The deployment account needs these additional permissions only to
+apply the ServiceAccounts and namespace-scoped RBAC resources; the runtime API
+identity remains limited to batch Jobs and Pods.
 
 ## Deploy or update GKE infrastructure
 
@@ -215,6 +234,13 @@ terraform output -json kubernetes_deploy_targets | jq '.newts'
 ```
 
 The `host` field controls the Kubernetes Ingress host and the Google-managed certificate domain. DNS alone is not enough; after changing hostnames in Terraform, update `K8S_DEPLOY_TARGETS` and redeploy the backend.
+
+The target map also includes worker resource configuration. GitHub Actions
+generates `UVICORN_WORKERS`, `PROCESSING_JOB_*`, and
+`PROCESSING_JOB_MODE=kubernetes` in `backend-runtime-env`; do not add those
+generated values to collaborator runtime-env secrets. See
+`../terraform/README.md#batch-worker-resource-configuration` for the source
+settings and defaults.
 
 ## Required GitHub secrets
 
@@ -455,6 +481,7 @@ kubectl -n uow-staging get deployment backend
 kubectl -n uow-staging get pods -l app.kubernetes.io/name=orphaned-wells-ui-server -o wide
 kubectl -n uow-staging get ingress backend
 kubectl -n uow-staging get managedcertificate backend-cert
+kubectl -n uow-staging get jobs -l app.kubernetes.io/component=processor
 ```
 
 Check every backend:
@@ -481,6 +508,7 @@ Logs for one environment:
 ```bash
 kubectl -n uow-newts logs deployment/backend --tail=200
 kubectl -n uow-newts logs deployment/backend --tail=200 -f
+kubectl -n uow-newts logs job/<worker-job-name> --tail=200
 ```
 
 Logs for a specific pod:
@@ -622,3 +650,4 @@ curl -f https://boots-server.uow-carbon.org/health
 - The Kubernetes Deployment uses pod-local `emptyDir` volumes for `/logs` and `/data`. Real document storage should continue using Google Cloud Storage.
 - The app receives `storage-service-key.json` and `document-ai-service-key.json` at `/code/ogrre/...`. The runtime env sets `STORAGE_SERVICE_KEY` and `DOCUMENT_AI_SERVICE_KEY` to those absolute paths so packaged Python imports do not resolve key filenames relative to `site-packages`.
 - The default collaborator GKE backend resources request 1850m CPU and 12 GiB memory. Staging is intentionally smaller at 1 replica with 1 CPU and 6 GiB memory.
+- Batch workers use separate per-environment resource requests. The initial rollout permits one active batch worker per environment and sets `backoffLimit: 0`; retry failed batches only after reviewing their durable job status and affected records.

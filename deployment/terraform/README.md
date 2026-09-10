@@ -6,7 +6,7 @@ This directory contains the Terraform configuration used to manage OGRRE backend
 
 - `variables.tf` defines the shared defaults, including the default GKE backends and legacy VM inventory.
 - `main.tf` creates legacy backend VM modules only for names listed in `enabled_legacy_backend_vms`, using definitions from `legacy_backend_vms`.
-- `gke.tf` creates the shared GKE deployment infrastructure unless `enable_gke=false`.
+- `gke.tf` creates the shared GKE deployment infrastructure unless `enable_gke=false`, including per-environment API and batch-worker resource defaults exported to deployment automation.
 - `storage.tf` creates one Cloud Storage upload bucket per unique GKE backend bucket name.
 - `modules/backend_vm` contains the reusable legacy VM module, including a compute instance, static IP, and optional VM-owned DNS record.
 - `terraform.tfvars.example` shows optional local override patterns.
@@ -120,6 +120,34 @@ gh secret set K8S_DEPLOY_TARGETS \
 When Terraform deployment behavior changes, update the operator-facing frontend docs in `../orphaned-wells-ui/docs/docs/deploy-gcp` as part of the same work so the two repos stay aligned.
 
 See `../kubernetes/README.md` for Kubernetes deployment and operations commands.
+
+### Batch-worker resource configuration
+
+Terraform does not create a permanent worker deployment or additional Google
+Cloud resources for document processing. It exports per-environment values in
+`kubernetes_deploy_targets`; GitHub Actions writes those values into the
+runtime secret used by the API to create short-lived Kubernetes Jobs.
+
+Each backend may set these optional `gke_backends` or
+`gke_backend_overrides` fields:
+
+- `api_uvicorn_workers` controls the API container's Uvicorn worker count.
+- `processing_job_cpu_request`, `processing_job_memory_request`,
+  `processing_job_cpu_limit`, and `processing_job_memory_limit` size each
+  batch-processing Job independently from the always-running API pods.
+- `processing_job_ephemeral_storage` reserves worker scratch space for source
+  downloads and image conversion.
+- `processing_job_active_deadline_seconds` is the maximum Job run time;
+  `processing_job_ttl_seconds_after_finished` retains completed Job metadata
+  and Pod logs for troubleshooting.
+- `processing_job_max_active` limits simultaneous batch Jobs per environment.
+
+The default collaborator worker is 1850m CPU and 12Gi memory. Staging uses its
+existing 1 CPU and 6Gi profile. API pod requests are deliberately unchanged by
+this first batch-worker rollout because single-file and ZIP uploads still run
+on API pods. After Terraform changes these output values, update
+`K8S_DEPLOY_TARGETS` and deploy the backend; no batch-worker setting takes
+effect from Terraform alone.
 
 ### Primary DNS state migration
 
