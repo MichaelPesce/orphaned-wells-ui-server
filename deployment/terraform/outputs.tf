@@ -64,7 +64,7 @@ output "gke_test_dns_names" {
 
 output "kubernetes_deploy_targets" {
   value = var.enable_gke ? {
-    for name, backend in local.gke_backends :
+    for name, backend in local.kubernetes_workload_backends :
     name => {
       cluster_name                              = google_container_cluster.backend[0].name
       cluster_location                          = google_container_cluster.backend[0].location

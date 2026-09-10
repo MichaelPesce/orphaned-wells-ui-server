@@ -24,7 +24,12 @@ Terraform creates one namespace per backend environment:
 | isgs | `uow-isgs` |
 | newts | `uow-newts` |
 | osage | `uow-osage` |
-| ca | `uow-ca` |
+| rrc | `uow-rrc` |
+
+CA retains its Terraform-managed cloud configuration but currently has
+`enable_kubernetes_workloads = false`. It has no `uow-ca` namespace, Kubernetes
+runtime identities/RBAC, or deployment target until that setting is changed to
+`true`.
 
 Terraform manages these long-lived namespace resources:
 
@@ -32,6 +37,18 @@ Terraform manages these long-lived namespace resources:
 - `ServiceAccount/processing-worker`, used by short-lived document-processing Pods
 - `Role` and `RoleBinding` named `processing-job-dispatcher`
 - namespace labels
+
+The two runtime identities have deliberately different responsibilities:
+
+| Pod type | Kubernetes ServiceAccount | Kubernetes API permission | Purpose |
+| --- | --- | --- | --- |
+| Always-running `Deployment/backend` API Pod | `backend-api` | Create and inspect processing Jobs; read their Pods | Dispatch and monitor a batch worker. |
+| Short-lived processing Job Pod | `processing-worker` | None granted by this configuration | Process documents and update durable MongoDB job state. |
+
+The Role is the namespace-scoped permission policy. The RoleBinding attaches
+that policy to `backend-api`; without the binding, the Role grants nothing.
+The processing worker intentionally is not bound to the Role, so a worker Pod
+cannot create more Jobs or inspect unrelated Pods.
 
 GitHub Actions manages these application resources:
 
@@ -188,7 +205,6 @@ Keep the existing deployment secrets:
 Each backend environment also needs an environment-file secret:
 
 - `STAGING_ENV`
-- `CA_ENV`
 - `ISGS_ENV`
 - `NEWTS_ENV`
 - `OSAGE_ENV`
@@ -225,7 +241,7 @@ The environment-specific workflows default `IMAGE_TAG` to `auto`. On collaborato
 gh workflow run deploy-k8s-isgs.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref isgs
 gh workflow run deploy-k8s-newts.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref newts
 gh workflow run deploy-k8s-osage.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref osage
-gh workflow run deploy-k8s-ca.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref ca
+gh workflow run deploy-k8s-rrc.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref rrc
 ```
 
 Automatic deploys are controlled by repository variables:
@@ -238,7 +254,6 @@ Or one environment at a time:
 
 ```text
 ENABLE_GKE_STAGING_DEPLOY=true
-ENABLE_GKE_CA_DEPLOY=true
 ENABLE_GKE_ISGS_DEPLOY=true
 ENABLE_GKE_NEWTS_DEPLOY=true
 ENABLE_GKE_OSAGE_DEPLOY=true
@@ -439,7 +454,7 @@ kubectl -n uow-staging get jobs -l app.kubernetes.io/component=processor
 Check every backend:
 
 ```bash
-for ns in uow-staging uow-isgs uow-newts uow-osage uow-ca; do
+for ns in uow-staging uow-isgs uow-newts uow-osage uow-rrc; do
   echo "== $ns =="
   kubectl -n "$ns" get deployment backend
   kubectl -n "$ns" get pods -l app.kubernetes.io/name=orphaned-wells-ui-server -o wide
@@ -521,7 +536,7 @@ kubectl -n uow-staging delete pod "$POD"
 Restart all backend Deployments:
 
 ```bash
-for ns in uow-staging uow-isgs uow-newts uow-osage uow-ca; do
+for ns in uow-staging uow-isgs uow-newts uow-osage uow-rrc; do
   kubectl -n "$ns" rollout restart deployment/backend
 done
 ```
@@ -539,6 +554,12 @@ gke_backend_overrides = {
   boots = {}
 }
 ```
+
+Set `enable_kubernetes_workloads = false` for a collaborator whose cloud
+configuration should remain managed but which is not ready to deploy to GKE.
+Terraform then omits the namespace, runtime ServiceAccounts/RBAC, and
+`K8S_DEPLOY_TARGETS` entry. CA currently uses this setting; change it to
+`true` before deploying CA through its existing workflow.
 
 Optional per-backend settings can be added in the same map:
 

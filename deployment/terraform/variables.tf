@@ -180,6 +180,7 @@ variable "gke_backends" {
     processing_job_active_deadline_seconds    = optional(number)
     processing_job_ttl_seconds_after_finished = optional(number)
     processing_job_max_active                 = optional(number)
+    enable_kubernetes_workloads               = optional(bool)
     create_primary_dns_record                 = optional(bool)
     create_test_dns_record                    = optional(bool)
     dns_ttl                                   = optional(number)
@@ -202,11 +203,15 @@ variable "gke_backends" {
     osage = {}
     isgs  = {}
     newts = {}
-    ca    = {}
-    rrc   = {}
+    # CA cloud resources remain managed, but no Kubernetes namespace, runtime
+    # identity, or deploy target is created until CA is ready to be deployed.
+    ca = {
+      enable_kubernetes_workloads = false
+    }
+    rrc = {}
   }
 
-  description = "Default GKE backend definitions. Keys are collaborator names; omitted attributes use OGRRE naming defaults."
+  description = "Default GKE backend definitions. Keys are collaborator names; omitted attributes use OGRRE naming defaults. Set enable_kubernetes_workloads=false to retain cloud configuration without making the backend deployable to Kubernetes."
 }
 
 variable "gke_backend_overrides" {
@@ -232,6 +237,7 @@ variable "gke_backend_overrides" {
     processing_job_active_deadline_seconds    = optional(number)
     processing_job_ttl_seconds_after_finished = optional(number)
     processing_job_max_active                 = optional(number)
+    enable_kubernetes_workloads               = optional(bool)
     create_primary_dns_record                 = optional(bool)
     create_test_dns_record                    = optional(bool)
     dns_ttl                                   = optional(number)

@@ -113,7 +113,6 @@ terraform import 'kubernetes_namespace_v1.backend["staging"]' uow-staging
 terraform import 'kubernetes_namespace_v1.backend["isgs"]' uow-isgs
 terraform import 'kubernetes_namespace_v1.backend["newts"]' uow-newts
 terraform import 'kubernetes_namespace_v1.backend["osage"]' uow-osage
-terraform import 'kubernetes_namespace_v1.backend["ca"]' uow-ca
 terraform import 'kubernetes_namespace_v1.backend["rrc"]' uow-rrc
 ```
 
@@ -127,6 +126,13 @@ For a new collaborator, add the backend to `gke_backends` or
 `gke_backend_overrides` and run the normal Terraform apply. Terraform creates
 the namespace and worker authorization as part of that same change, so no
 per-collaborator RBAC bootstrap is required.
+
+Set `enable_kubernetes_workloads = false` when cloud resources must remain
+managed but the collaborator is not yet ready for a GKE backend. Such an entry
+does not receive a Kubernetes namespace, runtime ServiceAccounts/RBAC, or a
+`kubernetes_deploy_targets` entry. CA currently uses this setting. Set it to
+`true` when CA is ready; Terraform will then create its Kubernetes foundation
+without replacing its existing cloud resources.
 
 ## GKE deployment infrastructure
 
@@ -178,6 +184,9 @@ Each backend may set these optional `gke_backends` or
   `processing_job_ttl_seconds_after_finished` retains completed Job metadata
   and Pod logs for troubleshooting.
 - `processing_job_max_active` limits simultaneous batch Jobs per environment.
+- `enable_kubernetes_workloads` controls whether Terraform also creates the
+  namespace, runtime RBAC, and GitHub Actions deploy target. It defaults to
+  `true`; CA intentionally sets it to `false` until it is ready for GKE.
 
 The default collaborator worker is 1850m CPU and 12Gi memory. Staging uses its
 existing 1 CPU and 6Gi profile. API pod requests are deliberately unchanged by

@@ -13,7 +13,7 @@ provider "kubernetes" {
 }
 
 resource "kubernetes_namespace_v1" "backend" {
-  for_each = var.enable_gke ? local.gke_backends : {}
+  for_each = var.enable_gke ? local.kubernetes_workload_backends : {}
 
   metadata {
     name = each.value.namespace
@@ -30,7 +30,7 @@ resource "kubernetes_namespace_v1" "backend" {
 }
 
 resource "kubernetes_service_account_v1" "backend_api" {
-  for_each = var.enable_gke ? local.gke_backends : {}
+  for_each = var.enable_gke ? local.kubernetes_workload_backends : {}
 
   metadata {
     name      = "backend-api"
@@ -44,7 +44,7 @@ resource "kubernetes_service_account_v1" "backend_api" {
 }
 
 resource "kubernetes_service_account_v1" "processing_worker" {
-  for_each = var.enable_gke ? local.gke_backends : {}
+  for_each = var.enable_gke ? local.kubernetes_workload_backends : {}
 
   metadata {
     name      = "processing-worker"
@@ -60,7 +60,7 @@ resource "kubernetes_service_account_v1" "processing_worker" {
 # The API creates a short-lived worker Job and reads its state. The worker does
 # not need Kubernetes API permissions: it uses MongoDB for job state instead.
 resource "kubernetes_role_v1" "processing_job_dispatcher" {
-  for_each = var.enable_gke ? local.gke_backends : {}
+  for_each = var.enable_gke ? local.kubernetes_workload_backends : {}
 
   metadata {
     name      = "processing-job-dispatcher"
@@ -81,7 +81,7 @@ resource "kubernetes_role_v1" "processing_job_dispatcher" {
 }
 
 resource "kubernetes_role_binding_v1" "processing_job_dispatcher" {
-  for_each = var.enable_gke ? local.gke_backends : {}
+  for_each = var.enable_gke ? local.kubernetes_workload_backends : {}
 
   metadata {
     name      = "processing-job-dispatcher"

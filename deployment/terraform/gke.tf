@@ -41,10 +41,19 @@ locals {
       processing_job_active_deadline_seconds    = coalesce(try(backend.processing_job_active_deadline_seconds, null), 86400)
       processing_job_ttl_seconds_after_finished = coalesce(try(backend.processing_job_ttl_seconds_after_finished, null), 604800)
       processing_job_max_active                 = coalesce(try(backend.processing_job_max_active, null), 1)
+      enable_kubernetes_workloads               = coalesce(try(backend.enable_kubernetes_workloads, null), true)
       create_primary_dns_record                 = coalesce(try(backend.create_primary_dns_record, null), true)
       create_test_dns_record                    = coalesce(try(backend.create_test_dns_record, null), true)
       dns_ttl                                   = coalesce(try(backend.dns_ttl, null), var.gke_dns_ttl)
     }
+  }
+
+  # Cloud infrastructure can be retained before a collaborator is ready for a
+  # Kubernetes deployment. Only enabled backends receive a namespace, runtime
+  # ServiceAccounts/RBAC, and a GitHub Actions deploy target.
+  kubernetes_workload_backends = {
+    for name, backend in local.gke_backends : name => backend
+    if backend.enable_kubernetes_workloads
   }
 
   gke_primary_dns_backends = {
