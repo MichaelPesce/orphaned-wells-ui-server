@@ -157,6 +157,21 @@ variable "gke_subnetwork" {
   description = "VPC subnetwork used by the GKE cluster."
 }
 
+variable "upload_bucket_cors_origins" {
+  type        = map(list(string))
+  default     = {}
+  description = "Optional complete CORS origin list per upload bucket. Defaults to the frontend custom domains for backends using that bucket. Include localhost explicitly for Google-backed local development."
+
+  validation {
+    condition = alltrue(flatten([
+      for origins in values(var.upload_bucket_cors_origins) : [
+        for origin in origins : can(regex("^https?://[^/]+$", origin))
+      ]
+    ]))
+    error_message = "CORS origins must be explicit HTTP(S) origins without trailing slashes."
+  }
+}
+
 variable "gke_backends" {
   type = map(object({
     namespace                                 = optional(string)

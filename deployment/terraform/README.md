@@ -507,3 +507,20 @@ If the new VM already exists in the GCP project, run `scripts/import_existing_in
 - Use `terraform.tfvars` only for local overrides; shared non-secret defaults live in `variables.tf`.
 
 If you need further detail on a specific collaborator or import workflow, I can expand this README with step-by-step examples.
+
+
+## Directory upload bucket settings
+
+`backend_uploads` manages CORS for browser-to-GCS directory transfers and a
+14-day lifecycle rule for `directory_uploads/` and `directory_upload_outputs/`.
+Production origins default to the frontend custom domains for each bucket's
+backends. Set `upload_bucket_cors_origins` to replace a bucket's origin list;
+include the production origin when adding localhost or an alternate host.
+The backend's `ALLOWED_ORIGINS` must also permit the browser origin.
+
+Review existing CORS and lifecycle settings in the Terraform plan before
+applying these changes. The deletion rule covers only the two temporary
+prefixes; it does not cover `uploads/`, `deleted/`, or caller-owned batch inputs.
+Apply storage configuration before deploying the paired upload frontend/backend.
+API CPU/memory defaults are unchanged pending the staging validation documented
+in [the Kubernetes README](../kubernetes/README.md#browser-directory-upload-rollout).
