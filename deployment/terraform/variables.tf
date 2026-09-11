@@ -160,7 +160,7 @@ variable "gke_subnetwork" {
 variable "upload_bucket_cors_origins" {
   type        = map(list(string))
   default     = {}
-  description = "Optional complete CORS origin list per upload bucket. Defaults to the frontend custom domains for backends using that bucket. Include localhost explicitly for Google-backed local development."
+  description = "Optional complete CORS origin list per upload bucket. Defaults to frontend custom domains, plus http://localhost:3000 and http://localhost:3001 for the staging bucket. Overrides replace the complete list."
 
   validation {
     condition = alltrue(flatten([

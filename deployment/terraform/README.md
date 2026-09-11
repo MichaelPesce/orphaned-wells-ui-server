@@ -513,10 +513,20 @@ If you need further detail on a specific collaborator or import workflow, I can 
 
 `backend_uploads` manages CORS for browser-to-GCS directory transfers and a
 14-day lifecycle rule for `directory_uploads/` and `directory_upload_outputs/`.
-Production origins default to the frontend custom domains for each bucket's
-backends. Set `upload_bucket_cors_origins` to replace a bucket's origin list;
-include the production origin when adding localhost or an alternate host.
-The backend's `ALLOWED_ORIGINS` must also permit the browser origin.
+Origins default to the frontend custom domains for each bucket's backends.
+The staging bucket also allows `http://localhost:3000` (native and Docker
+development) and `http://localhost:3001` (the isolated Docker E2E stack).
+Set `upload_bucket_cors_origins` to replace a bucket's complete origin list for
+other hosts or ports; retain the frontend domain and local origins still used.
+Use the origin in the browser address bar, including the published host port.
+`http://127.0.0.1:3000` is a different origin and requires an explicit entry.
+The backend serving that frontend must also permit its origin in
+`ALLOWED_ORIGINS`; bucket configuration does not update backend runtime settings.
+
+GCS bucket CORS governs XML API requests. The JSON API resumable sessions used
+for directory uploads supply the browser origin at session creation and have
+their own CORS handling. See [Google's endpoint behavior documentation](https://docs.cloud.google.com/storage/docs/cross-origin#cloud-storage-cors-support).
+Local development with `STORAGE_BACKEND=local` does not access GCS.
 
 Review existing CORS and lifecycle settings in the Terraform plan before
 applying these changes. The deletion rule covers only the two temporary

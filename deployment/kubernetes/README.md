@@ -632,11 +632,18 @@ Apply the Terraform bucket CORS and lifecycle configuration before deploying the
 paired backend and frontend changes. Review existing CORS/lifecycle rules in the
 plan: Terraform now manages these settings. Bucket CORS defaults to the frontend
 custom domains (`https://uow-carbon.org` for staging and
-`https://<collaborator>.uow-carbon.org` for collaborators). For other origins,
-including Google-backed local development, set `upload_bucket_cors_origins` in
-Terraform; an override replaces that bucket's complete origin list.
+`https://<collaborator>.uow-carbon.org` for collaborators). The staging bucket
+also allows `http://localhost:3000` for native/Docker development and
+`http://localhost:3001` for the isolated Docker E2E stack. For other origins,
+set `upload_bucket_cors_origins` in Terraform; an override replaces that
+bucket's complete origin list.
 
-The same origins must appear in backend `ALLOWED_ORIGINS`. The browser uses
+The backend serving a frontend must include its origin in `ALLOWED_ORIGINS`.
+Local frontends using a local backend need that setting in the local environment;
+only add localhost to the deployed backend if developers actually call it.
+Bucket CORS does not update these runtime settings. GCS JSON API resumable
+sessions use the origin supplied at creation; the bucket CORS rules govern XML
+API requests. The browser uses
 credential-free GCS `PUT` requests with `Content-Range`, and reads the `Range`
 response header when resuming. Runtime storage credentials must create sessions,
 read object metadata, and read/write upload objects. Document AI's service agent
