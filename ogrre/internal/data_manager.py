@@ -2748,12 +2748,97 @@ class DataManager:
             .limit(10)
         ]
 
+    def getProcessingHistoryProjects(self, user_info):
+        """Return only projects/groups visible through the user's current team."""
+        projects = self.fetchProjects(user_info)
+        group_ids = {
+            str(group_id)
+            for project in projects
+            for group_id in project.get("record_groups", [])
+        }
+        names = {
+            str(group["_id"]): group.get("name") or str(group["_id"])
+            for group in self.db.record_groups.find(
+                {
+                    "_id": {
+                        "$in": [
+                            ObjectId(value)
+                            for value in group_ids
+                            if ObjectId.is_valid(value)
+                        ]
+                    }
+                },
+                {"name": 1},
+            )
+        }
+        return sorted(
+            [
+                {
+                    "id": str(project["_id"]),
+                    "name": project.get("name") or str(project["_id"]),
+                    "record_groups": sorted(
+                        [
+                            {
+                                "id": str(group_id),
+                                "name": names.get(str(group_id), str(group_id)),
+                            }
+                            for group_id in project.get("record_groups", [])
+                        ],
+                        key=lambda group: (group["name"].casefold(), group["id"]),
+                    ),
+                }
+                for project in projects
+            ],
+            key=lambda project: (project["name"].casefold(), project["id"]),
+        )
+
+    def fetchAllProcessingJobHistory(self, user_info, body):
+        if not isinstance(body, dict):
+            raise ValueError("Expected a history query object")
+        for key in ("project_id", "record_group_id"):
+            if key in body and (
+                not isinstance(body[key], str) or not ObjectId.is_valid(body[key])
+            ):
+                raise ValueError(f"Invalid {key}")
+        projects = self.getProcessingHistoryProjects(user_info)
+        project_id = body.get("project_id")
+        if project_id is not None:
+            projects = [project for project in projects if project["id"] == project_id]
+            if not projects:
+                raise PermissionError(
+                    "You are not authorized to view this project's uploads"
+                )
+        groups = {
+            group["id"]: {
+                "project_id": project["id"],
+                "project_name": project["name"],
+                "record_group_name": group["name"],
+            }
+            for project in projects
+            for group in project["record_groups"]
+        }
+        group_id = body.get("record_group_id")
+        if group_id is not None:
+            if group_id not in groups:
+                raise PermissionError(
+                    "This record group is not available in the selected projects"
+                )
+            groups = {group_id: groups[group_id]}
+        # Apply the authorized group set after parsing client filters, even when empty.
+        result = self._fetchProcessingJobHistory({"$in": list(groups)}, body)
+        for job in result["active_jobs"] + result["jobs"]:
+            job.update(groups[job["record_group_id"]])
+        return result
+
     def fetchProcessingJobHistory(self, rg_id, body):
+        return self._fetchProcessingJobHistory(rg_id, body)
+
+    def _fetchProcessingJobHistory(self, group_scope, body):
         pagination, history_filter = processing_job_history.history_query(body)
         # Group scope is trusted and independent of all submitted filters.
-        history_filter["record_group_id"] = rg_id
+        history_filter["record_group_id"] = group_scope
         active_filter = {
-            "record_group_id": rg_id,
+            "record_group_id": group_scope,
             "status": {"$in": processing_job_history.ACTIVE_STATUSES},
         }
 

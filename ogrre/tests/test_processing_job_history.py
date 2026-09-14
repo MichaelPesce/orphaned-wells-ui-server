@@ -17,6 +17,100 @@ def make_job(manager, job_id="history-job", status="completed", group=GROUP, **k
     return manager.getProcessingJob(job_id)
 
 
+@pytest.fixture
+def history_projects(manager, monkeypatch):
+    first, second, hidden = [ObjectId() for _ in range(3)]
+    other_group = str(ObjectId())
+    manager.db.projects.insert_many(
+        [
+            {"_id": first, "name": "Project A", "record_groups": [GROUP]},
+            {"_id": second, "name": "Project B", "record_groups": [other_group]},
+            {"_id": hidden, "name": "Private project", "record_groups": [str(hidden)]},
+        ]
+    )
+    manager.db.record_groups.insert_many(
+        [
+            {"_id": ObjectId(GROUP), "name": "First records"},
+            {"_id": ObjectId(other_group), "name": "Second records"},
+        ]
+    )
+    monkeypatch.setattr(
+        manager, "getUserProjectList", Mock(return_value=[first, second])
+    )
+    return str(first), str(second), other_group, str(hidden)
+
+
+def test_combined_history_is_scoped_named_and_globally_paginated(
+    client, manager, history_projects
+):
+    first, second, other_group, hidden = history_projects
+    make_job(manager, "old-a")
+    manager.updateProcessingJob("old-a", {"created_at": 1})
+    make_job(manager, "new-b", group=other_group)
+    make_job(manager, "active-a", "running")
+    make_job(manager, "active-b", "queued", group=other_group)
+    make_job(manager, "private", group=hidden)
+    make_job(manager, "private-active", "running", group=hidden)
+    # History is readable with existing project access, independent of admin/upload actions.
+    manager.hasPermission.return_value = False
+    scopes = client.get("/processing_jobs/scopes").json()
+    assert [project["id"] for project in scopes] == [first, second]
+    assert scopes[0]["record_groups"] == [{"id": GROUP, "name": "First records"}]
+    result = client.post("/processing_jobs/history", json={"page_size": 1}).json()
+    assert result["count"] == 2
+    assert result["active_count"] == 2
+    assert result["jobs"][0]["job_id"] == "new-b"
+    assert result["jobs"][0]["project_name"] == "Project B"
+    assert result["jobs"][0]["record_group_name"] == "Second records"
+    assert result["jobs"][0]["project_id"] == second
+    page = client.post(
+        "/processing_jobs/history", json={"page_size": 1, "page": 1, "active_page": 1}
+    ).json()
+    assert page["jobs"][0]["job_id"] == "old-a"
+    assert page["active_jobs"][0]["job_id"] != result["active_jobs"][0]["job_id"]
+    for scope in (
+        {"project_id": first},
+        {"record_group_id": GROUP},
+        {"project_id": first, "record_group_id": GROUP},
+    ):
+        result = client.post("/processing_jobs/history", json=scope).json()
+        assert [job["job_id"] for job in result["jobs"]] == ["old-a"]
+        assert [job["job_id"] for job in result["active_jobs"]] == ["active-a"]
+    result = client.post(
+        "/processing_jobs/history",
+        json={"project_id": first, "filter": {"status": {"$in": ["error"]}}},
+    ).json()
+    assert result["count"] == 0
+    assert result["active_count"] == 1
+
+
+def test_combined_history_rejects_invalid_and_unauthorized_scopes(
+    client, manager, history_projects
+):
+    first, _, other_group, hidden = history_projects
+    for body in (
+        [],
+        {"project_id": {"$ne": None}},
+        {"record_group_id": [GROUP]},
+        {"project_id": ""},
+        {"record_group_id": "bad"},
+        {"filter": {"record_group_id": hidden}},
+        {"page_size": 1000},
+    ):
+        assert client.post("/processing_jobs/history", json=body).status_code == 400
+    for body in (
+        {"project_id": hidden},
+        {"record_group_id": hidden},
+        {"project_id": first, "record_group_id": other_group},
+    ):
+        assert client.post("/processing_jobs/history", json=body).status_code == 403
+    make_job(manager)
+    manager.getUserProjectList.return_value = []
+    assert client.get("/processing_jobs/scopes").json() == []
+    result = client.post("/processing_jobs/history", json={}).json()
+    assert result == {"active_jobs": [], "active_count": 0, "jobs": [], "count": 0}
+
+
 def test_history_keeps_older_active_jobs_separate_and_omits_large_details(
     client, manager
 ):

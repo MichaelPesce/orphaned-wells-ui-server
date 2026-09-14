@@ -1474,6 +1474,32 @@ def finalize_directory_upload(
         raise HTTPException(400, detail=str(error)) from error
 
 
+@router.get("/processing_jobs/scopes")
+def get_processing_history_scopes(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    if not REQUIRE_AUTH:
+        user_info = _get_anonymous_user_from_request(request)
+    return data_manager.getProcessingHistoryProjects(user_info)
+
+
+@router.post("/processing_jobs/history")
+async def get_all_processing_job_history(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    if not REQUIRE_AUTH:
+        user_info = _get_anonymous_user_from_request(request)
+    try:
+        body = await request.json()
+        return await run_in_threadpool(
+            data_manager.fetchAllProcessingJobHistory, user_info, body
+        )
+    except ValueError as error:
+        raise HTTPException(400, detail=str(error)) from error
+    except PermissionError as error:
+        raise HTTPException(403, detail=str(error)) from error
+
+
 @router.get("/processing_jobs/{rg_id}")
 def list_processing_jobs(
     rg_id: str, request: Request, user_info: dict = Depends(authenticate)

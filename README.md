@@ -164,22 +164,33 @@ storage, or include them in support reports.
 
 ### Jobs and recovery
 
-The frontend's record-group **Upload history** page separates active jobs from
-finished uploads. The upload dialog displays only its current submission.
+The frontend's **Admin → Upload history** tab separates active jobs from
+finished uploads across accessible projects in the user's current team. Project
+and record-group selectors narrow both lists, and each job names its project and
+record group. The upload dialog displays only its current submission.
 History covers worker-backed directory uploads and GCS batches; single-file/ZIP
 and local-storage fallback uploads do not have durable submission tracking.
 
-- `POST /processing_jobs/{rg_id}/history` accepts `page`, `active_page`,
+- `GET /processing_jobs/scopes` returns the user's accessible projects and record
+  groups (IDs and names) for the history selectors.
+- `POST /processing_jobs/history` accepts optional `project_id` and
+  `record_group_id` strings, plus `page`, `active_page`,
   `page_size` (1–100, default 25), and `filter`. Active and finished pages are
   independent. Finished-job filters allow `status`, `source_type` (`directory`
   or `gcs`), `request_user.email`, and `created_at`; arbitrary Mongo operators
-  and client group-scope overrides are rejected.
+  and client group-scope overrides are rejected. Omitted scope selects all
+  accessible groups; inaccessible scopes and project/group mismatches return
+  403. Pagination and sorting apply across the whole authorized selection, and
+  summaries include `project_id`, `project_name`, and `record_group_name`.
+- `POST /processing_jobs/{rg_id}/history` remains available for older clients
+  with the same pagination and finished-job filter contract.
 - `GET /processing_jobs/{rg_id}/{job_id}` returns a compact job summary,
   retry eligibility/reason, and one file page. Query parameters are `page`,
   `page_size` (1–100), and `file_kind` (`records`, `source`, `failed`, `skipped`).
   Manifests/failure arrays are sliced in MongoDB and excluded from summary
   lists; records are paginated and linked only within the authorized group/job.
-- Both reads require record-group access. Retry still requires upload permission,
+- All history reads enforce current project/record-group access; Admin placement
+  adds no user-management permission requirement. Retry still requires upload permission,
   ownership of the session, unexpired inputs, and confirmation that the previous
   worker has stopped. Eligibility shown by the UI is checked again on retry.
 
