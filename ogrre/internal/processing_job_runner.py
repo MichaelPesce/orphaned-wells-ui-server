@@ -3,8 +3,48 @@
 import logging
 import os
 import time
+from threading import Lock
 
 _log = logging.getLogger(__name__)
+_background_lock = Lock()
+_background_failures = {}
+_background_active = set()
+
+
+def _persist_background_failures(data_manager):
+    with _background_lock:
+        failures = list(_background_failures.items())
+    for (job_id, attempt), message in failures:
+        try:
+            data_manager.completeProcessingJob(
+                job_id, "error", message, attempt=attempt
+            )
+        except Exception:
+            _log.exception("unable to save local worker failure job_id=%s", job_id)
+            continue
+        with _background_lock:
+            _background_failures.pop((job_id, attempt), None)
+
+
+def _run_background_processing_job(job_id, attempt, data_manager):
+    """Reuse the API's Mongo client and capture failures before a worker claims a job."""
+    try:
+        from ogrre.processing_worker import run_processing_job
+
+        run_processing_job(job_id, attempt, data_manager=data_manager)
+    except Exception as error:
+        _log.exception(
+            "local processing worker failed job_id=%s attempt=%s", job_id, attempt
+        )
+        with _background_lock:
+            _background_failures[(job_id, attempt)] = (
+                f"Local processing failed ({type(error).__name__}). "
+                "Check the backend logs before retrying."
+            )
+    finally:
+        with _background_lock:
+            _background_active.discard((job_id, attempt))
+        _persist_background_failures(data_manager)
 
 
 def _processing_job_mode():
@@ -142,15 +182,18 @@ def dispatch_batch_processing_job(job_id, data_manager, background_tasks=None):
             "The directory upload expired before processing started.",
             attempt=attempt,
         )
+    job = data_manager.ensureDirectoryUploadRecords(job)
     if mode == "background":
         if background_tasks is None:
             raise RuntimeError("background_tasks is required in background job mode")
-        from ogrre.processing_worker import run_processing_job
-
         if data_manager.beginProcessingJobDispatch(
             job_id, {"worker.mode": "background"}, attempt
         ):
-            background_tasks.add_task(run_processing_job, job_id, attempt)
+            with _background_lock:
+                _background_active.add((job_id, attempt))
+            background_tasks.add_task(
+                _run_background_processing_job, job_id, attempt, data_manager
+            )
         return data_manager.getProcessingJob(job_id)
 
     if mode != "kubernetes":
@@ -279,6 +322,9 @@ def reconcile_processing_job(job_id, data_manager):
 
 def maintain_processing_jobs(data_manager):
     """Recover dispatches and release failed workers even when no browser is open."""
+    if _processing_job_mode() == "background":
+        _persist_background_failures(data_manager)
+        return
     if _processing_job_mode() != "kubernetes":
         return
     for job in data_manager.getActiveProcessingJobs():
@@ -306,6 +352,9 @@ def maintain_processing_jobs(data_manager):
 
 def processing_worker_has_stopped(job):
     """A failed dispatch response does not prove the cloud never started a pod."""
+    if job.get("worker", {}).get("mode") == "background":
+        with _background_lock:
+            return (job["job_id"], job.get("attempt", 0)) not in _background_active
     if job.get("worker", {}).get("mode") != "kubernetes":
         return True
     from kubernetes import client, config

@@ -5,7 +5,6 @@ import logging
 import mimetypes
 import os
 import time
-import hashlib
 from bson import ObjectId
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import NamedTuple
@@ -18,6 +17,9 @@ from PIL import Image
 from ogrre.internal import document_ai_api
 from ogrre.internal import storage_api
 from ogrre.internal import util
+from ogrre.internal.directory_upload import (
+    processing_record_id as _processing_record_id,
+)
 from ogrre.internal.whitespace_detector import detect_whitespace_from_bytes
 
 _log = logging.getLogger(__name__)
@@ -431,8 +433,21 @@ def _process_one_batch(
         for item in job["input"].get("documents", [])
     }
     for gcs_document in _get_gcs_documents(input_config):
+        if manifest.get(gcs_document.gcs_uri, {}).get("skip_duplicate"):
+            partial_summary["total_skipped_duplicates"] += 1
+            partial_summary["skipped_duplicate_uris"].append(gcs_document.gcs_uri)
+            continue
         record_id = _processing_record_id(job_id, gcs_document.gcs_uri)
         existing_record = data_manager.db.records.find_one({"_id": ObjectId(record_id)})
+        if job["input"].get("records_initialized") and existing_record is None:
+            # A user can delete a queued record before its worker starts.
+            # Do not recreate a finalized record that was subsequently removed.
+            _log.warning(
+                "pending record was removed job_id=%s record_id=%s", job_id, record_id
+            )
+            partial_summary["total_failed"] += 1
+            partial_summary["failed_document_uris"].append(gcs_document.gcs_uri)
+            continue
         if existing_record and existing_record.get("status") == "digitized":
             partial_summary["total_succeeded"] += 1
             continue
@@ -645,10 +660,6 @@ def _mark_failed_document(partial_summary, prepared, data_manager, rg_id, messag
     partial_summary["failed_document_uris"].append(prepared.source_uri)
 
 
-def _processing_record_id(job_id, source_uri):
-    return hashlib.sha256(f"{job_id}:{source_uri}".encode()).hexdigest()[:24]
-
-
 def _prepare_document_for_batch(
     gcs_document, rg_id, user_info, data_manager, job_id, attempt=0, manifest_item=None
 ):
@@ -657,7 +668,7 @@ def _prepare_document_for_batch(
     source_filename = os.path.basename(location.blob_path)
     filename, file_ext = os.path.splitext(source_filename)
     mime_type = gcs_document.mime_type or mimetypes.guess_type(source_filename)[0]
-    record_id = None
+    record_id = _processing_record_id(job_id, source_uri)
 
     try:
         if manifest_item:
@@ -692,7 +703,6 @@ def _prepare_document_for_batch(
             "processing_attempt": attempt,
             "processing_source_uri": source_uri,
         }
-        record_id = _processing_record_id(job_id, source_uri)
         data_manager.prepareProcessingRecord(record_id, new_record, user_info)
         _upload_png_files(rg_id, record_id, png_files)
         if DETECT_WHITESPACE:
@@ -704,7 +714,7 @@ def _prepare_document_for_batch(
             gcs_document=gcs_document,
         )
     except Exception as e:
-        if record_id is not None:
+        if data_manager.db.records.find_one({"_id": ObjectId(record_id)}, {"_id": 1}):
             _mark_record_error(
                 data_manager,
                 rg_id,

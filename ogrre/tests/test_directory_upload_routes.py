@@ -91,3 +91,30 @@ def test_missing_files_do_not_create_job(client, manager, monkeypatch):
         == 400
     )
     assert manager.db.processing_jobs.count_documents({}) == 0
+
+
+def test_record_list_includes_group_activity_even_when_filters_hide_pending_records(
+    client, manager, monkeypatch
+):
+    manager.createBatchProcessingJob(GROUP, USER, "bucket")
+    monkeypatch.setattr(
+        manager, "fetchRecordsByRecordGroup", Mock(return_value=([], 0))
+    )
+    response = client.post(
+        "/get_records/record_group",
+        json={"id": GROUP, "filter": {"status": "digitized"}},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "records": [],
+        "record_count": 0,
+        "has_active_processing_jobs": True,
+    }
+
+
+def test_record_activity_cannot_be_read_for_another_group(client, manager, monkeypatch):
+    lookup = Mock()
+    monkeypatch.setattr(manager, "hasActiveProcessingJobs", lookup)
+    response = client.post("/get_records/record_group", json={"id": "other-group"})
+    assert response.status_code == 403
+    lookup.assert_not_called()

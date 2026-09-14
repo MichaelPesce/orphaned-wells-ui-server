@@ -104,9 +104,10 @@ flowchart LR
     Browser -->|Metadata and finalization| API
     API -->|Upload session URLs| Browser
     Browser -->|Original file bytes| GCS
+    API -->|Queued records and job| MongoDB
     API -->|Dispatch| Job[Kubernetes Job]
     GCS -->|Original files| Job
-    Job -->|Records and progress| MongoDB
+    Job -->|Update records and progress| MongoDB
     API -->|Read progress| MongoDB
 ```
 
@@ -163,12 +164,49 @@ storage, or include them in support reports.
 
 ### Jobs and recovery
 
+Directory finalization creates metadata-only records with `status=queued` after
+verifying every uploaded original. Record numbers and IDs exist before a worker
+starts; conversion and image bytes remain in the worker. Duplicate decisions
+are persisted before record creation, and initialization can resume after an
+interrupted finalization without duplicating records. The worker changes each
+record to `processing` as it prepares its images, then `digitized` or `error`.
+Download/conversion failures are attached to the pending record as well as the job.
+
+The record-group table refreshes quietly while jobs are active, including jobs
+outside the displayed page or filters, and performs a final fetch at completion.
+Polling also runs while the upload dialog is open so newly finalized records
+appear without a page reload. Filters, pagination, and existing rows are preserved.
+`POST /get_records/record_group` returns `has_active_processing_jobs` after
+checking record-group access; the flag is independent of the table's filters.
+
 Kubernetes processing capacity is reserved atomically in MongoDB. Additional
 jobs remain `queued`; the API's 30-second maintenance loop dispatches queued
 jobs and reconciles worker failures independently of browser polling. All API
 replicas may run maintenance; deterministic Kubernetes names and atomic job
 claims make repeated dispatch safe. Local background mode bypasses this capacity
 queue and has no restart recovery guarantee.
+
+Local background workers reuse the API's initialized data manager/Mongo client.
+Creating a new Mongo client for each local job previously required fresh SRV DNS
+resolution, which could fail after a VPN/network change even while the API's
+existing connection continued to work. Worker exceptions, including failures
+before the job is claimed, are now recorded as job errors. If MongoDB is
+temporarily unavailable for the error write, maintenance retries that write every
+30 seconds while this API process stays alive; it does not rerun processing.
+
+For an older local job left `dispatched` by a confirmed worker-startup exception,
+first restore database/DNS connectivity and confirm the original worker has
+stopped before manually running the same job from the backend repository:
+
+```sh
+python -m ogrre.processing_worker --job-id <job-id> --attempt <attempt-number>
+```
+
+The CLI loads the usual local dotenv configuration before its runtime imports.
+Use the job's current attempt (zero for an initial submission). This command
+claims an already-dispatched job; failed jobs should use **Retry failed
+processing** instead. Do not reset a running job based only on elapsed time:
+check recorded Document AI operations and worker state before recovery.
 
 Directory finalization is idempotent, including after an uncertain HTTP response.
 A retry gets a new Kubernetes Job name and attempt number while retaining the

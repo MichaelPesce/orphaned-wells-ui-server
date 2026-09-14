@@ -579,10 +579,23 @@ async def get_records(
         elif get_by == "record_group":
             rg_id = data.get("id", None)
             if rg_id is not None:
+                if not REQUIRE_AUTH:
+                    user_info = _get_anonymous_user_from_request(request)
+                if rg_id not in data_manager.getUserRecordGroups(user_info):
+                    raise HTTPException(
+                        403, detail="You are not authorized to view these records"
+                    )
+                # Read activity first so a completion during the records query
+                # causes one final refresh rather than leaving stale rows visible.
+                has_active_processing_jobs = data_manager.hasActiveProcessingJobs(rg_id)
                 records, record_count = data_manager.fetchRecordsByRecordGroup(
                     user_info, rg_id, page, records_per_page, sort_by, filter_by
                 )
-                return {"records": records, "record_count": record_count}
+                return {
+                    "records": records,
+                    "record_count": record_count,
+                    "has_active_processing_jobs": has_active_processing_jobs,
+                }
     elif get_by == "team":
         sort_by = data.get(
             "sort", ["dateCreated", 1]

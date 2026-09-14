@@ -1,11 +1,18 @@
 """Metadata validation for browser uploads. File bytes never enter the API."""
 
 import os
+import hashlib
 import re
 import time
 from pathlib import PurePosixPath
 
 from google.cloud.documentai_toolbox import constants
+
+
+def processing_record_id(job_id, source_uri):
+    """Keep record identity stable across finalization, worker starts, and retries."""
+    return hashlib.sha256(f"{job_id}:{source_uri}".encode()).hexdigest()[:24]
+
 
 MIME_TYPES = {
     ".pdf": "application/pdf",

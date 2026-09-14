@@ -669,6 +669,9 @@ Kubernetes permission is required. API and worker labels still distinguish
 2. Upload a representative 500-file directory, including large multipage PDFs,
    while browsing and editing records. Verify that only metadata reaches the
    API and that processing runs in a `processor` Job pod.
+   Queued records must appear after finalization, before the worker starts.
+   Confirm the table updates through processing and completion without resetting
+   filters or pagination, including when active records are on a different page.
 3. Interrupt a transfer, retry, and repeat finalization. Confirm completed
    objects are reused and there is only one logical job.
 4. Submit concurrently from two sessions. Confirm the configured active worker
