@@ -274,3 +274,9 @@ python -m py_compile ogrre/main.py ogrre/routers/router.py ogrre/processing_work
 Upload tests use an isolated MongoDB test double and mocked cloud calls. They do
 not prove live GCS CORS, IAM, Kubernetes scheduling, Document AI compatibility,
 or production memory usage; use the deployment smoke checks before rollout.
+
+The GitHub Actions **Checks** workflow runs Black and **Backend tests (pytest)**
+in separate, parallel jobs. Pytest uses Python 3.12 and the development
+requirements, with pip downloads cached between runs; it needs no MongoDB
+service or cloud credentials. Frontend E2E testing starts only after both jobs
+pass, so backend failures are reported before starting the Docker/browser suite.
