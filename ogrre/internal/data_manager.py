@@ -16,6 +16,7 @@ from pymongo.errors import DuplicateKeyError
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from ogrre.internal import storage_api
 from ogrre.internal import directory_upload
+from ogrre.internal import processing_job_history
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
@@ -2747,6 +2748,143 @@ class DataManager:
             .limit(10)
         ]
 
+    def fetchProcessingJobHistory(self, rg_id, body):
+        pagination, history_filter = processing_job_history.history_query(body)
+        # Group scope is trusted and independent of all submitted filters.
+        history_filter["record_group_id"] = rg_id
+        active_filter = {
+            "record_group_id": rg_id,
+            "status": {"$in": processing_job_history.ACTIVE_STATUSES},
+        }
+
+        def page(query, number):
+            return [
+                self._serializeProcessingJob(job)
+                for job in self.db.processing_jobs.aggregate(
+                    [
+                        {"$match": query},
+                        {"$sort": {"created_at": -1, "_id": -1}},
+                        {"$skip": number * pagination["page_size"]},
+                        {"$limit": pagination["page_size"]},
+                        {"$project": processing_job_history.summary_projection()},
+                    ]
+                )
+            ]
+
+        return {
+            "active_jobs": page(active_filter, pagination["active_page"]),
+            "active_count": self.db.processing_jobs.count_documents(active_filter),
+            "jobs": page(history_filter, pagination["page"]),
+            "count": self.db.processing_jobs.count_documents(history_filter),
+        }
+
+    def fetchProcessingJobDetails(self, rg_id, job_id, file_kind, page, page_size):
+        query = {"_id": job_id, "record_group_id": rg_id}
+        jobs = list(
+            self.db.processing_jobs.aggregate(
+                [
+                    {"$match": query},
+                    {"$project": processing_job_history.summary_projection()},
+                ]
+            )
+        )
+        if not jobs:
+            return None
+        job = self._serializeProcessingJob(jobs[0])
+        offset = page * page_size
+        if file_kind == "records":
+            record_query = {"record_group_id": rg_id, "processing_job_id": job_id}
+            files = [
+                {
+                    "record_id": str(record["_id"]),
+                    "name": record.get("name", ""),
+                    "status": record.get("status"),
+                    "source_uri": record.get("processing_source_uri"),
+                }
+                for record in self.db.records.find(
+                    record_query, {"name": 1, "status": 1, "processing_source_uri": 1}
+                )
+                .sort("_id", ASCENDING)
+                .skip(offset)
+                .limit(page_size)
+            ]
+            count = self.db.records.count_documents(record_query)
+        else:
+            field = {
+                "source": "input.documents",
+                "failed": "summary.failed_document_uris",
+                "skipped": "summary.skipped_duplicate_uris",
+            }[file_kind]
+            result = list(
+                self.db.processing_jobs.aggregate(
+                    [
+                        {"$match": query},
+                        {
+                            "$project": {
+                                "files": {
+                                    "$slice": [
+                                        {"$ifNull": [f"${field}", []]},
+                                        offset,
+                                        page_size,
+                                    ]
+                                },
+                                "count": {"$size": {"$ifNull": [f"${field}", []]}},
+                            }
+                        },
+                    ]
+                )
+            )[0]
+            count = result["count"]
+            files = []
+            for item in result["files"]:
+                uri = (
+                    f"gs://{job['input']['bucket_name']}/{item['object_name']}"
+                    if isinstance(item, dict)
+                    else item
+                )
+                files.append(
+                    {
+                        "source_uri": uri,
+                        "name": item.get("relative_path", item["name"])
+                        if isinstance(item, dict)
+                        else uri.rsplit("/", 1)[-1],
+                        "record_id": directory_upload.processing_record_id(job_id, uri),
+                    }
+                )
+            records = {
+                str(record["_id"]): record
+                for record in self.db.records.find(
+                    {
+                        "record_group_id": rg_id,
+                        "processing_job_id": job_id,
+                        "_id": {"$in": [ObjectId(item["record_id"]) for item in files]},
+                    },
+                    {"status": 1},
+                )
+            }
+            for item in files:
+                record = records.get(item["record_id"])
+                item["status"] = record.get("status") if record else None
+                if record is None:
+                    item.pop("record_id")
+        return {"job": job, "files": files, "file_count": count}
+
+    def processingJobRetryReason(self, job, user_info):
+        if job["status"] not in ("error", "completed_with_errors"):
+            return "Only failed processing can be retried."
+        if not job["input"].get("upload_session_id"):
+            return "GCS batches do not support retry here. Review the failed files before submitting another batch."
+        if job["request_user"].get("email") != user_info.get("email"):
+            return "Only the original uploader can retry this upload."
+        if not self.hasPermission(user_info["email"], "upload_document"):
+            return "Upload permission is required to retry."
+        session = self.getDirectoryUpload(
+            job["input"]["upload_session_id"], job["record_group_id"], user_info
+        )
+        if session is None or session["expires_at"] <= time.time():
+            return "The upload has expired. Contact an administrator to recover failed records."
+        return None
+
     def getActiveProcessingJobs(self):
         return [
             self._serializeProcessingJob(job)
@@ -2795,6 +2933,8 @@ class DataManager:
                     "status": "queued",
                     "error": None,
                     "started_at": None,
+                    "last_progress_at": None,
+                    "stage": None,
                     "completed_at": None,
                     "updated_at": time.time(),
                     "worker": {},
@@ -2887,6 +3027,8 @@ class DataManager:
                 "$set": {
                     "status": "running",
                     "started_at": now,
+                    "last_progress_at": now,
+                    "stage": "preparing_documents",
                     "updated_at": now,
                     "error": None,
                 }
@@ -2915,7 +3057,7 @@ class DataManager:
         batches_completed=0,
     ):
         update = {
-            "$set": {"updated_at": time.time()},
+            "$set": {"updated_at": time.time(), "last_progress_at": time.time()},
             "$inc": {
                 "summary.total_submitted": total_submitted,
                 "summary.total_succeeded": total_succeeded,
@@ -2937,6 +3079,18 @@ class DataManager:
             update["$push"] = push_values
         self.db.processing_jobs.update_one({"_id": str(job_id)}, update)
         return self.getProcessingJob(job_id)
+
+    def recordProcessingJobProgress(self, job_id, stage):
+        self.db.processing_jobs.update_one(
+            {"_id": job_id, "status": "running"},
+            {
+                "$set": {
+                    "stage": stage,
+                    "last_progress_at": time.time(),
+                    "updated_at": time.time(),
+                }
+            },
+        )
 
     def completeProcessingJob(self, job_id, status, error=None, attempt=None):
         if status not in ("completed", "completed_with_errors", "error"):

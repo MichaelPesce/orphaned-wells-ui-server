@@ -331,7 +331,9 @@ def _process_batch_documents(
         for gcs_document in all_documents
         if _get_gcs_document_base_name(gcs_document) in duplicate_file_bases
     )
-    _set_job_fields(data_manager, job_id, batches_total=len(batches))
+    _set_job_fields(
+        data_manager, job_id, batches_total=len(batches), file_count=total_documents
+    )
     _increment_job_summary(data_manager, job_id, total_submitted=total_documents)
     _log.info(
         "batch document job started job_id=%s rg_id=%s bucket=%s prefix=%s "
@@ -462,6 +464,7 @@ def _process_one_batch(
             continue
 
         try:
+            data_manager.recordProcessingJobProgress(job_id, "preparing_documents")
             prepared_documents.append(
                 _prepare_document_for_batch(
                     gcs_document=gcs_document,
@@ -518,6 +521,7 @@ def _process_one_batch(
                     }
                 },
             )
+        data_manager.recordProcessingJobProgress(job_id, "waiting_for_document_ai")
         operation.result(timeout=BATCH_LRO_TIMEOUT)
         metadata = operation.metadata
     except Exception as e:
@@ -567,6 +571,7 @@ def _process_one_batch(
         )
         return partial_summary
 
+    data_manager.recordProcessingJobProgress(job_id, "saving_results")
     status_by_source = {
         status.input_gcs_source: status
         for status in metadata.individual_process_statuses

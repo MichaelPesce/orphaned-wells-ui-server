@@ -164,6 +164,32 @@ storage, or include them in support reports.
 
 ### Jobs and recovery
 
+The frontend's record-group **Upload history** page separates active jobs from
+finished uploads. The upload dialog displays only its current submission.
+History covers worker-backed directory uploads and GCS batches; single-file/ZIP
+and local-storage fallback uploads do not have durable submission tracking.
+
+- `POST /processing_jobs/{rg_id}/history` accepts `page`, `active_page`,
+  `page_size` (1–100, default 25), and `filter`. Active and finished pages are
+  independent. Finished-job filters allow `status`, `source_type` (`directory`
+  or `gcs`), `request_user.email`, and `created_at`; arbitrary Mongo operators
+  and client group-scope overrides are rejected.
+- `GET /processing_jobs/{rg_id}/{job_id}` returns a compact job summary,
+  retry eligibility/reason, and one file page. Query parameters are `page`,
+  `page_size` (1–100), and `file_kind` (`records`, `source`, `failed`, `skipped`).
+  Manifests/failure arrays are sliced in MongoDB and excluded from summary
+  lists; records are paginated and linked only within the authorized group/job.
+- Both reads require record-group access. Retry still requires upload permission,
+  ownership of the session, unexpired inputs, and confirmation that the previous
+  worker has stopped. Eligibility shown by the UI is checked again on retry.
+
+Workers report `stage` and `last_progress_at` when preparing files, waiting for
+Document AI, saving results, and completing batches. These are activity events,
+not heartbeats; parallel batches can alternate the latest reported stage.
+Older jobs without these fields show no recorded activity. This change adds no
+automatic retention or forced recovery and requires no Terraform changes.
+Deploy the API and worker image together to populate the new activity fields.
+
 Directory finalization creates metadata-only records with `status=queued` after
 verifying every uploaded original. Record numbers and IDs exist before a worker
 starts; conversion and image bytes remain in the worker. Duplicate decisions

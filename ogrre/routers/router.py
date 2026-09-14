@@ -1487,6 +1487,60 @@ def list_processing_jobs(
     return data_manager.listProcessingJobs(rg_id)
 
 
+def _require_processing_history_access(rg_id, request, user_info):
+    if not REQUIRE_AUTH:
+        user_info = _get_anonymous_user_from_request(request)
+    if rg_id not in data_manager.getUserRecordGroups(user_info):
+        raise HTTPException(
+            403, detail="You are not authorized to view these processing jobs"
+        )
+    return user_info
+
+
+@router.post("/processing_jobs/{rg_id}/history")
+async def get_processing_job_history(
+    rg_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    _require_processing_history_access(rg_id, request, user_info)
+    try:
+        body = await request.json()
+        return await run_in_threadpool(
+            data_manager.fetchProcessingJobHistory, rg_id, body
+        )
+    except ValueError as error:
+        raise HTTPException(400, detail=str(error)) from error
+
+
+@router.get("/processing_jobs/{rg_id}/{job_id}")
+def get_processing_job_details(
+    rg_id: str,
+    job_id: str,
+    request: Request,
+    page: int = Query(0, ge=0, le=100000),
+    page_size: int = Query(25, ge=1, le=100),
+    file_kind: str = Query("records", pattern="^(records|source|failed|skipped)$"),
+    user_info: dict = Depends(authenticate),
+):
+    user_info = _require_processing_history_access(rg_id, request, user_info)
+    result = data_manager.fetchProcessingJobDetails(
+        rg_id, job_id, file_kind, page, page_size
+    )
+    if result is None:
+        raise HTTPException(404, detail="Processing job not found")
+    reason = data_manager.processingJobRetryReason(result["job"], user_info)
+    if reason is None:
+        try:
+            # The summary excludes worker configuration; use it only for this check.
+            if not processing_worker_has_stopped(data_manager.getProcessingJob(job_id)):
+                reason = "The previous worker is still stopping. Try again shortly."
+        except Exception:
+            reason = (
+                "Unable to confirm the previous worker has stopped. Try again shortly."
+            )
+    result["retry"] = {"allowed": reason is None, "reason": reason}
+    return result
+
+
 @router.post("/processing_jobs/{rg_id}/{job_id}/retry")
 def retry_processing_job(
     rg_id: str,
