@@ -260,8 +260,9 @@ GCS-source batches retain their existing manual recovery workflow.
 Single-file/ZIP uploads, record-image uploads, imports, rotation, and exports
 still execute work in API pods. Staging now targets 1 CPU / 4 GiB for its single
 API pod with two Uvicorn workers; its processing worker retains 1 CPU / 6 GiB.
-Production retains two API replicas at 1850m CPU / 12 GiB each and the same
-per-worker allocation until staging measurements establish safe headroom.
+Production targets two API replicas at 1 CPU / 6 GiB each; its processing
+workers retain 1850m CPU / 12 GiB. Further API reductions depend on staging
+measurements establishing safe headroom.
 See the [resource rollout](deployment/kubernetes/README.md#staging-checks-before-reducing-api-resources)
 for validation, deployment, and rollback steps. API and worker sizing remain
 independent.

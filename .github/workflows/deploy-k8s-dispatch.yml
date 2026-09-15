@@ -190,10 +190,10 @@ jobs:
             : "${memory_limit:=4Gi}"
           else
             : "${replicas:=2}"
-            : "${cpu_request:=1850m}"
-            : "${memory_request:=12Gi}"
-            : "${cpu_limit:=1850m}"
-            : "${memory_limit:=12Gi}"
+            : "${cpu_request:=1}"
+            : "${memory_request:=6Gi}"
+            : "${cpu_limit:=1}"
+            : "${memory_limit:=6Gi}"
           fi
           : "${persistent_disk_size:=20Gi}"
           : "${api_uvicorn_workers:=2}"

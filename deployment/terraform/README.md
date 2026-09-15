@@ -190,37 +190,40 @@ Each backend may set these optional `gke_backends` or
 
 The default collaborator worker is 1850m CPU and 12Gi memory. Staging workers
 retain 1 CPU and 6Gi while the staging API targets 1 CPU and 4Gi with two
-Uvicorn workers. Production API defaults remain at two replicas, each with
-1850m CPU and 12Gi, pending measurements at the smaller staging size.
+Uvicorn workers. Production API defaults target two replicas, each with 1 CPU
+and 6Gi. Production workers retain their larger allocation independently.
 After Terraform changes these output values, update `K8S_DEPLOY_TARGETS` and
 deploy the backend; no resource setting takes effect from Terraform alone.
 
-### Staging API resource reduction
+### API resource reduction
 
-This change reduces only staging API memory requests and limits from `6Gi` to
-`4Gi`. API CPU remains `1`, the replica count remains `1`, and all worker
-settings and production allocations remain unchanged. For an otherwise
-up-to-date workspace, `terraform plan` should show only these changes under
-`kubernetes_deploy_targets.staging`:
+API requests and limits use these targets; replica counts and all worker
+settings remain unchanged:
 
-```text
-memory_request = "6Gi" -> "4Gi"
-memory_limit   = "6Gi" -> "4Gi"
-```
+| Environment | API replicas | API CPU / memory per pod | Worker CPU / memory |
+| --- | --- | --- | --- |
+| Staging | 1 | 1 CPU / 4Gi | 1 CPU / 6Gi |
+| Production collaborators | 2 | 1 CPU / 6Gi | 1850m CPU / 12Gi |
+
+For an otherwise up-to-date workspace, `terraform plan` should show only
+changes under `kubernetes_deploy_targets`: production `cpu_request` and
+`cpu_limit` change from `1850m` to `1`, and `memory_request` and `memory_limit`
+change from `12Gi` to `6Gi`. If the staging reduction has not already been
+applied, its memory outputs also change from `6Gi` to `4Gi`.
 
 There should be no infrastructure resources to add, change, or destroy from
 this sizing change. Review any other changes separately. Apply the output
 update, refresh the GitHub secret using the export instructions above, and
-deploy staging with the updated workflow. Explicit values in the secret take
-precedence over workflow defaults, so an older secret containing `6Gi` will
-continue to deploy a `6Gi` staging API until refreshed. The workflow now honors
-explicit smaller settings, including a `4Gi` limit.
+deploy the affected environments with the updated workflow. Explicit values
+in the secret take precedence over workflow defaults, so older secrets retain
+the previous pod sizes until refreshed. Applying and exporting these values
+does not resize live pods; each backend deployment activates its new target.
 
 Follow the [staging checks and rollback instructions](../kubernetes/README.md#staging-checks-before-reducing-api-resources)
-before reducing production. After validation, use `gke_backend_overrides` to
-size one production environment at a time, preserving replicas and worker
-settings. A production API target of 1 CPU / 4Gi reduces both resources;
-1 CPU / 6Gi is an intermediate option if measurements require more headroom.
+and deploy production environments one at a time, preserving replicas and
+worker settings. Keep production at 1 CPU / 6Gi while validating 4Gi in staging;
+any further production reduction requires measured headroom. Use
+`gke_backend_overrides` for environment-specific adjustments or rollback.
 
 ### Primary DNS state migration
 
@@ -559,5 +562,5 @@ Review existing CORS and lifecycle settings in the Terraform plan before
 applying these changes. The deletion rule covers only the two temporary
 prefixes; it does not cover `uploads/`, `deleted/`, or caller-owned batch inputs.
 Apply storage configuration before deploying the paired upload frontend/backend.
-Production API CPU/memory defaults are unchanged pending the staging validation documented
-in [the Kubernetes README](../kubernetes/README.md#browser-directory-upload-rollout).
+API sizing and validation are documented in
+[the Kubernetes README](../kubernetes/README.md#staging-checks-before-reducing-api-resources).
