@@ -622,7 +622,7 @@ curl -f https://boots-server.uow-carbon.org/health
 - The backend timeout is configured to 180 seconds through `BackendConfig`, matching the current nginx timeout.
 - The Kubernetes Deployment uses pod-local `emptyDir` volumes for `/logs` and `/data`. Real document storage should continue using Google Cloud Storage.
 - The app receives `storage-service-key.json` and `document-ai-service-key.json` at `/code/ogrre/...`. The runtime env sets `STORAGE_SERVICE_KEY` and `DOCUMENT_AI_SERVICE_KEY` to those absolute paths so packaged Python imports do not resolve key filenames relative to `site-packages`.
-- The default collaborator GKE backend resources request 1850m CPU and 12 GiB memory. Staging is intentionally smaller at 1 replica with 1 CPU and 6 GiB memory.
+- The default collaborator GKE backend resources request 1850m CPU and 12 GiB memory. Staging targets 1 API replica with 1 CPU and 4 GiB memory; its processing workers retain 1 CPU and 6 GiB.
 - Batch workers use separate per-environment resource requests. The initial rollout permits one active batch worker per environment and sets `backoffLimit: 0`; retry failed batches only after reviewing their durable job status and affected records.
 
 
@@ -664,6 +664,11 @@ Kubernetes permission is required. API and worker labels still distinguish
 
 ### Staging checks before reducing API resources
 
+The configured staging API target is 1 CPU / 4 GiB (requests and limits), with
+one replica and two Uvicorn workers. Staging processing workers retain
+1 CPU / 6 GiB. Production API replicas and worker resources remain unchanged
+while this smaller API size is validated.
+
 1. Verify real bucket CORS from the frontend origin and test a transfer larger
    than 8 MiB so multiple chunks and the `Range` response are exercised.
 2. Upload a representative 500-file directory, including large multipage PDFs,
@@ -683,11 +688,44 @@ Kubernetes permission is required. API and worker labels still distinguish
    failures, and successful record images/attributes/cleaning behavior.
 7. Compare API and worker memory peaks, CPU, throttling, restarts/OOM events,
    temporary storage, job duration, and API response latency separately.
+8. Exercise single-file/ZIP uploads, record-image uploads, imports, rotation,
+   and exports alongside normal traffic. These still execute in the API pod.
+   Use peak usage and response times under load to assess headroom; an idle
+   `kubectl top` snapshot does not establish a safe limit.
 
-After those checks, test smaller API requests in staging (for example 1 CPU and
-4 GiB with two Uvicorn workers), then choose production settings from measured
-headroom. Keep replica count unchanged initially. Single-file/ZIP and other API
-workflows still need coverage. Resource changes flow through Terraform outputs,
-`K8S_DEPLOY_TARGETS`, and a backend deployment; changing Terraform alone does not
-resize running pods. Check the admitted pod resources because Autopilot can
-adjust requests to enforce CPU/memory ratios.
+Apply Terraform, refresh `K8S_DEPLOY_TARGETS`, and deploy staging with the updated
+workflow to activate the smaller target. For an otherwise up-to-date workspace,
+the Terraform plan changes only the staging `memory_request` and `memory_limit`
+output values from `6Gi` to `4Gi`; it does not resize running pods itself.
+An old deploy-target secret containing `6Gi` continues to select that size.
+Verify the admitted pod resources because Autopilot can adjust requests:
+
+```bash
+kubectl -n uow-staging get pods -l app.kubernetes.io/component=api \
+  -o 'custom-columns=NAME:.metadata.name,CPU_REQUEST:.spec.containers[*].resources.requests.cpu,MEMORY_REQUEST:.spec.containers[*].resources.requests.memory,CPU_LIMIT:.spec.containers[*].resources.limits.cpu,MEMORY_LIMIT:.spec.containers[*].resources.limits.memory'
+kubectl -n uow-staging top pods -l app.kubernetes.io/component=api
+```
+
+After validation, choose production settings from measured headroom and deploy
+one environment at a time, keeping two API replicas and worker settings intact.
+The initial production candidate is 1 CPU / 4 GiB per API pod; use 1 CPU / 6 GiB
+if the measurements require more memory. Update API requests and limits together.
+
+To roll staging back to its previous memory allocation, merge this entry into
+the existing `gke_backend_overrides` map in `terraform.tfvars`, then apply,
+refresh `K8S_DEPLOY_TARGETS`, and redeploy staging:
+
+```hcl
+gke_backend_overrides = {
+  staging = {
+    memory_request = "6Gi"
+    memory_limit   = "6Gi"
+  }
+}
+```
+
+Remove that override when resuming validation at `4Gi`. Autopilot bills these
+general-purpose workloads by pod resource requests, so the cost reduction starts
+when the smaller pods are deployed. Finished worker Jobs no longer consume
+running compute even though their metadata is retained for troubleshooting.
+See [GKE Autopilot pricing](https://cloud.google.com/kubernetes-engine/pricing).
