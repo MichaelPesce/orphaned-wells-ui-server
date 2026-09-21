@@ -707,8 +707,12 @@ async def get_record_data(
     except Exception as e:
         _log.info(f"unable to get page state: {e}")
         page_state = None
-    record, is_locked = data_manager.fetchRecordData(
-        record_id, user_info, page_state=page_state, background_tasks=background_tasks
+    record, is_locked = schema_operation(
+        data_manager.fetchRecordData,
+        record_id,
+        user_info,
+        page_state=page_state,
+        background_tasks=background_tasks,
     )
     if record is None:
         raise HTTPException(
@@ -1857,6 +1861,7 @@ async def update_record(
             field_to_clean,
             user_info,
             calling_function="update_record",
+            expected_attribute_revision=req.get("attribute_revision"),
         )
     if not update:
         raise HTTPException(status_code=403, detail=f"Record is locked by another user")
@@ -2435,7 +2440,7 @@ async def run_cleaning_functions(
             detail=f"You are not authorized to run cleaning functions. Please contact a team lead or project manager.",
         )
 
-    data_manager.cleanCollection(location, _id, user_info)
+    schema_operation(data_manager.cleanCollection, location, _id, user_info)
 
     return _id
 

@@ -132,7 +132,8 @@ def test_admin_can_change_types_and_delete_but_cannot_rename(client, schema_mana
         == 200
     )
     assert edit(client, operation="delete").status_code == 200
-    assert schema_manager.db.processors.find_one()["attributes"] == []
+    assert schema_manager.db.processors.find_one()["attributes"][0]["deleted"] is True
+    assert schema_manager.getSchema(USER)["processors"][0]["attributes"] == []
     assert edit(client, operation="delete").status_code == 404
 
 
@@ -502,7 +503,7 @@ def test_schema_update_does_not_overwrite_an_intervening_edit(schema_manager):
     assert schema_manager.db.processors.find_one()["attributes"] == [FIELD]
 
 
-def test_admin_removing_parent_removes_descendant_definitions(client, schema_manager):
+def test_admin_removing_parent_retires_descendant_definitions(client, schema_manager):
     schema_manager.hasPermission.side_effect = None
     schema_manager.hasPermission.return_value = True
     parent = {"name": "address", "data_type": "Parent", "database_data_type": "Table"}
@@ -511,7 +512,9 @@ def test_admin_removing_parent_removes_descendant_definitions(client, schema_man
         {"name": "well"}, {"$set": {"attributes": [FIELD, parent, child]}}
     )
     assert edit(client, operation="delete", field="address").status_code == 200
-    assert schema_manager.db.processors.find_one()["attributes"] == [FIELD]
+    fields = schema_manager.db.processors.find_one()["attributes"]
+    assert fields == [FIELD, {**parent, "deleted": True}, {**child, "deleted": True}]
+    assert schema_manager.getSchema(USER)["processors"][0]["attributes"] == [FIELD]
 
 
 def test_safe_edit_can_clear_optional_order(client, schema_manager):

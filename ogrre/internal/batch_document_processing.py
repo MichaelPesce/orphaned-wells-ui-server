@@ -919,20 +919,16 @@ def _update_record_with_attributes(
             processor_attributes
         )
 
-    attributes_list = util.normalize_record_attribute_tree(attributes_list)
-
-    for attribute in attributes_list:
-        if run_cleaning_functions:
+    sorted_attributes_list, _ = util.sortRecordAttributes(
+        attributes_list, {"attributes": processor_attributes}, keep_all_attributes=True
+    )
+    if run_cleaning_functions:
+        for attribute in sorted_attributes_list:
             util.cleanRecordAttribute(
                 processor_attributes=processor_attributes_dictionary,
                 attribute=attribute,
             )
 
-    sorted_attributes_list, _ = util.sortRecordAttributes(
-        attributes_list,
-        {"attributes": processor_attributes},
-        keep_all_attributes=True,
-    )
     final_duplicate_targets = _target_attribute_duplicates(sorted_attributes_list)
     if final_duplicate_targets:
         _log.warning(

@@ -97,9 +97,40 @@ management. The Mongo catalog is shared by all teams in the database.
 - Field renaming is disabled for every role. Schema changes through record
   imports and record-group updates enforce the same permissions. Existing
   group schemas cannot be silently replaced by an ordinary record import.
-- Removed schemas are archived in `deleted_processors`. **Record field soft
-  deletion is not implemented in this segment**; authorized schema removals
-  can still cause the existing record reconciliation to discard fields.
+- Removed schemas are archived in `deleted_processors`. Removed schema fields
+  and their record attributes are retained with `deleted: true`.
+
+### Retired record fields
+
+Retiring a schema field preserves its record values, raw text, coordinates,
+confidence, and nested children. Retired fields are hidden from the record UI,
+cleaning, filters, sorting, counts, statistics, column discovery, and CSV/JSON
+exports. The record-detail API retains the complete attribute tree for future
+tools; clients must preserve its original indexes. No restore or deleted-field
+view is provided. Re-adding a schema field does not restore its old values.
+
+In Mongo mode, fields absent from the schema stay visible; only explicit field
+retirement or removal during schema replacement retires them. In repo mode,
+unmatched fields are marked deleted. A missing processor definition never means
+"delete every field." Existing `data_fusion` settings are ignored.
+
+Reconciliation runs on record reads and before list/filter/export/clean queries,
+including records never opened after a schema change. Records stream in batches
+of 100 with conditional writes that preserve concurrent edits. These requests
+wait for reconciliation to finish; the first read after deployment or a schema
+change can take longer for large groups. Startup creates an index on
+`record_group_id` and `attribute_schema_revision` to find stale records. Before
+another schema edit or catalog deletion, any pending previous retirement is
+applied so that removing and immediately re-adding a field cannot undo it.
+
+Deploy the paired frontend and backend updates together and refresh open record
+pages. Attribute edits, inserts, manual deletes, coordinate edits, and review
+resets must send the `attribute_revision` returned by the record-detail API.
+Successful edits return the new revision. A missing or stale revision returns
+409; reload the record before retrying. Never persist a filtered list as the
+complete record tree. Manual deletion of an active `user_added` field retains
+its existing behavior. Previously discarded data cannot be recovered by this
+change.
 
 ### Migrate existing role assignments
 

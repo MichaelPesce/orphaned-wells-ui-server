@@ -423,20 +423,15 @@ def process_image(
         record_id=record_id,
     )
     _log.info(f"processed document in doc_ai")
-    attributesList = util.normalize_record_attribute_tree(attributesList)
-    for attribute in attributesList:
-        if run_cleaning_functions:
+    sortedAttributesList, _ = util.sortRecordAttributes(
+        attributesList, {"attributes": processor_attributes}, keep_all_attributes=True
+    )
+    if run_cleaning_functions:
+        for attribute in sortedAttributesList:
             util.cleanRecordAttribute(
                 processor_attributes=prcoessor_attributes_dictionary,
                 attribute=attribute,
             )
-
-    ## sort attributes and add attributes that weren't found:
-    sortedAttributesList, _ = util.sortRecordAttributes(
-        attributesList,
-        {"attributes": processor_attributes},
-        keep_all_attributes=True,
-    )
 
     ## gotta update the record in the db
     record = {

@@ -6,6 +6,8 @@ import io
 import json
 import re
 import uuid
+import copy
+import hashlib
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
@@ -58,6 +60,9 @@ class DataManager:
     def __init__(self, **kwargs) -> None:
         self.app_settings = AppSettings(**kwargs)
         self.db = connectToDatabase()
+        self.db.records.create_index(
+            [("record_group_id", 1), ("attribute_schema_revision", 1)]
+        )
         self.environment = os.getenv("ENVIRONMENT")
         self.collaborator = os.getenv("COLLABORATOR")
         _log.info(f"working in environment: {self.environment}")
@@ -138,12 +143,16 @@ class DataManager:
                 return None, None
 
             attribute = attributes[indexes[0]]
+            if attribute.get("deleted"):
+                return None, None
             attribute_identifier = attribute.get("key")
             for sub_index in indexes[1:]:
                 if sub_index < 0:
                     return None, None
                 subattributes = attribute.get("subattributes") or []
                 attribute = subattributes[sub_index]
+                if attribute.get("deleted"):
+                    return None, None
                 attribute_identifier = util.get_attribute_identifier(
                     attribute, attribute_identifier
                 )
@@ -180,8 +189,11 @@ class DataManager:
         new_data,
         update_type,
         user=None,
+        record_doc=None,
     ):
-        record_doc = self.db.records.find_one({"_id": _id}, {"attributesList": 1})
+        record_doc = record_doc or self.db.records.find_one(
+            {"_id": _id}, {"attributesList": 1}
+        )
         if not record_doc:
             _log.info("record lookup returned no document for field operation")
             return False
@@ -513,6 +525,17 @@ class DataManager:
             )
 
     def _saveProcessorChanges(self, processor, changes, user_info, action):
+        affected = [
+            str(group["_id"])
+            for group in self.db.record_groups.find(
+                {"processorId": processor.get("processorId")}, {"_id": 1}
+            )
+        ]
+        self._ensureRecordGroupsReconciled(affected, user_info)
+        if "attributes" in changes:
+            changes["attributes"] = schema_rules.retain_retired_fields(
+                processor.get("attributes"), changes["attributes"]
+            )
         # Compare the original state so simultaneous edits cannot overwrite one another.
         result = self.db.processors.update_one(
             processor, {"$set": {**changes, "lastUpdated": time.time()}}
@@ -557,9 +580,13 @@ class DataManager:
                     }
                 )
         for processor in processors:
-            processor["attributes"] = schema_rules.normalize_fields(
-                processor.get("attributes") or [], strict=False
-            )
+            processor["attributes"] = [
+                field
+                for field in schema_rules.normalize_fields(
+                    processor.get("attributes") or [], strict=False
+                )
+                if not field.get("deleted")
+            ]
             processor["img"] = util.generate_file_url(
                 path=f"sample_images/{processor.get('name')}"
             )
@@ -616,6 +643,13 @@ class DataManager:
     def deleteProcessorSchema(self, processorName, user_info):
         self.requireSchemaPermission(user_info, destructive=True)
         processor = self._findUniqueProcessor({"name": processorName})
+        affected = [
+            str(group["_id"])
+            for group in self.db.record_groups.find(
+                {"processorId": processor.get("processorId")}, {"_id": 1}
+            )
+        ]
+        self._ensureRecordGroupsReconciled(affected, user_info)
         archived = {
             **processor,
             "deleted_by": user_info.get("email"),
@@ -687,9 +721,13 @@ class DataManager:
         if not isinstance(updates, dict) or set(updates) - schema_rules.FIELD_UPDATES:
             raise schema_rules.SchemaError("Unsupported schema field updates.")
         processor = self._findUniqueProcessor({"name": processor_name})
-        attributes = schema_rules.normalize_fields(
-            processor.get("attributes") or [], strict=False
-        )
+        attributes = [
+            field
+            for field in schema_rules.normalize_fields(
+                processor.get("attributes") or [], strict=False
+            )
+            if not field.get("deleted")
+        ]
         target = next(
             (field for field in attributes if field.get("name") == field_name), None
         )
@@ -1051,7 +1089,8 @@ class DataManager:
             record_groups += project.get("record_groups", [])
         return record_groups
 
-    def getRecordGroupProgress(self, rg_ids):
+    def getRecordGroupProgress(self, rg_ids, user=None):
+        self._ensureRecordGroupsReconciled(rg_ids, user)
         pipeline = util.generate_record_group_stats(rg_ids)
         stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
         return stats
@@ -1142,8 +1181,10 @@ class DataManager:
         include_attribute_fields=None,  ## use this to include ONLY specific fields
         exclude_attribute_fields=None,  ## use this to exclude specific fields
         forDownload=False,
+        user=None,
     ):
         records = []
+        self._prepareRecordQuery(filter_by, user)
 
         pipeline = util.generate_mongo_records_pipeline(
             filter_by=filter_by,
@@ -1171,7 +1212,12 @@ class DataManager:
                     document[each] = found_values[each]
             records.append(document)
         # _log.info(records)
-        record_count = self.db.records.count_documents(filter_by)
+        counts = list(
+            self.db.records.aggregate(
+                util.active_records_pipeline(filter_by) + [{"$count": "count"}]
+            )
+        )
+        record_count = counts[0]["count"] if counts else 0
         return records, record_count
 
     def fetchRecordsByTeam(
@@ -1196,6 +1242,7 @@ class DataManager:
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
             forDownload=forDownload,
+            user=user,
         )
 
     def fetchRecordsByRecordGroup(
@@ -1219,6 +1266,7 @@ class DataManager:
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
             forDownload=forDownload,
+            user=user,
         )
 
     def fetchRecordsByProject(
@@ -1245,6 +1293,7 @@ class DataManager:
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
             forDownload=forDownload,
+            user=user,
         )
 
     def fetchRecordsByProjectAndDocumentTypes(
@@ -1298,6 +1347,7 @@ class DataManager:
             include_attribute_fields=include_attribute_fields,
             exclude_attribute_fields=exclude_attribute_fields,
             forDownload=forDownload,
+            user=user,
         )
 
     @time_it
@@ -1309,7 +1359,7 @@ class DataManager:
 
         project_record_groups = project.get("record_groups", [])
 
-        all_stats = self.getRecordGroupProgress(project_record_groups)
+        all_stats = self.getRecordGroupProgress(project_record_groups, user)
 
         record_group_ids = [ObjectId(rg) for rg in project_record_groups]
 
@@ -1352,7 +1402,6 @@ class DataManager:
             for rg in record_groups:
                 rg_ids.append(ObjectId(rg))
             rg_documents = list(self.db.record_groups.find({"_id": {"$in": rg_ids}}))
-            schema_less_record_groups = []
             doc_type_columns = {}
 
             for doc in rg_documents:
@@ -1370,20 +1419,17 @@ class DataManager:
                             if location == "documentType":
                                 if attr_name not in doc_type_columns[doc_type]:
                                     doc_type_columns[doc_type].append(attr_name)
-                else:
-                    schema_less_record_groups.append((doc, doc_type))
-
-            if schema_less_record_groups:
-                rg_id_list = [str(item[0]["_id"]) for item in schema_less_record_groups]
-                derived_cols = self.deriveRecordColumnsFromRecordGroups(rg_id_list)
+                # Include imported fields not yet defined by the shared schema.
+                derived_cols = self.deriveRecordColumnsFromRecordGroups(
+                    [str(doc["_id"])], user
+                )
                 columns.update(derived_cols)
                 if location == "documentType":
-                    for doc, doc_type in schema_less_record_groups:
-                        if doc_type not in doc_type_columns:
-                            doc_type_columns[doc_type] = []
-                        for col in derived_cols:
-                            if col not in doc_type_columns[doc_type]:
-                                doc_type_columns[doc_type].append(col)
+                    if doc_type not in doc_type_columns:
+                        doc_type_columns[doc_type] = []
+                    for col in derived_cols:
+                        if col not in doc_type_columns[doc_type]:
+                            doc_type_columns[doc_type].append(col)
 
             if "projects" in document:
                 del document["projects"]
@@ -1403,7 +1449,6 @@ class DataManager:
         elif location == "record_group":
             columns = []
             rg_document = self.db.record_groups.find({"_id": ObjectId(_id)}).next()
-            data_fusion = rg_document.get("data_fusion", None)
             rg_document["_id"] = _id
             rg_schema = self.getRecordGroupSchemaAttributes(
                 user=user, rg_document=rg_document
@@ -1411,47 +1456,155 @@ class DataManager:
             if rg_schema:
                 for attr in rg_schema:
                     attr_name = attr["name"]
-                    if data_fusion and attr_name not in data_fusion:
-                        continue
                     columns.append(attr["name"])
-            else:
-                columns = self.deriveRecordColumnsFromRecordGroups([_id])
+            columns = list(
+                dict.fromkeys(
+                    columns + self.deriveRecordColumnsFromRecordGroups([_id], user)
+                )
+            )
             columns.append("record_notes")
             return {"columns": columns, "obj": rg_document}
         return None
 
+    def _recordSchema(self, group, user=None):
+        """Resolve reconciliation rules; a missing definition never retires data."""
+        processor_id = group.get("processorId")
+        if processor_id:
+            processor = self.getProcessorById(processor_id, user)
+            schema = processor if processor and "attributes" in processor else None
+            keep_unknown = USE_DB_PROCESSORS
+        else:
+            schema = (
+                {"attributes": group["attributes"]} if group.get("attributes") else None
+            )
+            keep_unknown = True
+        if schema is not None:
+            schema = {
+                "attributes": schema_rules.normalize_fields(
+                    schema.get("attributes") or [], strict=False
+                )
+            }
+        fingerprint = self._attributeDigest([2, schema, keep_unknown])
+        return schema, keep_unknown, fingerprint
+
+    @staticmethod
+    def _attributeDigest(value):
+        return hashlib.sha256(
+            json.dumps(value, sort_keys=True, default=str).encode()
+        ).hexdigest()
+
+    def _recordAttributeState(self, attributes, schema_state):
+        schema, keep_unknown, fingerprint = schema_state
+        attributes, _ = util.sortRecordAttributes(
+            attributes, schema, keep_all_attributes=keep_unknown
+        )
+        return {
+            "attributesList": attributes,
+            "attribute_schema_revision": fingerprint,
+            "attribute_revision": self._attributeDigest([fingerprint, attributes]),
+            "has_errors": util.searchRecordForErrorsAndTargetKeys(
+                {"attributesList": attributes}, []
+            )[0],
+        }
+
+    @staticmethod
+    def _originalAttributeQuery(record):
+        return {
+            "_id": ObjectId(record["_id"]),
+            **{
+                key: record[key] if key in record else {"$exists": False}
+                for key in (
+                    "attributesList",
+                    "attribute_revision",
+                    "attribute_schema_revision",
+                )
+            },
+        }
+
+    def _reconcileRecord(self, record, schema_state=None, user=None):
+        if schema_state is None:
+            group = self.db.record_groups.find_one(
+                {"_id": ObjectId(record["record_group_id"])}
+            )
+            schema_state = self._recordSchema(group or {}, user)
+        for attempt in range(3):
+            fields = self._recordAttributeState(
+                record.get("attributesList"), schema_state
+            )
+            if all(record.get(key) == value for key, value in fields.items()):
+                return record
+            result = self.db.records.update_one(
+                self._originalAttributeQuery(record), {"$set": fields}
+            )
+            if result.matched_count:
+                return {**record, **fields}
+            fresh = self.db.records.find_one({"_id": ObjectId(record["_id"])})
+            if fresh is None:
+                raise schema_rules.SchemaError("Record not found.", 404)
+            record = {**record, **fresh}
+        raise schema_rules.SchemaError(
+            "The record changed during schema reconciliation. Reload and retry.", 409
+        )
+
+    def _ensureRecordGroupsReconciled(self, group_ids, user=None):
+        # Stream stale records in bounded batches. Reads wait for the current
+        # schema state before filtering/counting, including never-opened records.
+        group_ids = list(dict.fromkeys(group_ids))
+        for group in self.db.record_groups.find(
+            {"_id": {"$in": [ObjectId(value) for value in group_ids]}}
+        ):
+            schema_state = self._recordSchema(group, user)
+            query = {
+                "record_group_id": str(group["_id"]),
+                "attribute_schema_revision": {"$ne": schema_state[2]},
+            }
+            for record in self.db.records.find(query).batch_size(100):
+                self._reconcileRecord(record, schema_state, user)
+            current_group = self.db.record_groups.find_one({"_id": group["_id"]})
+            if (
+                current_group is None
+                or self._recordSchema(current_group, user)[2] != schema_state[2]
+            ):
+                raise schema_rules.SchemaError(
+                    "The schema changed while preparing records. Retry the request.",
+                    409,
+                )
+
+    def _prepareRecordQuery(self, filter_by, user=None):
+        scope = filter_by.get("record_group_id")
+        if isinstance(scope, str):
+            group_ids = [scope]
+        elif isinstance(scope, dict) and "$in" in scope:
+            group_ids = scope["$in"]
+        else:
+            group_ids = [
+                str(group["_id"])
+                for group in self.db.record_groups.find({}, {"_id": 1})
+            ]
+        self._ensureRecordGroupsReconciled(group_ids, user)
+
     def getRecordGroupSchemaAttributes(self, rg_id=None, user=None, rg_document=None):
-        try:
-            document = rg_document
-            if document is None and rg_id is not None:
-                document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
-            if document is None:
-                return []
-
-            processor_id = document.get("processorId")
-            if processor_id:
-                processor_document = self.getProcessorById(processor_id, user)
-                if processor_document and "attributes" in processor_document:
-                    return processor_document.get("attributes") or []
-
-            attributes = document.get("attributes") or []
-            if isinstance(attributes, list):
-                return attributes
-            return []
-        except Exception as e:
-            _log.error(f"unable to get record group schema attributes: {e}")
-            return []
+        group = rg_document
+        if group is None and rg_id is not None:
+            group = self.db.record_groups.find_one({"_id": ObjectId(rg_id)})
+        schema, _, _ = self._recordSchema(group or {}, user)
+        return [
+            field
+            for field in (schema or {}).get("attributes", [])
+            if not field.get("deleted")
+        ]
 
     def getRecordGroupSchemaMap(self, rg_id, user=None):
         return util.convert_processor_attributes_to_dict(
             self.getRecordGroupSchemaAttributes(rg_id=rg_id, user=user)
         )
 
-    def deriveRecordColumnsFromRecordGroups(self, record_group_ids):
+    def deriveRecordColumnsFromRecordGroups(self, record_group_ids, user=None):
         columns = set()
         if not record_group_ids:
             return []
 
+        self._ensureRecordGroupsReconciled(record_group_ids, user)
         cursor = self.db.records.find(
             {"record_group_id": {"$in": record_group_ids}},
             {"attributesList": 1},
@@ -1558,6 +1711,8 @@ class DataManager:
         if not rg_id in user_record_groups:
             return None, None
 
+        document = self._reconcileRecord(document, user=user_info)
+        document["_id"] = str(document["_id"])
         ## try to attain lock
         attained_lock = self.tryLockingRecord(record_id, user)
         image_urls = []
@@ -1583,10 +1738,6 @@ class DataManager:
         rg_name = rg.get("name", "")
         document["rg_name"] = rg_name
         document["rg_id"] = rg_id
-
-        ## 06/17/2026: add functionality for data fusion
-        ## if data_fusion exists, only use subset of processor attributes
-        data_fusion = rg.get("data_fusion", None)
 
         ## get project name
         project_document = self.getProjectFromRecordGroup(rg_id)
@@ -1620,35 +1771,12 @@ class DataManager:
             sortBy = ["dateCreated", 1]
 
         ## Get Record index, next id, and previous id
-        self.getRecordIndexes(document, filterBy, tuple(sortBy))
+        self.getRecordIndexes(document, filterBy, tuple(sortBy), user_info)
 
-        ## sort record attributes
-        try:
-            processor_attributes = self.getRecordGroupSchemaAttributes(
-                user=user_info, rg_document=rg
-            )
-            sorted_attributes, update_db = util.sortRecordAttributes(
-                document["attributesList"],
-                {"attributes": processor_attributes},
-                data_fusion=data_fusion,
-            )
-            document["attributesList"] = sorted_attributes
-
-            if update_db and background_tasks:
-                ## after sorting, update the record list so frontend and backend are in sync
-                ## only persist when the stored list differs from the sorted result
-                background_tasks.add_task(
-                    self.updateRecord,
-                    record_id=document["_id"],
-                    new_data={"attributesList": document["attributesList"]},
-                    update_type="attributesList",
-                    user_info=user_info,
-                    notes="Auto updating record while fetching record.",
-                    calling_function="fetchRecordData",
-                )
-
-        except Exception as e:
-            _log.error(f"unable to sort attributes: {e}")
+        # Persist the exact layout before returning indexes that the editor can use.
+        document = self._reconcileRecord(
+            document, self._recordSchema(rg, user_info), user_info
+        )
 
         return document, not attained_lock
 
@@ -1696,7 +1824,8 @@ class DataManager:
         return history_items
 
     @time_it
-    def getRecordIndexes(self, document, filterBy, sortBy):
+    def getRecordIndexes(self, document, filterBy, sortBy, user=None):
+        self._prepareRecordQuery(filterBy, user)
         target_id = (
             ObjectId(document["_id"])
             if not isinstance(document["_id"], ObjectId)
@@ -2001,6 +2130,8 @@ class DataManager:
             "edited": bool(attribute.get("edited", False)),
             "page": attribute.get("page"),
         }
+        if attribute.get("deleted") is True:
+            normalized_attribute["deleted"] = True
         if "user_added" in attribute:
             normalized_attribute["user_added"] = bool(attribute.get("user_added"))
         return normalized_attribute
@@ -3411,6 +3542,10 @@ class DataManager:
             changes["attributes"] = schema_rules.validate_fields(
                 changes["attributes"], util.CLEANING_FUNCTIONS, require_types=False
             )
+        if "attributes" in changes:
+            changes["attributes"] = schema_rules.retain_retired_fields(
+                current.get("attributes"), changes["attributes"]
+            )
         if set(changes) & {"processorId", "documentType"}:
             self.requireSchemaPermission(user_info, destructive=True, require_db=False)
         if (
@@ -3421,6 +3556,8 @@ class DataManager:
             raise schema_rules.SchemaError("Processor not found.", 404)
         if not changes:
             return current
+        if set(changes) & {"attributes", "processorId"}:
+            self._ensureRecordGroupsReconciled([rg_id], user_info)
         query = {"_id": ObjectId(rg_id)}
         for key in changes:
             query[key] = current[key] if key in current else {"$exists": False}
@@ -3462,7 +3599,11 @@ class DataManager:
             "source_type": record_group.get("source_type") or "processor_connected",
         }
         if USE_DB_PROCESSORS:
-            update["attributes"] = processor.get("attributes") or []
+            update["attributes"] = [
+                field
+                for field in processor.get("attributes") or []
+                if not field.get("deleted")
+            ]
         return self.updateRecordGroup(rg_id, update, user_info)
 
     def fetchRecordForUser(self, record_id, user_info):
@@ -3529,6 +3670,29 @@ class DataManager:
         )
         return update_resp
 
+    @staticmethod
+    def _validateRecordAttributeEdit(previous, replacement):
+        if not isinstance(replacement, list) or len(previous) != len(replacement):
+            raise schema_rules.SchemaError(
+                "Use the field actions to change record fields."
+            )
+        for old, new in zip(previous, replacement):
+            if (
+                not isinstance(new, dict)
+                or old.get("key") != new.get("key")
+                or bool(old.get("deleted")) != bool(new.get("deleted"))
+            ):
+                raise schema_rules.SchemaError(
+                    "Record edits cannot rename or retire fields."
+                )
+            if old.get("deleted"):
+                if old != new:
+                    raise schema_rules.SchemaError("Retired fields cannot be edited.")
+            else:
+                DataManager._validateRecordAttributeEdit(
+                    old.get("subattributes") or [], new.get("subattributes") or []
+                )
+
     @time_it
     def updateRecord(
         self,
@@ -3540,145 +3704,202 @@ class DataManager:
         forceUpdate=False,
         notes=None,
         calling_function=None,
+        expected_attribute_revision=None,
     ):
-        # _log.info(f"updateRecord new_data: {new_data}")
-        is_insert_delete_or_coordinates_update = (
-            update_type == "insertField"
-            or update_type == "deleteField"
-            or update_type == "updateFieldCoordinates"
-        )
-        attained_lock = False
-        user = None
-        if user_info is None and not forceUpdate:
+        public_edit = calling_function == "update_record"
+        if not isinstance(new_data, dict):
+            raise schema_rules.SchemaError("Record update data must be an object.")
+        if public_edit and not self.fetchRecordForUser(record_id, user_info):
+            raise PermissionError("You do not have access to this record.")
+        user = (user_info or {}).get("email")
+        if not forceUpdate and (
+            not user_info or not self.tryLockingRecord(record_id, user)
+        ):
             return False
-        elif user_info is not None:
-            user = user_info.get("email", None)
-            attained_lock = self.tryLockingRecord(record_id, user)
-        if attained_lock or forceUpdate:
-            if update_type is None:
-                return False
-            _id = ObjectId(record_id)
-            search_query = {"_id": _id}
-            if update_type == "record":
-                # this initial block is only done by internal backend calls
-                data_update = new_data
-                update_query = {"$set": data_update}
-            else:
-                # this data_update definition is required for internal backend calls (such as attributesList updates)
-                data_update = {update_type: new_data.get(update_type, None)}
-
-                ## call cleaning functions
-                if field_to_clean:
-                    attributeToClean = new_data["v"]
-                    self.cleanAttribute(
-                        attributeToClean,
-                        record_id=record_id,
-                        user_info=user_info,
-                    )
-
-                if update_type == "attribute":
-                    v = new_data.get("v", None)
-                    reviewStatus = new_data.get("review_status", None)
-                    field_indexes = self._getFieldIndexes(new_data)
-                    if len(field_indexes) == 0 or field_indexes[-1] < 0:
-                        _log.info("attribute update missing valid indexes")
-                        return False
-
-                    attr_key = util.attribute_index_path_to_mongo_path(
-                        field_indexes[0], field_indexes[1:]
-                    )
-                    data_update = {
-                        attr_key: v,
-                    }
-                    update_key_parts = attr_key.split(".")
-                    if reviewStatus == "unreviewed":
-                        data_update["review_status"] = "incomplete"
-
-                elif is_insert_delete_or_coordinates_update:
-                    data_update = self._updateRecordAttributesForFieldOperation(
-                        _id,
-                        new_data,
-                        update_type,
-                        user=user,
-                    )
-                    if not data_update:
-                        return False
-
-                elif update_type == "verification_status" and new_data.get(
-                    "review_status", None
-                ):
-                    data_update["review_status"] = new_data["review_status"]
-                elif (
-                    update_type == "review_status"
-                    and new_data.get("review_status", None) == "unreviewed"
-                ):
-                    data_update = self.resetRecord(record_id, new_data, user)
-                elif (
-                    update_type == "review_status"
-                    and new_data.get("review_status", None) == "incomplete"
-                ):
-                    data_update["verification_status"] = None
-                elif (
-                    update_type == "review_status"
-                    and new_data.get("review_status", None) == "defective"
-                ):
-                    data_update["defective_categories"] = new_data.get(
-                        "defective_categories", []
-                    )
-                    data_update["defective_description"] = new_data.get(
-                        "defective_description", None
-                    )
-                elif update_type == "review_status":
-                    data_update["review_status"] = new_data["review_status"]
-                elif update_type == "name" or update_type == "verification_status":
-                    data_update[update_type] = new_data[update_type]
-                elif update_type != "attributesList":
-                    _log.info(f"invalid update type: {update_type}")
-                    return False
-                update_query = {"$set": data_update}
-            if not forceUpdate:
-                ## fetch record's current data so we know what changed in the future
-                try:
-                    record_doc = self.db.records.find(
-                        {"_id": ObjectId(record_id)}
-                    ).next()
-                    previous_state = {}
-                    for each in data_update:
-                        if is_insert_delete_or_coordinates_update:
-                            continue
-                        elif "attributesList." in each:
-                            next_prev = util.getPreviousAttributeOrSubattributeValue(
-                                update_key_parts, record_doc
-                            )
-                            previous_state[each] = next_prev
-                            # _log.info(f"next_prev: {next_prev}")
-                        else:
-                            previous_state[each] = record_doc.get(each, None)
-                except Exception as e:
-                    _log.info(f"unable to get record's previous state: {e}")
-                    previous_state = None
-                self.recordHistory(
-                    "updateRecord",
-                    user,
-                    record_id=record_id,
-                    query=data_update,
-                    previous_state=previous_state,
-                    notes=notes,
-                    calling_function=calling_function,
-                    update_type=update_type,
-                )
-            updated_record = self.db.records.find_one_and_update(
-                search_query,
-                update_query,
-                return_document=ReturnDocument.AFTER,
+        record = self.db.records.find_one({"_id": ObjectId(record_id)})
+        if record is None:
+            raise schema_rules.SchemaError("Record not found.", 404)
+        attribute_operation = (
+            update_type
+            in {
+                "attribute",
+                "attributesList",
+                "insertField",
+                "deleteField",
+                "updateFieldCoordinates",
+            }
+            or (
+                update_type == "review_status"
+                and new_data.get("review_status") == "unreviewed"
             )
-            updated_record["_id"] = str(updated_record["_id"])
-            if is_insert_delete_or_coordinates_update:
-                return updated_record
-
-            return data_update
+            or (update_type == "record" and "attributesList" in new_data)
+        )
+        if public_edit and update_type == "record":
+            allowed = {
+                "name",
+                "attributesList",
+                "review_status",
+                "verification_status",
+                "defective_categories",
+                "defective_description",
+            }
+            if set(new_data) - allowed:
+                raise schema_rules.SchemaError("Unsupported record update fields.")
+        if attribute_operation:
+            record = self._reconcileRecord(record, user=user_info)
+            if public_edit and expected_attribute_revision != record.get(
+                "attribute_revision"
+            ):
+                raise schema_rules.SchemaError(
+                    "The record fields changed. Reload the record before saving.", 409
+                )
+        original = copy.deepcopy(record)
+        field_operations = {"insertField", "deleteField", "updateFieldCoordinates"}
+        response_path = None
+        if update_type == "attribute":
+            indexes = self._getFieldIndexes(new_data)
+            target, _ = self._getAttributeAtPath(
+                record.get("attributesList") or [], indexes
+            )
+            if target is None:
+                raise schema_rules.SchemaError(
+                    "This record field is unavailable. Reload the record.", 409
+                )
+            value = copy.deepcopy(new_data.get("v"))
+            self._validateRecordAttributeEdit([target], [value])
+            if field_to_clean:
+                self.cleanAttribute(value, record_id=record_id, user_info=user_info)
+            parent_list, _, _ = self._getAttributeParentList(
+                record["attributesList"], indexes
+            )
+            parent_list[indexes[-1]] = value
+            data_update = {"attributesList": record["attributesList"]}
+            response_path = util.attribute_index_path_to_mongo_path(
+                indexes[0], indexes[1:]
+            )
+            if new_data.get("review_status") == "unreviewed":
+                data_update["review_status"] = "incomplete"
+        elif update_type in field_operations:
+            indexes = self._getFieldIndexes(new_data)
+            if (
+                update_type != "insertField"
+                and self._getAttributeAtPath(
+                    record.get("attributesList") or [], indexes
+                )[0]
+                is None
+            ):
+                raise schema_rules.SchemaError(
+                    "This record field is unavailable. Reload the record.", 409
+                )
+            data_update = self._updateRecordAttributesForFieldOperation(
+                ObjectId(record_id), new_data, update_type, user, copy.deepcopy(record)
+            )
+            if not data_update:
+                raise schema_rules.SchemaError("Invalid record field operation.")
+        elif (
+            update_type == "review_status"
+            and new_data.get("review_status") == "unreviewed"
+        ):
+            data_update = self.resetRecord(record_id, record, user)
+        elif update_type == "record":
+            data_update = copy.deepcopy(new_data)
+        elif update_type in {
+            "name",
+            "review_status",
+            "verification_status",
+            "attributesList",
+        }:
+            data_update = {update_type: copy.deepcopy(new_data.get(update_type))}
+            if update_type == "verification_status" and new_data.get("review_status"):
+                data_update["review_status"] = new_data["review_status"]
+            if (
+                update_type == "review_status"
+                and new_data.get("review_status") == "incomplete"
+            ):
+                data_update["verification_status"] = None
+            if (
+                update_type == "review_status"
+                and new_data.get("review_status") == "defective"
+            ):
+                data_update.update(
+                    defective_categories=new_data.get("defective_categories", []),
+                    defective_description=new_data.get("defective_description"),
+                )
         else:
-            return False
+            raise schema_rules.SchemaError("Unsupported record update type.")
+        if (
+            public_edit
+            and update_type in {"record", "attributesList"}
+            and "attributesList" in data_update
+        ):
+            self._validateRecordAttributeEdit(
+                original.get("attributesList") or [], data_update["attributesList"]
+            )
+        if "attributesList" in data_update:
+            group = self.db.record_groups.find_one(
+                {"_id": ObjectId(record["record_group_id"])}
+            )
+            schema_state = self._recordSchema(group or {}, user_info)
+            if public_edit and schema_state[2] != original.get(
+                "attribute_schema_revision"
+            ):
+                raise schema_rules.SchemaError(
+                    "The schema changed. Reload the record before saving.", 409
+                )
+            attributes = util.preserve_retired_attributes(
+                original.get("attributesList"), data_update["attributesList"]
+            )
+            data_update.update(self._recordAttributeState(attributes, schema_state))
+        query = (
+            self._originalAttributeQuery(original)
+            if attribute_operation
+            else {"_id": ObjectId(record_id)}
+        )
+        updated = self.db.records.find_one_and_update(
+            query, {"$set": data_update}, return_document=ReturnDocument.AFTER
+        )
+        if updated is None:
+            raise schema_rules.SchemaError(
+                "The record changed. Reload before saving again.", 409
+            )
+        if not forceUpdate:
+            history_update = data_update
+            previous_state = {key: original.get(key) for key in data_update}
+            if response_path:
+                indexes = self._getFieldIndexes(new_data)
+                history_update = {
+                    response_path: self._getAttributeAtPath(
+                        updated["attributesList"], indexes
+                    )[0]
+                }
+                previous_state = {
+                    response_path: self._getAttributeAtPath(
+                        original["attributesList"], indexes
+                    )[0]
+                }
+            self.recordHistory(
+                "updateRecord",
+                user,
+                record_id=record_id,
+                query=history_update,
+                previous_state=previous_state,
+                notes=notes,
+                calling_function=calling_function,
+                update_type=update_type,
+            )
+        if update_type in field_operations:
+            updated["_id"] = str(updated["_id"])
+            return updated
+        if response_path:
+            value, _ = self._getAttributeAtPath(
+                updated["attributesList"], self._getFieldIndexes(new_data)
+            )
+            return {
+                response_path: value,
+                "attribute_revision": updated["attribute_revision"],
+                "review_status": updated.get("review_status"),
+            }
+        return data_update
 
     def updateRecordNotes(self, record_id, data, user_info=None):
         # _log.info(f"updating {record_id} with {data}")
@@ -3774,7 +3995,7 @@ class DataManager:
         record_doc = self.db.records.find(search_query).next()
         return record_doc.get("record_notes", [])
 
-    def create_record_group_processor_attribute_map(self):
+    def create_record_group_processor_attribute_map(self, user=None):
         try:
             cursor = self.db.record_groups.find(
                 {},
@@ -3788,7 +4009,7 @@ class DataManager:
             for rg in cursor:
                 rg_id = str(rg["_id"])
                 processor_attributes = self.getRecordGroupSchemaAttributes(
-                    rg_document=rg
+                    rg_document=rg, user=user
                 )
                 rg_processor_attribute_map[
                     rg_id
@@ -3806,6 +4027,8 @@ class DataManager:
         )
 
         def reset_attribute(attribute):
+            if attribute.get("deleted"):
+                return
             original_value = attribute.get("raw_text")
             attribute["value"] = original_value
             attribute["confidence"] = attribute.get("ai_confidence", None)
@@ -3817,7 +4040,9 @@ class DataManager:
 
             kept_subattributes = []
             for subattribute in attribute.get("subattributes") or []:
-                if subattribute.get("user_added", False):
+                if subattribute.get("user_added", False) and not subattribute.get(
+                    "deleted"
+                ):
                     _log.info(f"deleting user-added subfield: {subattribute}")
                     continue
                 reset_attribute(subattribute)
@@ -3826,7 +4051,7 @@ class DataManager:
 
         kept_attributes = []
         for attribute in record_attributes:
-            if attribute.get("user_added", False):
+            if attribute.get("user_added", False) and not attribute.get("deleted"):
                 _log.info(f"deleting user-added field: {attribute}")
                 continue
             reset_attribute(attribute)
@@ -3919,7 +4144,16 @@ class DataManager:
     def deleteRecordsByRecordGroup(self, rg_id, filter_by, user_info):
         query = dict(filter_by or {})
         query["record_group_id"] = rg_id
-        self._deleteRecords(query=query, deletedBy=user_info)
+        self._prepareRecordQuery(query, user_info)
+        ids = [
+            record["_id"]
+            for record in self.db.records.aggregate(
+                util.active_records_pipeline(query) + [{"$project": {"_id": 1}}]
+            )
+        ]
+        self._deleteRecords(
+            query={"record_group_id": rg_id, "_id": {"$in": ids}}, deletedBy=user_info
+        )
         self.recordHistory(
             "deleteRecordGroupRecords",
             user=user_info.get("email", None),
@@ -4040,10 +4274,31 @@ class DataManager:
         output_filename=None,
         request_origin="",
     ):
+        schema_states = {}
+        export_records = []
+        for record in records:
+            group_id = record["record_group_id"]
+            if group_id not in schema_states:
+                group = self.db.record_groups.find_one({"_id": ObjectId(group_id)})
+                schema_states[group_id] = self._recordSchema(group or {}, user_info)
+            schema, keep_unknown, _ = schema_states[group_id]
+            attributes, _ = util.sortRecordAttributes(
+                record.get("attributesList"),
+                schema,
+                keep_all_attributes=keep_unknown,
+                add_missing_attributes=False,
+            )
+            export_records.append(
+                {
+                    **record,
+                    "attributesList": util.active_attributes(attributes),
+                }
+            )
+        records = export_records
         ## TODO: Should we use aliases for export?
         USE_ALIASES = True
         user = user_info.get("email", None)
-        rg_attribute_map = self.create_record_group_processor_attribute_map()
+        rg_attribute_map = self.create_record_group_processor_attribute_map(user_info)
         today = time.time()
         output_dir = self.app_settings.export_dir
         if output_filename is None:
@@ -4496,68 +4751,55 @@ class DataManager:
             )
 
     def cleanCollection(self, location, _id, user_info):
-        documents = []
-        try:
-            if location == "record":
-                _log.info(f"cleaning record {_id}")
-                _, _, processor_attributes = self.getProcessorByRecordID(
-                    _id, user=user_info
-                )
-                object_id = ObjectId(_id)
-                query = {"_id": object_id}
-                documents.append(self.db.records.find(query).next())
-            elif location == "record_group":
-                _log.info(f"cleaning record group {_id}")
-                _, _, processor_attributes = self.getProcessorByRecordGroupID(
-                    _id, user=user_info
-                )
-                cursor = self.db.records.find({"record_group_id": _id})
-                for each in cursor:
-                    documents.append(each)
-            else:
-                _log.error(f"clean {location} is not supported")
-                return False
-
-            if not processor_attributes:
-                _log.info(f"no schema-backed cleaning rules found for {location} {_id}")
-                return False
-
-            ## convert processor attributes to dict
-            processor_attributes = util.convert_processor_attributes_to_dict(
-                processor_attributes
+        if location == "record":
+            record = self.fetchRecordForUser(_id, user_info)
+            if not record:
+                raise PermissionError("You do not have access to this record.")
+            query = {"_id": ObjectId(_id)}
+            group_id = record["record_group_id"]
+        elif location == "record_group":
+            if _id not in self.getUserRecordGroups(user_info):
+                raise PermissionError("You do not have access to this record group.")
+            query = {"record_group_id": _id}
+            group_id = _id
+        else:
+            raise schema_rules.SchemaError(
+                "Cleaning is supported for records and record groups."
             )
-            attributes_list_before_and_after = util.cleanRecords(
-                processor_attributes=processor_attributes, documents=documents
+        self._ensureRecordGroupsReconciled([group_id], user_info)
+        group = self.db.record_groups.find_one({"_id": ObjectId(group_id)})
+        schema_state = self._recordSchema(group or {}, user_info)
+        schema_map = util.convert_processor_attributes_to_dict(
+            (schema_state[0] or {}).get("attributes")
+        )
+        for record in self.db.records.find(query).batch_size(100):
+            current_group = self.db.record_groups.find_one({"_id": ObjectId(group_id)})
+            if self._recordSchema(current_group or {}, user_info)[2] != schema_state[2]:
+                raise schema_rules.SchemaError(
+                    "The schema changed during cleaning. Completed records were saved; refresh and retry.",
+                    409,
+                )
+            record = self._reconcileRecord(record, schema_state, user_info)
+            original = copy.deepcopy(record)
+            history = util.cleanRecords(schema_map, [record])[str(record["_id"])]
+            changes = self._recordAttributeState(
+                record.get("attributesList"), schema_state
             )
-            update_ops = []
-            history_ops = []
-            for document in documents:
-                update_ops.append(
-                    UpdateOne({"_id": document["_id"]}, {"$set": document})
+            if not self.db.records.update_one(
+                self._originalAttributeQuery(original), {"$set": changes}
+            ).matched_count:
+                raise schema_rules.SchemaError(
+                    "A record changed during cleaning. Completed records were saved; retry the remaining work.",
+                    409,
                 )
-                current_before_and_after = attributes_list_before_and_after.get(
-                    str(document["_id"]), {}
-                )
-                history_item = {
-                    "user": user_info.get("email", None),
-                    "action": "cleanRecord",
-                    "record_id": str(document["_id"]),
-                    "attributesList_before": current_before_and_after.get(
-                        "attributesList_before"
-                    ),
-                    "attributesList_after": current_before_and_after.get(
-                        "attributesList_after"
-                    ),
-                }
-                if location == "record_group":
-                    history_item["record_group_id"] = _id
-                history_ops.append(history_item)
-            _log.info(f"updateOps length {len(update_ops)}")
-            if update_ops:
-                self.db.records.bulk_write(update_ops)
-            self.recordHistoryBulk(history_ops)
-        except Exception as e:
-            _log.error(f"error on cleaning {location}: {e}")
+            self.recordHistory(
+                "cleanRecord",
+                user_info.get("email"),
+                record_id=str(record["_id"]),
+                rg_id=group_id,
+                **history,
+            )
+        return True
 
     def getRecordImageFileUrlPairs(self, record_id, rg_id):
         """

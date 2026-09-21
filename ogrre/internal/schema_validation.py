@@ -1,6 +1,7 @@
 """Shared schema normalization and mutation validation; no database side effects."""
 
 import math
+import copy
 
 
 DESTRUCTIVE_PERMISSION = "manage_schema_destructive"
@@ -56,6 +57,10 @@ def normalize_fields(fields, strict=True):
             canonical = key.strip().lower().replace(" ", "_")
             if canonical == "google_data_type":
                 canonical = "data_type"
+            if canonical == "deleted":
+                if value is True:
+                    normalized["deleted"] = True
+                continue
             if canonical in FIELD_KEYS and value is not None and value != "":
                 if (
                     canonical == "data_type"
@@ -143,6 +148,8 @@ def validate_structure(fields):
 def validate_fields(fields, cleaning_functions, require_types=True):
     fields = normalize_fields(fields)
     for field in fields:
+        if field.get("deleted"):
+            raise SchemaError("Use the field-removal action to retire schema fields.")
         # Import packages may omit type hints, but supplied hints must be valid.
         data_type = field.get("data_type")
         database_type = field.get("database_data_type")
@@ -162,3 +169,13 @@ def validate_fields(fields, cleaning_functions, require_types=True):
             )
     validate_structure(fields)
     return fields
+
+
+def retain_retired_fields(previous, replacement):
+    """Persist removed paths, including descendants, alongside active definitions."""
+    result = copy.deepcopy(replacement)
+    names = {field["name"] for field in replacement}
+    for field in normalize_fields(previous or [], strict=False):
+        if field["name"] not in names:
+            result.append({**field, "deleted": True})
+    return result
