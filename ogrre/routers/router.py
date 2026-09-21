@@ -1105,6 +1105,7 @@ async def connect_record_group_processor(
         rg_id,
         data.get("processorId") or data.get("processor_id"),
         user_info,
+        schema_id=data.get("schema_id"),
     )
 
 
@@ -1237,6 +1238,7 @@ async def upload_document(
     project_is_valid = data_manager.checkRecordGroupValidity(rg_id)
     if not project_is_valid:
         raise HTTPException(404, detail=f"Project not found")
+    schema_operation(data_manager.getRecordGroupProcessingConfig, rg_id, user_info)
     filename, file_ext = os.path.splitext(file.filename)
 
     if file_ext.lower() == ".zip":
@@ -1871,10 +1873,13 @@ async def update_record(
 
 @router.post("/delete_processor/{processor_name}")
 async def delete_processor(
-    processor_name: str, user_info: dict = Depends(authenticate)
+    processor_name: str, schema_id: str = None, user_info: dict = Depends(authenticate)
 ):
     return schema_operation(
-        data_manager.deleteProcessorSchema, processor_name, user_info
+        data_manager.deleteProcessorSchema,
+        processor_name,
+        user_info,
+        schema_id=schema_id,
     )
 
 
@@ -2589,6 +2594,8 @@ async def upload_processor_schema(
     modelId: str = None,
     documentType: str = None,
     img: str = None,
+    schema_id: str = None,
+    parser_type: str = None,
     file: UploadFile = File(...),
     user_info: dict = Depends(authenticate),
 ):
@@ -2610,16 +2617,10 @@ async def upload_processor_schema(
             403,
             detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
         )
-    if (
-        not name
-        or not displayName
-        or not processorId
-        or not modelId
-        or not documentType
-    ):
+    if not name or not displayName or not documentType:
         raise HTTPException(
             400,
-            detail=f"Please provide each of the following as query parameters: name, displayName, processorId, modelId, documentType.",
+            detail="Provide name, displayName, and documentType.",
         )
     schema_meta = {
         "name": name,
@@ -2628,12 +2629,14 @@ async def upload_processor_schema(
         "modelId": modelId,
         "documentType": documentType,
         "img": img,
+        "parser_type": parser_type,
     }
     return schema_operation(
         data_manager.uploadProcessorSchema,
         file=file,
         schema_meta=schema_meta,
         user_info=user_info,
+        schema_id=schema_id,
     )
 
 
@@ -2666,6 +2669,12 @@ async def update_processor(request: Request, user_info: dict = Depends(authentic
     return schema_operation(data_manager.updateProcessor, data, user_info)
 
 
+@router.post("/create_schema")
+async def create_schema(request: Request, user_info: dict = Depends(authenticate)):
+    data = await schema_request_body(request)
+    return schema_operation(data_manager.createSchema, data, user_info)
+
+
 @router.post("/update_processor_attribute")
 async def update_processor_attribute(
     request: Request, user_info: dict = Depends(authenticate)
@@ -2678,6 +2687,7 @@ async def update_processor_attribute(
         updates=data.get("updates", {}),
         user_info=user_info,
         operation=data.get("operation", "update"),
+        schema_id=data.get("schema_id"),
     )
 
 

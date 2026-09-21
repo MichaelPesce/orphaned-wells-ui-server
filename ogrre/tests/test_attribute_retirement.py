@@ -337,11 +337,19 @@ def test_nested_retirement_hides_every_instance_without_modifying_children(
         assert not children["new_child"].get("deleted")
 
 
-def test_embedded_schema_retirement_preserves_last_field(retirement_manager):
+def test_migrated_embedded_schema_retirement_preserves_last_field(retirement_manager):
+    from ogrre.migrate_schema_bindings import migrate_schema_bindings
+
     manager = retirement_manager
-    manager.db.record_groups.update_one({}, {"$unset": {"processorId": ""}})
+    manager.db.record_groups.update_one(
+        {}, {"$unset": {"processorId": "", "schema_id": ""}}
+    )
     record_id = insert_record(manager, [{"key": "depth", "value": 12}])
-    manager.updateRecordGroup(GROUP, {"attributes": []}, USER)
+    report = migrate_schema_bindings(manager.db, apply=True)
+    schema_id = report["changes"][0]["schema_id"]
+    manager.updateProcessorAttribute(
+        None, "depth", {}, USER, "delete", schema_id=schema_id
+    )
     manager._ensureRecordGroupsReconciled([GROUP], USER)
     field = manager.db.records.find_one({"_id": record_id})["attributesList"][0]
     assert field["deleted"] and field["value"] == 12
@@ -352,7 +360,9 @@ def test_missing_processor_does_not_apply_stale_embedded_schema(retirement_manag
     manager = retirement_manager
     manager.db.processors.delete_many({})
     record_id = insert_record(manager, [{"key": "unknown", "value": 12}])
-    manager._ensureRecordGroupsReconciled([GROUP], USER)
+    with pytest.raises(SchemaError) as error:
+        manager._ensureRecordGroupsReconciled([GROUP], USER)
+    assert error.value.status_code == 404
     record = manager.db.records.find_one({"_id": record_id})
     assert len(record["attributesList"]) == 1
     assert not record["attributesList"][0].get("deleted")

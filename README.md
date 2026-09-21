@@ -132,6 +132,88 @@ complete record tree. Manual deletion of an active `user_added` field retains
 its existing behavior. Previously discarded data cannot be recovered by this
 change.
 
+### Schema identity and processor settings
+
+Mongo schemas keep their identity in the existing `processors` collection.
+APIs expose the document ID as `schema_id`; record groups store that ID instead
+of using a processor ID as their schema identity. Multiple schemas may share
+processor/model identifiers. Schema names remain immutable; metadata updates,
+field edits, and file replacement accept `schema_id` and preserve the document
+ID and connected groups. Legacy name-based management calls remain supported
+when the name is unambiguous.
+
+`POST /create_schema` creates a schema, including an empty one, with
+`manage_schema`. It requires `name` and `documentType`; `attributes`, display
+metadata, `processorId`, and `modelId` are optional. New schemas record
+`created_by`, `created_by_team`, `created_at`, and `updated_at`. This metadata
+does not limit access to the shared catalog. Existing unknown creators are not
+backfilled with the migration operator's identity.
+
+Processor-free schemas support imported records, field ordering, and cleaning.
+Extraction requires both a processor ID and model ID. `parser_type` optionally
+selects `custom` or `form_parser`; when absent, pretrained form-parser model IDs
+select form parsing and other models use custom extraction. The selected
+configuration controls parsing for each request. Batch jobs snapshot it when
+queued so catalog changes do not alter retries of an existing job.
+
+The group API returns `schema_source`, `schema_name`, `active_schema_id`,
+`has_schema`, `can_process`, and any `schema_error` for UI availability. An
+administrator changes the Mongo binding through `schema_id` on the existing
+group-update route; `schema_id: null` explicitly detaches the group, preserves
+records, and suppresses legacy fallback in Mongo mode. In-use schemas must be
+detached before deletion. Field changes belong on the shared schema, and generic
+record-group updates no longer accept embedded schema edits.
+
+In repo mode, schema resolution uses only the installed package and the group's
+repo processor ID. Mongo references and old embedded fields are inactive.
+Missing or ambiguous configurations fail explicitly; an unknown processor ID
+is never paired with the default model. The built-in repo default remains
+available only when explicitly selected. Empty Mongo catalogs have no fallback.
+
+New JSON/CSV groups remain schema-less unless their import package explicitly
+includes schema metadata. In Mongo mode, explicit imported metadata creates a
+shared catalog schema and attaches it. Appending records cannot replace schema
+fields. Existing group-local schemas require migration before use in Mongo mode.
+
+### Migrate legacy Mongo schema bindings
+
+Deploy the frontend, API, and processing worker updates together. Pause record
+and schema edits during migration and back up the target catalog, groups, and
+history. With `USE_DB_PROCESSORS=true` and the intended database configured,
+preview without writing:
+
+```sh
+python -m ogrre.migrate_schema_bindings
+```
+
+The preview reports unique processor-ID matches, embedded schemas to create,
+schema-less groups, and conflicts. Missing or duplicate processor matches,
+divergent embedded fields, and invalid existing references require an explicit
+choice. Creator metadata for converted embedded schemas comes from the group
+only when known. Old processor IDs remain available for repo-mode operation.
+
+Apply unambiguous changes with `--apply`. To resolve conflicts, pass
+`--resolutions path/to/resolutions.json` to preview, then to apply. The JSON
+maps record-group IDs to an existing schema ID, `"embedded"` to preserve their
+embedded definition as a catalog entry, or `null` to detach them:
+
+```json
+{
+  "aaaaaaaaaaaaaaaaaaaaaaaa": "bbbbbbbbbbbbbbbbbbbbbbbb",
+  "cccccccccccccccccccccccc": "embedded",
+  "dddddddddddddddddddddddd": null
+}
+```
+
+The command is idempotent, creates deterministic IDs for converted schemas,
+checks original group bindings before writing, and records before-state history.
+It leaves unresolved groups untouched and exits nonzero when conflicts remain;
+other valid changes may already have been applied. Preview and retry after
+resolving conflicts. It does not modify records or recover previously discarded
+data. Startup never runs this migration. Until migration, only unambiguous
+legacy processor-ID lookup is supported; migrate those references before changing
+their processor IDs. Startup adds a `schema_id` index to record groups.
+
 ### Migrate existing role assignments
 
 Use the backend environment configured for the intended database. Review and

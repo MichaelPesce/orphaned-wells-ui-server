@@ -63,6 +63,7 @@ class DataManager:
         self.db.records.create_index(
             [("record_group_id", 1), ("attribute_schema_revision", 1)]
         )
+        self.db.record_groups.create_index("schema_id")
         self.environment = os.getenv("ENVIRONMENT")
         self.collaborator = os.getenv("COLLABORATOR")
         _log.info(f"working in environment: {self.environment}")
@@ -71,10 +72,8 @@ class DataManager:
         self.LOCKED = False
         ## lock_duration: amount of seconds that records remain locked if no changes are made
         self.lock_duration = 120
-        self.using_default_processor = False
         self.use_airtable = False
         self.ensureDefaultUnauthenticatedTeam()
-        self.createProcessorsList()
 
     def _createEmptyRecordAttribute(
         self,
@@ -315,12 +314,131 @@ class DataManager:
         return user_document.get("default_team", None)
 
     def getMongoProcessorByID(self, google_id):
+        if not google_id:
+            return None
         processor = self._findUniqueProcessor(
             {"processorId": google_id}, required=False
         )
-        if processor:
-            processor.pop("_id", None)
-        return processor
+        return self._serializeSchema(processor) if processor else None
+
+    @staticmethod
+    def _serializeSchema(processor):
+        result = copy.deepcopy(processor)
+        if "_id" in result:
+            result["schema_id"] = str(result.pop("_id"))
+        result["can_process"] = bool(
+            result.get("processorId") and result.get("modelId")
+        )
+        return result
+
+    def _schemaDocument(self, schema_id=None, name=None):
+        if schema_id is not None:
+            if not isinstance(schema_id, str) or not ObjectId.is_valid(schema_id):
+                raise schema_rules.SchemaError("A valid schema_id is required.")
+            return self._findUniqueProcessor({"_id": ObjectId(schema_id)})
+        if not isinstance(name, str) or not name:
+            raise schema_rules.SchemaError("A schema identifier is required.")
+        return self._findUniqueProcessor({"name": name})
+
+    @staticmethod
+    def _canonicalRepoProcessor(definition):
+        if not definition:
+            return None
+        return {
+            **definition,
+            "name": definition.get("name") or definition.get("Processor Name"),
+            "displayName": definition.get("displayName")
+            or definition.get("Processor Name"),
+            "processorId": definition.get("processorId")
+            or definition.get("Processor ID"),
+            "modelId": definition.get("modelId") or definition.get("Model ID"),
+            "documentType": definition.get("documentType")
+            or definition.get("Processor Name"),
+        }
+
+    def resolveRecordGroupSchema(self, group, user=None):
+        """Resolve one active source. An explicit null binding never uses legacy fallback."""
+        if USE_DB_PROCESSORS:
+            if "schema_id" in group:
+                return (
+                    self._schemaDocument(group["schema_id"])
+                    if group["schema_id"] is not None
+                    else None
+                )
+            if group.get("processorId"):
+                schema = self._findUniqueProcessor(
+                    {"processorId": group["processorId"]}, required=False
+                )
+                if schema is None:
+                    raise schema_rules.SchemaError(
+                        "The record group's schema is missing. Select a schema or detach the group.",
+                        409,
+                    )
+                return schema
+            if group.get("attributes"):
+                raise schema_rules.SchemaError(
+                    "This record group has a legacy embedded schema. Migrate its schema binding before using it.",
+                    409,
+                )
+            return None
+        processor_id = group.get("processorId")
+        if not processor_id:
+            return None
+        schema = self.getProcessorById(processor_id, user)
+        if schema is None:
+            raise schema_rules.SchemaError(
+                "The configured processor is missing from the installed package.", 409
+            )
+        return self._canonicalRepoProcessor(schema)
+
+    def getRecordGroupProcessingConfig(self, rg_id, user=None):
+        group = self.db.record_groups.find_one({"_id": ObjectId(rg_id)})
+        if group is None:
+            raise schema_rules.SchemaError("Record group not found.", 404)
+        schema = self.resolveRecordGroupSchema(group, user)
+        if not schema or not all(
+            isinstance(schema.get(key), str) and schema[key].strip()
+            for key in ("processorId", "modelId")
+        ):
+            raise schema_rules.SchemaError(
+                "This record group's schema has no usable processor. Add a processor ID and model ID before processing documents.",
+                409,
+            )
+        parser_type = schema.get("parser_type") or (
+            "form_parser"
+            if schema["modelId"].startswith("pretrained-form-parser")
+            else "custom"
+        )
+        return {
+            "processor_id": schema["processorId"],
+            "model_id": schema["modelId"],
+            "processor_attributes": schema_rules.normalize_fields(
+                schema.get("attributes") or [], strict=False
+            ),
+            "using_default_processor": parser_type == "form_parser",
+        }
+
+    def _recordGroupSchemaInfo(self, group, user=None):
+        result = dict(group)
+        result["schema_source"] = "database" if USE_DB_PROCESSORS else "repo"
+        try:
+            schema = self.resolveRecordGroupSchema(group, user)
+            result.update(
+                has_schema=schema is not None
+                and (USE_DB_PROCESSORS or "attributes" in schema),
+                can_process=bool(
+                    schema and schema.get("processorId") and schema.get("modelId")
+                ),
+                schema_name=(schema or {}).get("displayName")
+                or (schema or {}).get("name"),
+                active_schema_id=str(schema["_id"])
+                if schema and "_id" in schema
+                else None,
+                schema_error=None,
+            )
+        except schema_rules.SchemaError as error:
+            result.update(has_schema=False, can_process=False, schema_error=str(error))
+        return result
 
     def _normalizeCollaborator(self, collaborator):
         if not isinstance(collaborator, str):
@@ -362,6 +480,15 @@ class DataManager:
         else:
             collaborator = self.getCollaboratorForUser(user)
             processor = processor_api.get_processor_by_id(collaborator, google_id)
+            if not processor:
+                processor = next(
+                    (
+                        item
+                        for item in DEFAULT_PROCESSORS
+                        if item["Processor ID"] == google_id
+                    ),
+                    None,
+                )
         return processor
 
     def getProcessorsByIds(self, google_ids=None, user=None):
@@ -378,12 +505,9 @@ class DataManager:
         return processors
 
     def createProcessorsListFromDB(self):
-        projection = {"_id": 0, "attributes": 0}
-        projection = {"_id": 0}
-        processor_list = list(self.db.processors.find({}, projection=projection))
-        return processor_list
+        return [self._serializeSchema(schema) for schema in self.db.processors.find({})]
 
-    def createProcessorsList(self, user=None, update_state=True):
+    def createProcessorsList(self, user=None):
         if USE_DB_PROCESSORS:
             _log.info(f"creating processor list using db")
             processor_list = self.createProcessorsListFromDB()
@@ -392,16 +516,9 @@ class DataManager:
             _log.info(f"creating processor list using processor_api for {collaborator}")
             processor_list = processor_api.get_processor_list(collaborator)
 
-        if not processor_list:
+        if not processor_list and not USE_DB_PROCESSORS:
             _log.info(f"no processors found, using default extractor")
             processor_list = DEFAULT_PROCESSORS
-            using_default_processor = True
-        else:
-            using_default_processor = False
-
-        if update_state:
-            self.using_default_processor = using_default_processor
-            self.processor_list = processor_list
         return processor_list
 
     ## lock functions
@@ -507,38 +624,95 @@ class DataManager:
             "modelId",
             "documentType",
             "img",
+            "parser_type",
         }
         if not isinstance(metadata, dict) or set(metadata) - allowed:
             raise schema_rules.SchemaError("Unsupported processor metadata fields.")
         for key, value in metadata.items():
             if value is not None and not isinstance(value, str):
                 raise schema_rules.SchemaError(f"{key} must be a string.")
-        for key in ("name", "processorId", "modelId", "documentType"):
+            if key in {"processorId", "modelId"} and value and value != value.strip():
+                raise schema_rules.SchemaError(
+                    f"{key} cannot contain surrounding whitespace."
+                )
+        for key in ("name", "documentType"):
             if not isinstance(metadata.get(key), str) or not metadata[key].strip():
                 raise schema_rules.SchemaError(f"{key} is required.")
-        conflict = self._findUniqueProcessor(
-            {"processorId": metadata["processorId"]}, required=False
+        if metadata.get("parser_type") not in (None, "custom", "form_parser"):
+            raise schema_rules.SchemaError("parser_type must be custom or form_parser.")
+
+    def _schemaCreator(self, user_info):
+        now = time.time()
+        return {
+            "created_by": user_info.get("email"),
+            "created_by_team": self.getDefaultTeamForUser(
+                user_info.get("email"), user_info.get("default_team")
+            ),
+            "created_at": now,
+            "updated_at": now,
+            "lastUpdated": now,
+        }
+
+    def createSchema(self, data, user_info):
+        self.requireSchemaPermission(user_info)
+        if not isinstance(data, dict):
+            raise schema_rules.SchemaError("Schema data must be an object.")
+        metadata = {key: value for key, value in data.items() if key != "attributes"}
+        self._checkProcessorMetadata(metadata)
+        attributes = schema_rules.validate_fields(
+            data.get("attributes", []), util.CLEANING_FUNCTIONS, require_types=False
         )
-        if conflict and (not existing or conflict["_id"] != existing["_id"]):
+        schema = {
+            **metadata,
+            "attributes": attributes,
+            **self._schemaCreator(user_info),
+        }
+        result = self.db.processors.update_one(
+            {"name": metadata["name"]}, {"$setOnInsert": schema}, upsert=True
+        )
+        if not result.upserted_id:
             raise schema_rules.SchemaError(
-                "A schema already uses this processor ID.", 409
+                "A schema with this name already exists.", 409
             )
+        self.recordHistory(
+            "createSchema",
+            user_info.get("email"),
+            query={**schema, "schema_id": str(result.upserted_id)},
+        )
+        return self._serializeSchema({**schema, "_id": result.upserted_id})
+
+    def _groupsUsingSchema(self, schema):
+        clauses = [{"schema_id": str(schema["_id"])}]
+        if schema.get("processorId"):
+            clauses.append(
+                {"schema_id": {"$exists": False}, "processorId": schema["processorId"]}
+            )
+        return list(self.db.record_groups.find({"$or": clauses}))
 
     def _saveProcessorChanges(self, processor, changes, user_info, action):
-        affected = [
-            str(group["_id"])
-            for group in self.db.record_groups.find(
-                {"processorId": processor.get("processorId")}, {"_id": 1}
-            )
-        ]
+        affected = [str(group["_id"]) for group in self._groupsUsingSchema(processor)]
         self._ensureRecordGroupsReconciled(affected, user_info)
+        if "processorId" in changes and any(
+            "schema_id" not in group for group in self._groupsUsingSchema(processor)
+        ):
+            raise schema_rules.SchemaError(
+                "Migrate this schema's legacy record-group bindings before changing its processor ID.",
+                409,
+            )
         if "attributes" in changes:
             changes["attributes"] = schema_rules.retain_retired_fields(
                 processor.get("attributes"), changes["attributes"]
             )
         # Compare the original state so simultaneous edits cannot overwrite one another.
         result = self.db.processors.update_one(
-            processor, {"$set": {**changes, "lastUpdated": time.time()}}
+            processor,
+            {
+                "$set": {
+                    **changes,
+                    "lastUpdated": time.time(),
+                    "updated_at": time.time(),
+                }
+            },
         )
         if not result.matched_count:
             raise schema_rules.SchemaError(
@@ -548,7 +722,11 @@ class DataManager:
         self.recordHistory(
             user=user_info.get("email"),
             action=action,
-            query={"name": processor["name"], **changes},
+            query={
+                "schema_id": str(processor["_id"]),
+                "name": processor["name"],
+                **changes,
+            },
             previous_state=previous,
         )
 
@@ -556,7 +734,9 @@ class DataManager:
     def getSchema(self, user_info):
         self.requireSchemaPermission(user_info, require_db=False)
         if USE_DB_PROCESSORS:
-            processors = list(self.db.processors.find({}, projection={"_id": 0}))
+            processors = [
+                self._serializeSchema(schema) for schema in self.db.processors.find({})
+            ]
         else:
             collaborator = self.getCollaboratorForUser(user_info)
             processors = []
@@ -596,13 +776,21 @@ class DataManager:
             "read_only": not USE_DB_PROCESSORS,
         }
 
-    def uploadProcessorSchema(self, file, schema_meta, user_info):
+    def uploadProcessorSchema(self, file, schema_meta, user_info, schema_id=None):
         self.requireSchemaPermission(user_info)
-        existing = self._findUniqueProcessor(
-            {"name": schema_meta.get("name")}, required=False
+        existing = (
+            self._schemaDocument(schema_id)
+            if schema_id
+            else self._findUniqueProcessor(
+                {"name": schema_meta.get("name")}, required=False
+            )
         )
         if existing:
             self.requireSchemaPermission(user_info, destructive=True)
+            if schema_meta.get("name") != existing["name"]:
+                raise schema_rules.SchemaError(
+                    "Schema names cannot be changed during replacement."
+                )
         self._checkProcessorMetadata(schema_meta, existing)
         filename = (file.filename or "").lower()
         if file.content_type == "application/json" or filename.endswith(".json"):
@@ -622,34 +810,17 @@ class DataManager:
                 existing, new_processor, user_info, "uploadProcessorSchema"
             )
         else:
-            # A concurrent create must not turn an upload into a replacement.
-            result = self.db.processors.update_one(
-                {"name": schema_meta["name"]},
-                {"$setOnInsert": {**new_processor, "lastUpdated": time.time()}},
-                upsert=True,
-            )
-            if not result.upserted_id:
-                raise schema_rules.SchemaError(
-                    "A schema with this name was just created. Reload before replacing it.",
-                    409,
-                )
-            self.recordHistory(
-                user=user_info.get("email"),
-                action="uploadProcessorSchema",
-                query=new_processor,
-            )
-        return new_processor
+            return self.createSchema(new_processor, user_info)
+        return self._serializeSchema({**existing, **new_processor})
 
-    def deleteProcessorSchema(self, processorName, user_info):
+    def deleteProcessorSchema(self, processorName, user_info, schema_id=None):
         self.requireSchemaPermission(user_info, destructive=True)
-        processor = self._findUniqueProcessor({"name": processorName})
-        affected = [
-            str(group["_id"])
-            for group in self.db.record_groups.find(
-                {"processorId": processor.get("processorId")}, {"_id": 1}
+        processor = self._schemaDocument(schema_id, processorName)
+        if self._groupsUsingSchema(processor):
+            raise schema_rules.SchemaError(
+                "This schema is in use. Detach its record groups before deleting it.",
+                409,
             )
-        ]
-        self._ensureRecordGroupsReconciled(affected, user_info)
         archived = {
             **processor,
             "deleted_by": user_info.get("email"),
@@ -675,13 +846,16 @@ class DataManager:
 
     def updateProcessor(self, processor_data, user_info):
         self.requireSchemaPermission(user_info)
-        if not isinstance(processor_data, dict) or not isinstance(
-            processor_data.get("name"), str
-        ):
+        if not isinstance(processor_data, dict):
             raise schema_rules.SchemaError(
                 "Provide the schema name and metadata to update."
             )
-        processor = self._findUniqueProcessor({"name": processor_data["name"]})
+        processor_data = dict(processor_data)
+        processor = self._schemaDocument(
+            processor_data.pop("schema_id", None), processor_data.get("name")
+        )
+        if "name" in processor_data and processor_data["name"] != processor["name"]:
+            raise schema_rules.SchemaError("Schema names cannot be renamed.")
         combined = {
             key: processor.get(key)
             for key in (
@@ -691,6 +865,7 @@ class DataManager:
                 "modelId",
                 "documentType",
                 "img",
+                "parser_type",
             )
         }
         combined.update(processor_data)
@@ -700,17 +875,25 @@ class DataManager:
             for key, value in processor_data.items()
             if processor.get(key) != value
         }
-        if set(changes) & {"processorId", "modelId", "documentType"}:
+        if set(changes) & {"processorId", "modelId", "documentType", "parser_type"}:
             self.requireSchemaPermission(user_info, destructive=True)
         if changes:
             self._saveProcessorChanges(processor, changes, user_info, "updateProcessor")
         return "success"
 
     def updateProcessorAttribute(
-        self, processor_name, field_name, updates, user_info, operation="update"
+        self,
+        processor_name,
+        field_name,
+        updates,
+        user_info,
+        operation="update",
+        schema_id=None,
     ):
         self.requireSchemaPermission(user_info)
-        if not isinstance(processor_name, str) or not processor_name:
+        if schema_id is None and (
+            not isinstance(processor_name, str) or not processor_name
+        ):
             raise schema_rules.SchemaError("processor_name is required.")
         if not isinstance(operation, str) or operation not in {
             "add",
@@ -720,7 +903,7 @@ class DataManager:
             raise schema_rules.SchemaError("operation must be add, update, or delete.")
         if not isinstance(updates, dict) or set(updates) - schema_rules.FIELD_UPDATES:
             raise schema_rules.SchemaError("Unsupported schema field updates.")
-        processor = self._findUniqueProcessor({"name": processor_name})
+        processor = self._schemaDocument(schema_id, processor_name)
         attributes = [
             field
             for field in schema_rules.normalize_fields(
@@ -1468,23 +1651,20 @@ class DataManager:
 
     def _recordSchema(self, group, user=None):
         """Resolve reconciliation rules; a missing definition never retires data."""
-        processor_id = group.get("processorId")
-        if processor_id:
-            processor = self.getProcessorById(processor_id, user)
-            schema = processor if processor and "attributes" in processor else None
-            keep_unknown = USE_DB_PROCESSORS
-        else:
-            schema = (
-                {"attributes": group["attributes"]} if group.get("attributes") else None
-            )
-            keep_unknown = True
+        processor = self.resolveRecordGroupSchema(group, user)
+        schema = (
+            processor
+            if processor and (USE_DB_PROCESSORS or "attributes" in processor)
+            else None
+        )
+        keep_unknown = USE_DB_PROCESSORS or schema is None
         if schema is not None:
             schema = {
                 "attributes": schema_rules.normalize_fields(
                     schema.get("attributes") or [], strict=False
                 )
             }
-        fingerprint = self._attributeDigest([2, schema, keep_unknown])
+        fingerprint = self._attributeDigest([3, schema, keep_unknown])
         return schema, keep_unknown, fingerprint
 
     @staticmethod
@@ -1618,7 +1798,7 @@ class DataManager:
         return list(columns)
 
     def fetchProcessors(self, user):
-        processor_list = self.createProcessorsList(user, update_state=False)
+        processor_list = self.createProcessorsList(user)
         return {
             "USE_DB_PROCESSORS": USE_DB_PROCESSORS,
             "collaborator": self.getCollaboratorForUser(user),
@@ -1685,6 +1865,7 @@ class DataManager:
         cursor = self.db.record_groups.find({"_id": _id})
         record_group = cursor.next()
         record_group["_id"] = str(record_group["_id"])
+        record_group = self._recordGroupSchemaInfo(record_group, user)
 
         project_document = self.getProjectFromRecordGroup(rg_id)
 
@@ -1736,6 +1917,9 @@ class DataManager:
         ## get record group name
         rg = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
         rg_name = rg.get("name", "")
+        document["has_schema"] = self._recordGroupSchemaInfo(rg, user_info)[
+            "has_schema"
+        ]
         document["rg_name"] = rg_name
         document["rg_id"] = rg_id
 
@@ -1855,45 +2039,25 @@ class DataManager:
         return document
 
     def getProcessorByRecordGroupID(self, rg_id, returnNameOnly=False, user=None):
-        _id = ObjectId(rg_id)
-        try:
-            cursor = self.db.record_groups.find({"_id": _id})
-            document = cursor.next()
-            google_id = document.get("processorId", None)
-            if not google_id:
-                processor_attributes = self.getRecordGroupSchemaAttributes(
-                    user=user, rg_document=document
-                )
-                if returnNameOnly:
-                    return document.get("documentType") or document.get("name")
-                return None, None, processor_attributes
-            processor_document = self.getProcessorById(google_id, user)
-            if not processor_document:
-                processor_document = DEFAULT_PROCESSORS[0]
-            processor_attributes = processor_document.get("attributes", None)
-            model_id = processor_document.get("Model ID", None)
-            if model_id is None:
-                model_id = processor_document.get("modelId", None)
-            if returnNameOnly:
-                processor_name = processor_document.get("Processor Name", None)
-                if processor_name is None:
-                    processor_name = processor_document.get("name", None)
-                return processor_name
-            return google_id, model_id, processor_attributes
-        except Exception as e:
-            _log.error(f"unable to find processor: {e}")
-            return None, None, None
+        group = self.db.record_groups.find_one({"_id": ObjectId(rg_id)})
+        if group is None:
+            raise schema_rules.SchemaError("Record group not found.", 404)
+        schema = self.resolveRecordGroupSchema(group, user)
+        if returnNameOnly:
+            return (schema or {}).get("name")
+        if schema is None:
+            return None, None, []
+        return (
+            schema.get("processorId"),
+            schema.get("modelId"),
+            schema_rules.normalize_fields(schema.get("attributes") or [], strict=False),
+        )
 
     def getProcessorByRecordID(self, record_id, user=None):
-        _id = ObjectId(record_id)
-        try:
-            cursor = self.db.records.find({"_id": _id})
-            document = cursor.next()
-            rg_id = document["record_group_id"]
-            return self.getProcessorByRecordGroupID(rg_id, user=user)
-        except Exception as e:
-            _log.error(f"unable to find processor id: {e}")
-            return None, None, None
+        document = self.db.records.find_one({"_id": ObjectId(record_id)})
+        if document is None:
+            raise schema_rules.SchemaError("Record not found.", 404)
+        return self.getProcessorByRecordGroupID(document["record_group_id"], user=user)
 
     def userCanAccessProject(self, project_id, user_info):
         try:
@@ -2309,17 +2473,17 @@ class DataManager:
         schema_fields = self._getImportPackageSchemaFields(import_package)
         if schema_fields:
             rg_document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
-            if rg_document and not rg_document.get("processorId"):
-                current_fields = schema_rules.normalize_fields(
-                    rg_document.get("attributes") or [], strict=False
+            current_fields = self.getRecordGroupSchemaAttributes(
+                user=user_info, rg_document=rg_document
+            )
+            if schema_fields != current_fields:
+                self.requireSchemaPermission(
+                    user_info, destructive=bool(current_fields)
                 )
-                if schema_fields != current_fields:
-                    self.requireSchemaPermission(
-                        user_info, destructive=bool(current_fields)
-                    )
-                    self.updateRecordGroup(
-                        rg_id, {"attributes": schema_fields}, user_info
-                    )
+                raise schema_rules.SchemaError(
+                    "Appending records cannot replace a schema. Create or edit the shared schema separately.",
+                    409,
+                )
 
         created_record_ids = []
         for record in records_to_create:
@@ -2600,15 +2764,12 @@ class DataManager:
             raise schema_rules.SchemaError("processorId must be a string.")
         if not self.userCanAccessProject(rg_info.get("project_id"), user_info):
             raise PermissionError("You do not have access to this project.")
+        rg_info = copy.deepcopy(rg_info)
         if rg_info.get("attributes"):
             self.requireSchemaPermission(user_info)
             rg_info["attributes"] = schema_rules.validate_fields(
                 rg_info["attributes"], util.CLEANING_FUNCTIONS, require_types=False
             )
-        if rg_info.get("processorId") and not self.getProcessorById(
-            rg_info["processorId"], user_info
-        ):
-            raise schema_rules.SchemaError("Processor not found.", 404)
         ## get user's default team
         user_email = user_info.get("email", "")
         default_team = self.getDefaultTeamForUser(
@@ -2618,8 +2779,44 @@ class DataManager:
             _log.info(f"user {user_email} has no default team")
             return False
 
+        group_id = ObjectId()
+        if USE_DB_PROCESSORS:
+            if "schema_id" in rg_info:
+                if rg_info.get("attributes") or rg_info.get("processorId"):
+                    raise schema_rules.SchemaError(
+                        "Select a schema without also supplying fields or a processor ID."
+                    )
+                if rg_info["schema_id"] is not None:
+                    schema = self._schemaDocument(rg_info["schema_id"])
+                    rg_info["schema_id"] = str(schema["_id"])
+            elif rg_info.get("processorId"):
+                schema = self.resolveRecordGroupSchema(rg_info, user_info)
+                rg_info["schema_id"] = str(schema["_id"])
+            elif rg_info.get("attributes"):
+                schema = self.createSchema(
+                    {
+                        "name": f"record-group-{group_id}",
+                        "displayName": rg_info.get("name"),
+                        "documentType": rg_info.get("documentType")
+                        or "Imported records",
+                        "attributes": rg_info["attributes"],
+                    },
+                    user_info,
+                )
+                rg_info["schema_id"] = schema["schema_id"]
+            else:
+                rg_info["schema_id"] = None
+            rg_info.pop("attributes", None)
+        else:
+            if rg_info.get("schema_id"):
+                raise schema_rules.SchemaError(
+                    "Mongo schemas are inactive in repo mode.", 409
+                )
+            self.resolveRecordGroupSchema(rg_info, user_info)
+
         ## add user and timestamp to record group
         rg_info["creator"] = user_info
+        rg_info["_id"] = group_id
         rg_info["team"] = default_team
         rg_info["dateCreated"] = time.time()
         rg_info["settings"] = {}
@@ -2662,6 +2859,7 @@ class DataManager:
 
     def createDirectoryUpload(self, rg_id, user_info, request):
         session_id, files, options = directory_upload.validate_manifest(request)
+        self.getRecordGroupProcessingConfig(rg_id, user_info)
         existing_job = self.getProcessingJob(session_id)
         if existing_job and (
             existing_job["record_group_id"] != rg_id
@@ -2940,10 +3138,11 @@ class DataManager:
         upload_expires_at=None,
     ):
         job_id = job_id or uuid.uuid4().hex
+        processing_config = self.getRecordGroupProcessingConfig(rg_id, user_info)
         now = time.time()
         request_user = {
             key: user_info.get(key)
-            for key in ("email", "default_team", "team", "name")
+            for key in ("email", "default_team", "team", "name", "collaborator")
             if user_info.get(key) is not None
         }
         job = {
@@ -2953,6 +3152,7 @@ class DataManager:
             "status": "queued",
             "record_group_id": rg_id,
             "request_user": request_user,
+            "processing_config": processing_config,
             "input": {
                 "bucket_name": bucket_name,
                 "prefix": prefix or "",
@@ -3517,49 +3717,72 @@ class DataManager:
             "settings",
             "documentType",
             "processorId",
+            "schema_id",
             "attributes",
             "source_type",
         }
         if not isinstance(new_data, dict) or set(new_data) - allowed:
             raise schema_rules.SchemaError("Unsupported record group update fields.")
+        if "attributes" in new_data:
+            self.requireSchemaPermission(user_info, destructive=True)
+            raise schema_rules.SchemaError(
+                "Edit fields on the shared schema, not on the record group."
+            )
         if "settings" in new_data and not isinstance(new_data["settings"], dict):
             raise schema_rules.SchemaError("settings must be an object.")
-        for key in set(new_data) - {"settings", "attributes"}:
+        for key in set(new_data) - {"settings"}:
             if not isinstance(new_data[key], str) and not (
-                key == "processorId" and new_data[key] is None
+                key in {"processorId", "schema_id"} and new_data[key] is None
             ):
                 raise schema_rules.SchemaError(f"{key} must be a string.")
-        changes = {
-            key: value for key, value in new_data.items() if current.get(key) != value
-        }
-        if "attributes" in changes:
-            self.requireSchemaPermission(
-                user_info,
-                destructive=bool(
-                    current.get("attributes") or current.get("processorId")
-                ),
-            )
-            changes["attributes"] = schema_rules.validate_fields(
-                changes["attributes"], util.CLEANING_FUNCTIONS, require_types=False
-            )
-        if "attributes" in changes:
-            changes["attributes"] = schema_rules.retain_retired_fields(
-                current.get("attributes"), changes["attributes"]
-            )
-        if set(changes) & {"processorId", "documentType"}:
+        new_data = dict(new_data)
+        binding_change = bool(set(new_data) & {"schema_id", "processorId"})
+        if binding_change or "documentType" in new_data:
             self.requireSchemaPermission(user_info, destructive=True, require_db=False)
-        if (
-            "processorId" in changes
-            and changes["processorId"]
-            and not self.getProcessorById(changes["processorId"], user_info)
-        ):
-            raise schema_rules.SchemaError("Processor not found.", 404)
+        if USE_DB_PROCESSORS:
+            if "schema_id" in new_data and "processorId" in new_data:
+                raise schema_rules.SchemaError(
+                    "Use schema_id to select a database schema."
+                )
+            if "processorId" in new_data:
+                processor_id = new_data.pop("processorId")
+                schema = (
+                    self.getMongoProcessorByID(processor_id) if processor_id else None
+                )
+                if processor_id and schema is None:
+                    raise schema_rules.SchemaError("Schema not found.", 404)
+                new_data["schema_id"] = schema["schema_id"] if schema else None
+            if "schema_id" in new_data:
+                schema_id = new_data["schema_id"]
+                if schema_id is not None:
+                    self._schemaDocument(schema_id)
+        elif "schema_id" in new_data:
+            raise schema_rules.SchemaError(
+                "Mongo schemas are inactive in repo mode.", 409
+            )
+        elif "processorId" in new_data:
+            self.resolveRecordGroupSchema(
+                {"processorId": new_data["processorId"]}, user_info
+            )
+        changes = {
+            key: value
+            for key, value in new_data.items()
+            if key not in current or current[key] != value
+        }
         if not changes:
             return current
-        if set(changes) & {"attributes", "processorId"}:
-            self._ensureRecordGroupsReconciled([rg_id], user_info)
+        if binding_change:
+            # Missing/ambiguous legacy bindings must still be repairable or detachable.
+            try:
+                self.resolveRecordGroupSchema(current, user_info)
+            except schema_rules.SchemaError:
+                pass
+            else:
+                self._ensureRecordGroupsReconciled([rg_id], user_info)
         query = {"_id": ObjectId(rg_id)}
-        for key in changes:
+        for key in set(changes) | (
+            {"schema_id", "processorId", "attributes"} if binding_change else set()
+        ):
             query[key] = current[key] if key in current else {"$exists": False}
         result = self.db.record_groups.update_one(query, {"$set": changes})
         if not result.matched_count:
@@ -3573,38 +3796,38 @@ class DataManager:
             query=changes,
             previous_state={key: current.get(key) for key in changes},
         )
-        return {**current, **changes}
+        return self._recordGroupSchemaInfo({**current, **changes}, user_info)
 
-    def connectRecordGroupProcessor(self, rg_id, processor_id, user_info):
+    def connectRecordGroupProcessor(
+        self, rg_id, processor_id, user_info, schema_id=None
+    ):
         self.requireSchemaPermission(user_info, destructive=True, require_db=False)
-        _, record_group = self.fetchRecordGroupData(rg_id, user_info)
-        if record_group is None:
-            raise PermissionError("User does not have access to this record group.")
-        if not isinstance(processor_id, str) or not processor_id:
-            raise ValueError("Processor ID is required.")
-
-        processor = self.getProcessorById(processor_id, user_info)
-        if not processor:
-            raise ValueError("Processor not found.")
-
-        processor_document_type = (
-            processor.get("documentType")
-            or processor.get("displayName")
-            or processor.get("name")
-            or "Connected Processor"
-        )
-        update = {
-            "processorId": processor.get("processorId") or processor_id,
-            "documentType": processor_document_type,
-            "source_type": record_group.get("source_type") or "processor_connected",
-        }
         if USE_DB_PROCESSORS:
-            update["attributes"] = [
-                field
-                for field in processor.get("attributes") or []
-                if not field.get("deleted")
-            ]
-        return self.updateRecordGroup(rg_id, update, user_info)
+            if schema_id is not None:
+                schema = self._schemaDocument(schema_id)
+            else:
+                schema = self.getMongoProcessorByID(processor_id)
+                if not schema:
+                    raise schema_rules.SchemaError("Select a schema.")
+            return self.updateRecordGroup(
+                rg_id,
+                {"schema_id": str(schema.get("_id") or schema["schema_id"])},
+                user_info,
+            )
+        if schema_id is not None:
+            raise schema_rules.SchemaError(
+                "Mongo schemas are inactive in repo mode.", 409
+            )
+        processor = self._canonicalRepoProcessor(
+            self.getProcessorById(processor_id, user_info)
+        )
+        if not processor:
+            raise schema_rules.SchemaError("Processor not found.", 404)
+        return self.updateRecordGroup(
+            rg_id,
+            {"processorId": processor_id, "documentType": processor["documentType"]},
+            user_info,
+        )
 
     def fetchRecordForUser(self, record_id, user_info):
         try:
@@ -4003,6 +4226,7 @@ class DataManager:
                     "_id": 1,
                     "processorId": 1,
                     "attributes": 1,
+                    "schema_id": 1,
                 },
             )
             rg_processor_attribute_map = {}
@@ -4769,6 +4993,10 @@ class DataManager:
         self._ensureRecordGroupsReconciled([group_id], user_info)
         group = self.db.record_groups.find_one({"_id": ObjectId(group_id)})
         schema_state = self._recordSchema(group or {}, user_info)
+        if schema_state[0] is None:
+            raise schema_rules.SchemaError(
+                "This record group has no active schema for cleaning.", 409
+            )
         schema_map = util.convert_processor_attributes_to_dict(
             (schema_state[0] or {}).get("attributes")
         )

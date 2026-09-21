@@ -35,6 +35,8 @@ PROCESSOR = {
 def schema_manager(manager, monkeypatch):
     from ogrre.internal import data_manager, util
 
+    del manager.getRecordGroupProcessingConfig
+
     monkeypatch.setattr(data_manager, "USE_DB_PROCESSORS", True)
     monkeypatch.setattr(data_manager, "REQUIRE_AUTH", True)
     monkeypatch.setattr(
@@ -48,9 +50,14 @@ def schema_manager(manager, monkeypatch):
     monkeypatch.setattr(manager, "getUserRecordGroups", Mock(return_value=[GROUP]))
     monkeypatch.setattr(manager, "getProjectFromRecordGroup", Mock(return_value={}))
     monkeypatch.setattr(util, "generate_file_url", Mock(return_value=None))
-    manager.db.processors.insert_one(copy.deepcopy(PROCESSOR))
+    schema_id = manager.db.processors.insert_one(copy.deepcopy(PROCESSOR)).inserted_id
     manager.db.record_groups.insert_one(
-        {"_id": ObjectId(GROUP), "name": "Group", "attributes": [copy.deepcopy(FIELD)]}
+        {
+            "_id": ObjectId(GROUP),
+            "name": "Group",
+            "attributes": [copy.deepcopy(FIELD)],
+            "schema_id": str(schema_id),
+        }
     )
     return manager
 
@@ -242,6 +249,13 @@ def test_metadata_binding_and_schema_delete_need_specific_permission(
     assert client.post("/delete_processor/well").status_code == 403
     schema_manager.hasPermission.side_effect = None
     schema_manager.hasPermission.return_value = True
+    assert client.post("/delete_processor/well").status_code == 409
+    assert (
+        client.post(
+            f"/update_record_group/{GROUP}", json={"schema_id": None}
+        ).status_code
+        == 200
+    )
     assert client.post("/delete_processor/well").status_code == 200
     assert schema_manager.db.deleted_processors.find_one()["attributes"] == [FIELD]
 
