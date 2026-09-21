@@ -5,6 +5,7 @@ import datetime
 import functools
 import zipstream
 import csv
+import io
 import json
 import copy
 from pathlib import Path
@@ -14,6 +15,7 @@ import importlib.metadata as importlib_metadata
 import fitz
 from ogrre_data_cleaning import CLEANING_FUNCTIONS
 from ogrre.internal import storage_api
+from ogrre.internal import schema_validation
 
 _log = logging.getLogger(__name__)
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
@@ -202,6 +204,14 @@ def sortRecordAttributes(
     if processor_attributes is None or len(processor_attributes) == 0:
         _log.info(f"no processor attributes found")
         return normalize_record_attribute_tree(attributes), False
+    processor_attributes = schema_validation.normalize_fields(
+        processor_attributes, strict=False
+    )
+    names = [field.get("name") for field in processor_attributes]
+    if len(names) != len(set(names)):
+        raise schema_validation.SchemaError(
+            "Duplicate schema fields cannot be used to sort a record.", 409
+        )
     processor_attributes.sort(key=lambda x: x.get("page_order_sort", float("inf")))
 
     original_attributes = copy.deepcopy(attributes)
@@ -1086,47 +1096,32 @@ def remap_airtable_keys(original_dict):
 
 
 def csv_to_dict(upload_file):
-    # upload_file.file is already a file-like object
-    upload_file.file.seek(0)  # ensure start
-    reader = csv.reader(upload_file.file.read().decode("utf-8").splitlines())
-    headers = next(reader)
-
-    data = []
-    for row in reader:
-        item = dict(zip(headers, row))
-        data.append(item)
+    upload_file.file.seek(0)
+    reader = csv.DictReader(
+        io.StringIO(upload_file.file.read().decode("utf-8-sig")), strict=True
+    )
+    try:
+        headers = reader.fieldnames
+        if not headers or any(not name.strip() for name in headers):
+            raise schema_validation.SchemaError(
+                "The CSV schema must contain column headers."
+            )
+        if len(set(headers)) != len(headers):
+            raise schema_validation.SchemaError(
+                "The CSV schema contains duplicate column headers."
+            )
+        data = list(reader)
+    except csv.Error as error:
+        raise schema_validation.SchemaError(f"Invalid CSV schema: {error}.") from error
+    if any(None in row or None in row.values() for row in data):
+        raise schema_validation.SchemaError(
+            "Every CSV row must match the column headers."
+        )
     return data
 
 
 def convert_to_target_format(data):
-    target_format = []
-    key_map = {
-        "Name": "name",
-        "Database Data Type": "database_data_type",
-        "Occurrence": "occurrence",
-        "Grouping": "grouping",
-        "Page Order Sort": "page_order_sort",
-        "Cleaning Function": "cleaning_function",
-        # "Data Type" OR "Google DataType" -> "data_type"
-    }
-
-    for row in data:
-        target_item = {}
-        for item_key in row:
-            item = row[item_key]
-            json_key = key_map.get(item_key, None)
-            if json_key:
-                target_item[json_key] = item
-            else:
-                ## TODO: we can add these if we want to, but it might just be a waste of space
-                # target_item[item_key] = item
-                _log.debug(f"we dont have a matching key for: {item_key}")
-        if "Data Type" in row:
-            target_item["data_type"] = row["Data Type"]
-        elif "Google Data Type" in row:
-            target_item["data_type"] = row["Google Data Type"]
-        target_format.append(target_item)
-    return target_format
+    return schema_validation.normalize_fields(data)
 
 
 def convert_csv_to_dict(csv_file):
@@ -1174,36 +1169,7 @@ def format_schema_json(json_file):
     else:
         raw = json_file
 
-    data = json.loads(raw)
-    if not isinstance(data, list):
-        raise ValueError("schema json must be a list of objects")
-
-    allowed_keys = {
-        "name",
-        "data_type",
-        "database_data_type",
-        "occurrence",
-        "grouping",
-        "page_order_sort",
-        "cleaning_function",
-    }
-    data_type_aliases = {"google_data_type", "Google Data type"}
-
-    formatted = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        new_item = {}
-        for key in allowed_keys:
-            if key in item:
-                new_item[key] = item[key]
-        if "data_type" not in new_item:
-            for alias in data_type_aliases:
-                if alias in item:
-                    new_item["data_type"] = item[alias]
-                    break
-        formatted.append(new_item)
-    return formatted
+    return schema_validation.normalize_fields(json.loads(raw))
 
 
 def upload_to_gcs(

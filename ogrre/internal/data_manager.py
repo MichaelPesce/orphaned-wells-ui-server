@@ -17,6 +17,7 @@ import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from ogrre.internal import storage_api
 from ogrre.internal import directory_upload
 from ogrre.internal import processing_job_history
+from ogrre.internal import schema_validation as schema_rules
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
@@ -239,6 +240,10 @@ class DataManager:
                 if field_indexes[0] >= len(attributes):
                     _log.info("deleteField top-level index is out of range")
                     return False
+                if not attributes[field_indexes[0]].get("user_added", False):
+                    raise PermissionError(
+                        "Only manually added record attributes can be deleted."
+                    )
                 del attributes[field_indexes[0]]
             else:
                 parent_list, _, _ = self._getAttributeParentList(
@@ -250,6 +255,10 @@ class DataManager:
                 if field_indexes[-1] >= len(parent_list):
                     _log.info("deleteField subattribute index is out of range")
                     return False
+                if not parent_list[field_indexes[-1]].get("user_added", False):
+                    raise PermissionError(
+                        "Only manually added record attributes can be deleted."
+                    )
                 del parent_list[field_indexes[-1]]
         elif update_type == "updateFieldCoordinates":
             current_time = time.time()
@@ -294,19 +303,12 @@ class DataManager:
         return user_document.get("default_team", None)
 
     def getMongoProcessorByID(self, google_id):
-        projection = {"_id": 0}
-        query = {"processorId": google_id}
-        processor = list(self.db.processors.find(query, projection=projection))
-        if len(processor) > 0:
-            return processor[0]
-        else:
-            return None
-
-    def getMongoProcessorsByIDs(self, google_ids):
-        projection = {"_id": 0}
-        query = {"processorId": {"$in": google_ids}}
-        processors = list(self.db.processors.find(query, projection=projection))
-        return processors
+        processor = self._findUniqueProcessor(
+            {"processorId": google_id}, required=False
+        )
+        if processor:
+            processor.pop("_id", None)
+        return processor
 
     def _normalizeCollaborator(self, collaborator):
         if not isinstance(collaborator, str):
@@ -352,7 +354,9 @@ class DataManager:
 
     def getProcessorsByIds(self, google_ids=None, user=None):
         if USE_DB_PROCESSORS:
-            processors = self.getMongoProcessorsByIDs(google_ids)
+            processors = [
+                self.getMongoProcessorByID(google_id) for google_id in google_ids or []
+            ]
         else:
             collaborator = self.getCollaboratorForUser(user)
             processors = []
@@ -452,165 +456,279 @@ class DataManager:
             _log.error(f"error trying to lock record: {e}")
             return False
 
+    def requireSchemaPermission(self, user_info, destructive=False, require_db=True):
+        if require_db and not USE_DB_PROCESSORS:
+            raise schema_rules.SchemaError(
+                "Repo schemas are read-only. Enable DB schema mode to manage schemas.",
+                409,
+            )
+        email = (user_info or {}).get("email")
+        if not self.hasPermission(email, "manage_schema"):
+            raise PermissionError("You are not authorized to manage schemas.")
+        if destructive and (
+            not REQUIRE_AUTH
+            or (user_info or {}).get("anonymous")
+            or not self.hasPermission(email, schema_rules.DESTRUCTIVE_PERMISSION)
+        ):
+            raise PermissionError(
+                "This schema change requires manage_schema_destructive permission."
+            )
+
+    def _findUniqueProcessor(self, query, required=True):
+        matches = list(self.db.processors.find(query).limit(2))
+        if len(matches) > 1:
+            raise schema_rules.SchemaError(
+                "Multiple schemas match this identifier. Resolve the duplicate schemas first.",
+                409,
+            )
+        if not matches:
+            if required:
+                raise schema_rules.SchemaError("Schema not found.", 404)
+            return None
+        return matches[0]
+
+    def _checkProcessorMetadata(self, metadata, existing=None):
+        allowed = {
+            "name",
+            "displayName",
+            "processorId",
+            "modelId",
+            "documentType",
+            "img",
+        }
+        if not isinstance(metadata, dict) or set(metadata) - allowed:
+            raise schema_rules.SchemaError("Unsupported processor metadata fields.")
+        for key, value in metadata.items():
+            if value is not None and not isinstance(value, str):
+                raise schema_rules.SchemaError(f"{key} must be a string.")
+        for key in ("name", "processorId", "modelId", "documentType"):
+            if not isinstance(metadata.get(key), str) or not metadata[key].strip():
+                raise schema_rules.SchemaError(f"{key} is required.")
+        conflict = self._findUniqueProcessor(
+            {"processorId": metadata["processorId"]}, required=False
+        )
+        if conflict and (not existing or conflict["_id"] != existing["_id"]):
+            raise schema_rules.SchemaError(
+                "A schema already uses this processor ID.", 409
+            )
+
+    def _saveProcessorChanges(self, processor, changes, user_info, action):
+        # Compare the original state so simultaneous edits cannot overwrite one another.
+        result = self.db.processors.update_one(
+            processor, {"$set": {**changes, "lastUpdated": time.time()}}
+        )
+        if not result.matched_count:
+            raise schema_rules.SchemaError(
+                "The schema changed. Reload it before saving again.", 409
+            )
+        previous = {key: processor.get(key) for key in changes}
+        self.recordHistory(
+            user=user_info.get("email"),
+            action=action,
+            query={"name": processor["name"], **changes},
+            previous_state=previous,
+        )
+
     @time_it
     def getSchema(self, user_info):
-        user = user_info.get("email")
-        _log.info(f"{user} is fetching schema")
-        schema = list(self.db.processors.find({}, projection={"_id": 0}))
-        if len(schema) == 0:
-            _log.info(f"no processors found")
-        for processor in schema:
-            processorName = processor.get("name")
-            processor_img = util.generate_file_url(
-                path=f"sample_images/{processorName}"
+        self.requireSchemaPermission(user_info, require_db=False)
+        if USE_DB_PROCESSORS:
+            processors = list(self.db.processors.find({}, projection={"_id": 0}))
+        else:
+            collaborator = self.getCollaboratorForUser(user_info)
+            processors = []
+            for metadata in processor_api.get_processor_list(collaborator) or []:
+                definition = (
+                    processor_api.get_processor_by_id(
+                        collaborator, metadata.get("Processor ID")
+                    )
+                    or metadata
+                )
+                processors.append(
+                    {
+                        "name": definition.get("Processor Name"),
+                        "displayName": definition.get("displayName")
+                        or definition.get("Processor Name"),
+                        "processorId": definition.get("Processor ID"),
+                        "modelId": definition.get("Model ID"),
+                        "documentType": definition.get("documentType")
+                        or definition.get("Processor Name"),
+                        "attributes": definition.get("attributes") or [],
+                    }
+                )
+        for processor in processors:
+            processor["attributes"] = schema_rules.normalize_fields(
+                processor.get("attributes") or [], strict=False
             )
-            processor["img"] = processor_img
-        return schema
+            processor["img"] = util.generate_file_url(
+                path=f"sample_images/{processor.get('name')}"
+            )
+        return {
+            "processors": processors,
+            "source": "database" if USE_DB_PROCESSORS else "repo",
+            "read_only": not USE_DB_PROCESSORS,
+        }
 
     def uploadProcessorSchema(self, file, schema_meta, user_info):
+        self.requireSchemaPermission(user_info)
+        existing = self._findUniqueProcessor(
+            {"name": schema_meta.get("name")}, required=False
+        )
+        if existing:
+            self.requireSchemaPermission(user_info, destructive=True)
+        self._checkProcessorMetadata(schema_meta, existing)
         filename = (file.filename or "").lower()
         if file.content_type == "application/json" or filename.endswith(".json"):
-            attributes_list = util.format_schema_json(file)
+            attributes = util.format_schema_json(file)
+        elif filename.endswith(".csv") or file.content_type == "text/csv":
+            attributes = util.convert_csv_to_dict(file)
         else:
-            attributes_list = util.convert_csv_to_dict(file)
-        query = {"name": schema_meta.get("name", "Default Processor Name")}
-        new_processor = {
-            **schema_meta,
-            "attributes": attributes_list,
-            "lastUpdated": time.time(),
-        }
-        self.db.processors.update_one(query, {"$set": new_processor}, upsert=True)
-        self.recordHistory(
-            user=user_info.get("email", None),
-            action="uploadProcessorSchema",
-            query=new_processor,
-        )
-        new_processor.pop("_id", None)
+            raise schema_rules.SchemaError("Upload a JSON or CSV schema file.")
+        attributes = schema_rules.validate_fields(attributes, util.CLEANING_FUNCTIONS)
+        if not attributes:
+            raise schema_rules.SchemaError(
+                "The schema file must contain at least one field."
+            )
+        new_processor = {**schema_meta, "attributes": attributes}
+        if existing:
+            self._saveProcessorChanges(
+                existing, new_processor, user_info, "uploadProcessorSchema"
+            )
+        else:
+            # A concurrent create must not turn an upload into a replacement.
+            result = self.db.processors.update_one(
+                {"name": schema_meta["name"]},
+                {"$setOnInsert": {**new_processor, "lastUpdated": time.time()}},
+                upsert=True,
+            )
+            if not result.upserted_id:
+                raise schema_rules.SchemaError(
+                    "A schema with this name was just created. Reload before replacing it.",
+                    409,
+                )
+            self.recordHistory(
+                user=user_info.get("email"),
+                action="uploadProcessorSchema",
+                query=new_processor,
+            )
         return new_processor
 
     def deleteProcessorSchema(self, processorName, user_info):
-        _log.info(f"deleting processor {processorName}")
-        query = {"name": processorName}
-        self.db.processors.delete_one(query)
-        self.recordHistory(
-            user=user_info.get("email", None),
-            action="deleteProcessorSchema",
-            query=query,
+        self.requireSchemaPermission(user_info, destructive=True)
+        processor = self._findUniqueProcessor({"name": processorName})
+        archived = {
+            **processor,
+            "deleted_by": user_info.get("email"),
+            "deleted_at": time.time(),
+        }
+        self.db.deleted_processors.replace_one(
+            {"_id": processor["_id"]}, archived, upsert=True
         )
-        return query
+        result = self.db.processors.delete_one(processor)
+        if not result.deleted_count:
+            raise schema_rules.SchemaError(
+                "The schema changed. Reload before deleting it.", 409
+            )
+        self.recordHistory(
+            user=user_info.get("email"),
+            action="deleteProcessorSchema",
+            query={"name": processorName},
+            previous_state={
+                key: value for key, value in processor.items() if key != "_id"
+            },
+        )
+        return {"name": processorName}
 
     def updateProcessor(self, processor_data, user_info):
-        user = user_info.get("email")
-        query = {"name": processor_data.get("name")}
-        processor_data["lastUpdated"] = time.time()
-        self.db.processors.update_one(query, {"$set": processor_data})
-        self.recordHistory(
-            user=user,
-            action="updateProcessor",
-            query=processor_data,
-        )
-        # self.createProcessorsList()
+        self.requireSchemaPermission(user_info)
+        if not isinstance(processor_data, dict) or not isinstance(
+            processor_data.get("name"), str
+        ):
+            raise schema_rules.SchemaError(
+                "Provide the schema name and metadata to update."
+            )
+        processor = self._findUniqueProcessor({"name": processor_data["name"]})
+        combined = {
+            key: processor.get(key)
+            for key in (
+                "name",
+                "displayName",
+                "processorId",
+                "modelId",
+                "documentType",
+                "img",
+            )
+        }
+        combined.update(processor_data)
+        self._checkProcessorMetadata(combined, processor)
+        changes = {
+            key: value
+            for key, value in processor_data.items()
+            if processor.get(key) != value
+        }
+        if set(changes) & {"processorId", "modelId", "documentType"}:
+            self.requireSchemaPermission(user_info, destructive=True)
+        if changes:
+            self._saveProcessorChanges(processor, changes, user_info, "updateProcessor")
         return "success"
 
     def updateProcessorAttribute(
         self, processor_name, field_name, updates, user_info, operation="update"
     ):
-        user = user_info.get("email")
-        processor_query = {"name": processor_name}
-        processor = self.db.processors.find_one(processor_query)
-        if processor is None:
-            raise ValueError(f"processor '{processor_name}' not found")
-
+        self.requireSchemaPermission(user_info)
+        if not isinstance(processor_name, str) or not processor_name:
+            raise schema_rules.SchemaError("processor_name is required.")
+        if not isinstance(operation, str) or operation not in {
+            "add",
+            "update",
+            "delete",
+        }:
+            raise schema_rules.SchemaError("operation must be add, update, or delete.")
+        if not isinstance(updates, dict) or set(updates) - schema_rules.FIELD_UPDATES:
+            raise schema_rules.SchemaError("Unsupported schema field updates.")
+        processor = self._findUniqueProcessor({"name": processor_name})
+        attributes = schema_rules.normalize_fields(
+            processor.get("attributes") or [], strict=False
+        )
+        target = next(
+            (field for field in attributes if field.get("name") == field_name), None
+        )
         if operation == "add":
-            new_field_name = updates.get("name") or field_name
-            if not new_field_name:
-                raise ValueError(
-                    "new processor field name is required for add operation"
-                )
-            if not updates.get("data_type"):
-                raise ValueError("data_type is required for add operation")
-            if not updates.get("database_data_type"):
-                raise ValueError("database_data_type is required for add operation")
-
-            existing_attribute = next(
-                (
-                    attribute
-                    for attribute in processor.get("attributes", [])
-                    if attribute.get("name") == new_field_name
-                ),
-                None,
-            )
-            if existing_attribute is not None:
-                raise ValueError(
-                    f"processor field '{new_field_name}' already exists for processor '{processor_name}'"
-                )
-
-            new_attribute = {
-                key: value
-                for key, value in updates.items()
-                if value is not None and value != ""
-            }
-            new_attribute["name"] = new_field_name
-
-            result = self.db.processors.update_one(
-                processor_query,
-                {
-                    "$push": {"attributes": new_attribute},
-                    "$set": {"lastUpdated": time.time()},
-                },
-            )
-            if result.matched_count == 0:
-                raise ValueError(f"processor '{processor_name}' not found")
-
-        elif operation == "delete":
-            if not field_name:
-                raise ValueError("field_name is required for delete operation")
-
-            result = self.db.processors.update_one(
-                processor_query,
-                {
-                    "$pull": {"attributes": {"name": field_name}},
-                    "$set": {"lastUpdated": time.time()},
-                },
-            )
-            if result.matched_count == 0:
-                raise ValueError(f"processor '{processor_name}' not found")
-            if result.modified_count == 0:
-                raise ValueError(
-                    f"processor field not found for processor '{processor_name}' and field '{field_name}'"
-                )
-
+            new_field = {**updates, "name": updates.get("name") or field_name}
+            new_field = schema_rules.normalize_fields([new_field])[0]
+            schema_rules.validate_field(new_field, util.CLEANING_FUNCTIONS)
+            attributes.append(new_field)
         else:
-            query = {"name": processor_name, "attributes.name": field_name}
-            set_updates = {"lastUpdated": time.time()}
-            unset_updates = {}
-
-            for key, value in updates.items():
-                attr_key = f"attributes.$.{key}"
-                if value is None or value == "":
-                    unset_updates[attr_key] = ""
-                else:
-                    set_updates[attr_key] = value
-
-            db_update = {"$set": set_updates}
-            if unset_updates:
-                db_update["$unset"] = unset_updates
-
-            result = self.db.processors.update_one(query, db_update)
-            if result.matched_count == 0:
-                raise ValueError(
-                    f"processor field not found for processor '{processor_name}' and field '{field_name}'"
+            schema_rules.field_name(field_name)
+            if target is None:
+                raise schema_rules.SchemaError("Schema field not found.", 404)
+            if operation == "delete":
+                self.requireSchemaPermission(user_info, destructive=True)
+                attributes = [
+                    field
+                    for field in attributes
+                    if field["name"] != field_name
+                    and not field["name"].startswith(field_name + "::")
+                ]
+            else:
+                if not updates:
+                    raise schema_rules.SchemaError("Provide at least one field update.")
+                if "name" in updates and updates["name"] != field_name:
+                    raise schema_rules.SchemaError("Field renaming is disabled.")
+                type_changes = any(
+                    key in updates and updates[key] != target.get(key)
+                    for key in ("data_type", "database_data_type")
                 )
-
-        self.recordHistory(
-            user=user,
-            action="updateProcessorAttribute",
-            query={
-                "processor_name": processor_name,
-                "field_name": field_name,
-                "updates": updates,
-                "operation": operation,
-            },
+                if type_changes:
+                    self.requireSchemaPermission(user_info, destructive=True)
+                updated = schema_rules.normalize_fields([{**target, **updates}])[0]
+                schema_rules.validate_field(
+                    updated, util.CLEANING_FUNCTIONS, require_types=type_changes
+                )
+                attributes[attributes.index(target)] = updated
+        schema_rules.validate_structure(attributes)
+        self._saveProcessorChanges(
+            processor, {"attributes": attributes}, user_info, "updateProcessorAttribute"
         )
         return "success"
 
@@ -836,6 +954,8 @@ class DataManager:
         return cursor
 
     def hasPermission(self, email, permission):
+        if permission == schema_rules.DESTRUCTIVE_PERMISSION and not REQUIRE_AUTH:
+            return False
         if not REQUIRE_AUTH:
             return True
         user_doc = self.getUser(email)
@@ -1373,6 +1493,12 @@ class DataManager:
 
     def updateRolePermissions(self, role_id, category, permissions, updated_by=None):
         normalized_permissions = self._normalizeStringList(permissions, "permissions")
+        if schema_rules.DESTRUCTIVE_PERMISSION in normalized_permissions and (
+            category != "system" or role_id != "sys_admin"
+        ):
+            raise ValueError(
+                "manage_schema_destructive can only be assigned to the sys_admin system role."
+            )
         query = {"id": role_id, "category": category}
         role = self.getDocument("roles", query)
         if role is None:
@@ -1745,41 +1871,16 @@ class DataManager:
             fields = import_package.get("schema_fields") or []
 
         if not isinstance(fields, list):
-            return []
-
-        allowed_keys = {
-            "name",
-            "alias",
-            "data_type",
-            "google_data_type",
-            "database_data_type",
-            "cleaning_function",
-            "accepted_range",
-            "field_specific_notes",
-            "grouping",
-            "model_enabled",
-            "occurrence",
-            "page_order_sort",
-        }
-        normalized_fields = []
-        for idx, field in enumerate(fields):
-            if not isinstance(field, dict):
-                continue
-            field_name = field.get("name") or field.get("key")
-            if not field_name:
-                continue
-            normalized_field = {
-                key: value
-                for key, value in field.items()
-                if key in allowed_keys and value is not None
-            }
-            normalized_field["name"] = str(field_name)
-            if "data_type" not in normalized_field and field.get("Google Data Type"):
-                normalized_field["data_type"] = field.get("Google Data Type")
-            if "page_order_sort" not in normalized_field:
-                normalized_field["page_order_sort"] = idx + 1
-            normalized_fields.append(normalized_field)
-        return normalized_fields
+            raise schema_rules.SchemaError("Import schema fields must be an array.")
+        fields = [
+            dict(field, name=field.get("name") or field.get("key"))
+            if isinstance(field, dict)
+            else field
+            for field in fields
+        ]
+        return schema_rules.validate_fields(
+            fields, util.CLEANING_FUNCTIONS, require_types=False
+        )
 
     def _getImportPackageDocumentType(self, import_package):
         if not isinstance(import_package, dict):
@@ -2078,10 +2179,16 @@ class DataManager:
         if schema_fields:
             rg_document = self.getDocument("record_groups", {"_id": ObjectId(rg_id)})
             if rg_document and not rg_document.get("processorId"):
-                self.db.record_groups.update_one(
-                    {"_id": ObjectId(rg_id)},
-                    {"$set": {"attributes": schema_fields}},
+                current_fields = schema_rules.normalize_fields(
+                    rg_document.get("attributes") or [], strict=False
                 )
+                if schema_fields != current_fields:
+                    self.requireSchemaPermission(
+                        user_info, destructive=bool(current_fields)
+                    )
+                    self.updateRecordGroup(
+                        rg_id, {"attributes": schema_fields}, user_info
+                    )
 
         created_record_ids = []
         for record in records_to_create:
@@ -2346,6 +2453,31 @@ class DataManager:
         return str(new_project_id)
 
     def createRecordGroup(self, rg_info, user_info):
+        if not isinstance(rg_info, dict):
+            raise schema_rules.SchemaError("Record group data must be an object.")
+        if not isinstance(rg_info.get("project_id"), str) or not ObjectId.is_valid(
+            rg_info["project_id"]
+        ):
+            raise schema_rules.SchemaError("A valid project_id is required.")
+        if "attributes" in rg_info and not isinstance(rg_info["attributes"], list):
+            raise schema_rules.SchemaError(
+                "Schema attributes must be an array of objects."
+            )
+        if rg_info.get("processorId") is not None and not isinstance(
+            rg_info["processorId"], str
+        ):
+            raise schema_rules.SchemaError("processorId must be a string.")
+        if not self.userCanAccessProject(rg_info.get("project_id"), user_info):
+            raise PermissionError("You do not have access to this project.")
+        if rg_info.get("attributes"):
+            self.requireSchemaPermission(user_info)
+            rg_info["attributes"] = schema_rules.validate_fields(
+                rg_info["attributes"], util.CLEANING_FUNCTIONS, require_types=False
+            )
+        if rg_info.get("processorId") and not self.getProcessorById(
+            rg_info["processorId"], user_info
+        ):
+            raise schema_rules.SchemaError("Processor not found.", 404)
         ## get user's default team
         user_email = user_info.get("email", "")
         default_team = self.getDefaultTeamForUser(
@@ -2373,7 +2505,7 @@ class DataManager:
         _log.info(f"project_update: {project_update}")
         self.db.projects.update_one(project_query, project_update)
 
-        self.recordHistory("createRecordGroup", user_email, str(new_rg_id))
+        self.recordHistory("createRecordGroup", user_email, rg_id=str(new_rg_id))
 
         return str(new_rg_id)
 
@@ -3243,25 +3375,75 @@ class DataManager:
             return document
         return None
 
-    def updateRecordGroup(self, rg_id, new_data, user_info={}):
-        user = user_info.get("email", None)
-        _id = ObjectId(rg_id)
-        ## need to choose a subset of the data to update. can't update entire record because _id is immutable
-        myquery = {"_id": _id}
-        newvalues = {"$set": new_data}
-        self.db.record_groups.update_one(myquery, newvalues)
-        self.recordHistory("updateRecordGroup", user, rg_id)
-        cursor = self.db.record_groups.find(myquery)
-        for document in cursor:
-            document["_id"] = str(document["_id"])
-            return document
-        return None
+    def updateRecordGroup(self, rg_id, new_data, user_info=None):
+        user_info = user_info or {}
+        _, current = self.fetchRecordGroupData(rg_id, user_info)
+        if current is None:
+            raise PermissionError("You do not have access to this record group.")
+        allowed = {
+            "name",
+            "description",
+            "settings",
+            "documentType",
+            "processorId",
+            "attributes",
+            "source_type",
+        }
+        if not isinstance(new_data, dict) or set(new_data) - allowed:
+            raise schema_rules.SchemaError("Unsupported record group update fields.")
+        if "settings" in new_data and not isinstance(new_data["settings"], dict):
+            raise schema_rules.SchemaError("settings must be an object.")
+        for key in set(new_data) - {"settings", "attributes"}:
+            if not isinstance(new_data[key], str) and not (
+                key == "processorId" and new_data[key] is None
+            ):
+                raise schema_rules.SchemaError(f"{key} must be a string.")
+        changes = {
+            key: value for key, value in new_data.items() if current.get(key) != value
+        }
+        if "attributes" in changes:
+            self.requireSchemaPermission(
+                user_info,
+                destructive=bool(
+                    current.get("attributes") or current.get("processorId")
+                ),
+            )
+            changes["attributes"] = schema_rules.validate_fields(
+                changes["attributes"], util.CLEANING_FUNCTIONS, require_types=False
+            )
+        if set(changes) & {"processorId", "documentType"}:
+            self.requireSchemaPermission(user_info, destructive=True, require_db=False)
+        if (
+            "processorId" in changes
+            and changes["processorId"]
+            and not self.getProcessorById(changes["processorId"], user_info)
+        ):
+            raise schema_rules.SchemaError("Processor not found.", 404)
+        if not changes:
+            return current
+        query = {"_id": ObjectId(rg_id)}
+        for key in changes:
+            query[key] = current[key] if key in current else {"$exists": False}
+        result = self.db.record_groups.update_one(query, {"$set": changes})
+        if not result.matched_count:
+            raise schema_rules.SchemaError(
+                "The record group changed. Reload before saving.", 409
+            )
+        self.recordHistory(
+            "updateRecordGroup",
+            user_info.get("email"),
+            rg_id=rg_id,
+            query=changes,
+            previous_state={key: current.get(key) for key in changes},
+        )
+        return {**current, **changes}
 
     def connectRecordGroupProcessor(self, rg_id, processor_id, user_info):
+        self.requireSchemaPermission(user_info, destructive=True, require_db=False)
         _, record_group = self.fetchRecordGroupData(rg_id, user_info)
         if record_group is None:
             raise PermissionError("User does not have access to this record group.")
-        if not processor_id:
+        if not isinstance(processor_id, str) or not processor_id:
             raise ValueError("Processor ID is required.")
 
         processor = self.getProcessorById(processor_id, user_info)
@@ -3277,9 +3459,10 @@ class DataManager:
         update = {
             "processorId": processor.get("processorId") or processor_id,
             "documentType": processor_document_type,
-            "attributes": processor.get("attributes") or [],
             "source_type": record_group.get("source_type") or "processor_connected",
         }
+        if USE_DB_PROCESSORS:
+            update["attributes"] = processor.get("attributes") or []
         return self.updateRecordGroup(rg_id, update, user_info)
 
     def fetchRecordForUser(self, record_id, user_info):
@@ -4076,6 +4259,9 @@ class DataManager:
         for each in role_cursor:
             for perm in each["permissions"]:
                 user_permissions.add(perm)
+
+        if "sys_admin" not in system_roles:
+            user_permissions.discard(schema_rules.DESTRUCTIVE_PERMISSION)
 
         return list(user_permissions)
 

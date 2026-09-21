@@ -82,6 +82,61 @@ docker compose --env-file ../ogrre/.env up web
 
 The full Compose stack also includes nginx/certbot for deployed-hostname setups. If you run the full stack, `NGINX_ENV` in `ogrre/.env` must select an existing config directory under `deployment/nginx/`.
 
+## Schema management
+
+`USE_DB_PROCESSORS=false` uses the installed `ogrre_data_cleaning` package and
+shows its schemas read-only. `USE_DB_PROCESSORS=true` enables Mongo schema
+management. The Mongo catalog is shared by all teams in the database.
+
+- `manage_schema` permits viewing schemas, editing cleaning functions, aliases,
+  order and display metadata, adding fields, and uploading new schemas.
+- `manage_schema_destructive` additionally permits field removal, type changes,
+  schema replacement/deletion, and changing existing processor/model bindings.
+  It can only be assigned to the `sys_admin` system role. Auth-disabled and
+  anonymous access cannot authorize these actions.
+- Field renaming is disabled for every role. Schema changes through record
+  imports and record-group updates enforce the same permissions. Existing
+  group schemas cannot be silently replaced by an ordinary record import.
+- Removed schemas are archived in `deleted_processors`. **Record field soft
+  deletion is not implemented in this segment**; authorized schema removals
+  can still cause the existing record reconciliation to discard fields.
+
+### Migrate existing role assignments
+
+Use the backend environment configured for the intended database. Review and
+back up its current role assignments before applying changes. This command
+previews changes without writing:
+
+```sh
+python -m ogrre.migrate_schema_permissions
+```
+
+After reviewing the preview, apply it explicitly:
+
+```sh
+python -m ogrre.migrate_schema_permissions --apply
+```
+
+The migration grants `manage_schema` to `team_lead` and all system roles, grants
+`manage_schema_destructive` only to `sys_admin`, and removes that permission
+from other roles. Other permissions are preserved. It is idempotent, records
+applied changes in history, and rejects concurrent role changes; preview and
+retry after resolving a conflict. Have users refresh their permission state
+after rollout. Neither API startup nor changing schema mode runs the migration.
+
+### Schema API contract
+
+Deploy the frontend and backend changes together. `GET /get_schema` now returns
+`{ "processors": [...], "source": "repo" | "database", "read_only": boolean }`
+instead of a bare array. Mongo mutations return 409 in repo mode. Malformed
+schema mutations return 400, denied permissions 403, missing schemas/fields
+404, and duplicate identifiers or concurrent updates 409.
+
+CSV/JSON schema uploads normalize field types and numeric order, retain
+supported metadata, and validate unique paths, parent/child structure and
+cleaning functions. Ambiguous legacy processor identifiers must be resolved
+before editing or using them; the API no longer selects an arbitrary match.
+
 ## Batch processing workers
 
 Batch processing state is stored in MongoDB so it survives API restarts. Local
