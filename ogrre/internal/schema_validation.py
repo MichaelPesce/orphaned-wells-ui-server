@@ -37,6 +37,10 @@ class SchemaError(ValueError):
         self.status_code = status_code
 
 
+class SchemaLookupError(SchemaError):
+    """A schema binding has no unambiguous definition in the active source."""
+
+
 def field_name(value):
     if not isinstance(value, str) or not value or value != value.strip():
         raise SchemaError(

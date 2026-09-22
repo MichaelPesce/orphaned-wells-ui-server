@@ -430,9 +430,7 @@ def test_missing_processor_does_not_apply_stale_embedded_schema(retirement_manag
     manager = retirement_manager
     manager.db.processors.delete_many({})
     record_id = insert_record(manager, [{"key": "unknown", "value": 12}])
-    with pytest.raises(SchemaError) as error:
-        manager._ensureRecordGroupsReconciled([GROUP], USER)
-    assert error.value.status_code == 404
+    manager._ensureRecordGroupsReconciled([GROUP], USER)
     record = manager.db.records.find_one({"_id": record_id})
     assert len(record["attributesList"]) == 1
     assert not record["attributesList"][0].get("deleted")

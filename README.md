@@ -88,6 +88,16 @@ The full Compose stack also includes nginx/certbot for deployed-hostname setups.
 shows its schemas read-only. `USE_DB_PROCESSORS=true` enables Mongo schema
 management. The Mongo catalog is shared by all teams in the database.
 
+Existing projects, record groups, and records remain accessible when their
+schema cannot be resolved. Missing package processors (including after changing
+collaborators), missing or ambiguous Mongo bindings, and unmigrated embedded
+schemas are treated as having no schema when reading or editing record data.
+Stored bindings and attribute values are preserved; column discovery and exports
+use the existing active attributes. Schema selection, schema generation, cleaning,
+and document processing still require the appropriate valid schema or processor.
+Run the binding migration to enable legacy Mongo schemas, not to restore access
+to the records themselves.
+
 - `manage_schema` permits viewing schemas, editing cleaning functions, aliases,
   data types, database data types, order and display metadata, adding fields,
   and uploading new schemas. Type combinations and parent/child structure are
@@ -116,16 +126,47 @@ retirement or removal during schema replacement retires them. In repo mode,
 unmatched fields are marked deleted. A missing processor definition never means
 "delete every field." Existing `data_fusion` settings are ignored.
 
-Reconciliation runs on record reads and before list/filter/export/clean queries,
-including records never opened after a schema change. Records stream in batches
-of 100 with conditional writes that preserve concurrent edits. These requests
-wait for reconciliation to finish; the first read after deployment or a schema
-change can take longer for large groups. Startup creates an index on
-`record_group_id` and `attribute_schema_revision` to find stale records. Ordinary
-field saves preserve retirement definitions without walking records. Before
-reintroducing a retired field, pending retirement is applied so that removing
-and immediately re-adding a field cannot undo it. Group reassignment/detachment
-and package replacement also reconcile the current schema before changing it.
+Project lists, record-group statistics, record tables, navigation, and column
+discovery read stored data without reconciling records or resolving every group's
+schema. Statistics use a read-only Mongo aggregation, ignore malformed attribute
+entries/containers, and inspect active attributes up to 12 levels deep. They do
+not depend on an existing `has_errors` cache. Invalid attributes do not prevent
+records from contributing to total/reviewed counts.
+
+Opening a record prepares only that record, synchronously, before returning its
+edit indexes and revision. Malformed entries and containers are ignored during
+preparation; valid values and retired contents are preserved. Record creation
+and attribute edits apply the current schema when saving.
+New records never receive placeholders for retired schema fields. If an import
+actually supplies a value for one of those fields, that supplied value is kept
+as retired; absent fields are not added.
+
+Safe alias/order/cleaning-function edits do not scan records. Explicit field
+retirement, schema replacement, group reassignment/detachment, and cleaning
+perform their required reconciliation as part of the requested mutation. Schema
+operations run outside the API event loop and return success only when finished;
+large operations can take time, but ordinary page requests do not wait for them.
+Package import progress includes applying the final definitions to affected
+groups, and an interrupted import can be resumed. Conditional record writes
+preserve concurrent edits. Reintroducing a field first applies old retirement
+so its stored values are never silently restored.
+
+After deploying a new repo package, or for retirement definitions left unapplied
+by an older release, operators can apply a schema explicitly in bounded batches:
+
+```sh
+python -m ogrre.reconcile_schema_records RECORD_GROUP_ID
+python -m ogrre.reconcile_schema_records RECORD_GROUP_ID --batch-size 100 --apply
+```
+
+The command uses the configured database and collaborator, displays the target
+without credentials, and asks for confirmation before applying each batch (1–1,000
+records). Repeat until `complete` is true and `remaining` is zero. A preview
+does not rewrite records. Until maintenance completes, lists use the retirement
+flags already stored; opening an individual record applies its current schema.
+This command is optional maintenance, not a prerequisite for loading pages.
+No record reconciliation runs at startup. Startup creates the compound
+`record_group_id`/`attribute_schema_revision` index used by maintenance.
 
 Deploy the paired frontend and backend updates together and refresh open record
 pages. Attribute edits, inserts, manual deletes, coordinate edits, and review
@@ -425,11 +466,12 @@ Docker command. Starting Docker or the API never migrates a cloud database.
 
 ### Schema edit performance
 
-Ordinary field saves update the shared schema without scanning its record
-groups or rewriting records. Retirement definitions remain in the schema, and
-record reads reconcile against the current definition. Before a retired path
-is reintroduced, existing records are still reconciled to preserve their deletion
-markers; this operation and large first reads can require substantial work.
+Safe field saves (aliases, order, cleaning functions, and type metadata) update
+the shared schema without scanning record groups or rewriting records. Opening
+a record applies its current display settings to that record only. Retirement,
+replacement, and reintroduction explicitly reconcile affected records as part of
+the mutation; large changes can require substantial work. Project and table
+requests never trigger that work, including the first read after deployment.
 The catalog guard uses one atomic acquisition and one release per outer mutation.
 It rejects busy/unfinished imports instead of waiting for their lock. Permission
 checks read the stored user and resolve its roles once, without fetching the

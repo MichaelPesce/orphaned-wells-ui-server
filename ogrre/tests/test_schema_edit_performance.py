@@ -1,4 +1,4 @@
-"""Schema saves must not scale with record count unless retirement is reintroduced."""
+"""Only explicit retirement/reintroduction propagates safe field edits to records."""
 
 from unittest.mock import Mock
 
@@ -58,12 +58,14 @@ def test_retirement_survives_safe_edits_before_reintroduction(
     reconcile = Mock(wraps=manager._ensureRecordGroupsReconciled)
     monkeypatch.setattr(manager, "_ensureRecordGroupsReconciled", reconcile)
     manager.updateProcessorAttribute("well", "depth", {}, USER, "delete")
+    assert reconcile.call_count == 2
+    reconcile.reset_mock()
     manager.updateProcessorAttribute(
         "well", "new", {**FIELD, "name": "new"}, USER, "add"
     )
     manager.updateProcessorAttribute("well", "new", {"alias": "New alias"}, USER)
     reconcile.assert_not_called()
-    assert not manager.db.records.find_one({"_id": record_id})["attributesList"][0].get(
+    assert manager.db.records.find_one({"_id": record_id})["attributesList"][0].get(
         "deleted"
     )
     manager.updateProcessorAttribute("well", "depth", FIELD, USER, "add")

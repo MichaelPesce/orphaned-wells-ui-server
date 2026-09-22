@@ -489,7 +489,7 @@ def test_bound_schema_controls_unvisited_queries_and_export_when_processor_ids_o
         }
     ).inserted_id
     manager.updateRecordGroup(GROUP, {"schema_id": str(second)}, USER)
-    manager.db.records.insert_one(
+    manager.createRecord(
         {
             "name": "Test",
             "filename": "test",
@@ -498,7 +498,8 @@ def test_bound_schema_controls_unvisited_queries_and_export_when_processor_ids_o
                 {"key": "depth", "value": 12},
                 {"key": "retired", "value": "hidden"},
             ],
-        }
+        },
+        USER,
     )
     rows, count = manager.fetchRecordsByRecordGroup(USER, GROUP)
     assert count == 1 and rows[0]["attributesList"][0]["alias"] == "Measured depth"

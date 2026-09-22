@@ -568,7 +568,7 @@ async def get_record_groups(project_id: str, user_info: dict = Depends(authentic
     Returns:
         List containing record groups and metadata
     """
-    resp = data_manager.fetchRecordGroups(project_id, user_info.get("email", ""))
+    resp = data_manager.fetchRecordGroups(project_id, user_info)
     return resp
 
 
@@ -1110,7 +1110,8 @@ async def connect_record_group_processor(
     rg_id: str, request: Request, user_info: dict = Depends(authenticate)
 ):
     data = await schema_request_body(request)
-    return schema_operation(
+    return await run_in_threadpool(
+        schema_operation,
         data_manager.connectRecordGroupProcessor,
         rg_id,
         data.get("processorId") or data.get("processor_id"),
@@ -1836,7 +1837,9 @@ async def update_record_group(
             detail=f"You are not authorized to update projects. Please contact a team lead or project manager.",
         )
     data = await schema_request_body(request)
-    return schema_operation(data_manager.updateRecordGroup, rg_id, data, user_info)
+    return await run_in_threadpool(
+        schema_operation, data_manager.updateRecordGroup, rg_id, data, user_info
+    )
 
 
 @router.post("/update_record/{record_id}")
@@ -2692,7 +2695,8 @@ async def upload_processor_schema(
         "img": img,
         "parser_type": parser_type,
     }
-    return schema_operation(
+    return await run_in_threadpool(
+        schema_operation,
         data_manager.uploadProcessorSchema,
         file=file,
         schema_meta=schema_meta,
@@ -2741,7 +2745,8 @@ async def update_processor_attribute(
     request: Request, user_info: dict = Depends(authenticate)
 ):
     data = await schema_request_body(request)
-    return schema_operation(
+    return await run_in_threadpool(
+        schema_operation,
         data_manager.updateProcessorAttribute,
         processor_name=data.get("processor_name"),
         field_name=data.get("field_name"),
