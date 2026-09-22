@@ -115,16 +115,41 @@ def test_safe_updates_normalize_order_and_preserve_metadata(client, schema_manag
     [
         ({"name": "renamed"}, "update"),
         ({"name": None}, "update"),
-        ({"data_type": "Checkbox", "database_data_type": "bool"}, "update"),
         ({}, "delete"),
     ],
 )
-def test_safe_role_cannot_rename_change_types_or_remove(
-    client, schema_manager, updates, operation
-):
+def test_safe_role_cannot_rename_or_remove(client, schema_manager, updates, operation):
     before = schema_manager.db.processors.find_one()
     response = edit(client, updates, operation)
     assert response.status_code in (400, 403)
+    assert schema_manager.db.processors.find_one() == before
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"data_type": "Number"},
+        {"database_data_type": "int"},
+        {"data_type": "Checkbox", "database_data_type": "bool"},
+    ],
+)
+def test_schema_managers_can_change_types(client, schema_manager, updates):
+    assert edit(client, updates).status_code == 200
+    field = schema_manager.db.processors.find_one()["attributes"][0]
+    assert all(field[key] == value for key, value in updates.items())
+    assert not field.get("deleted")
+
+
+def test_type_edits_cannot_invalidate_existing_children(client, schema_manager):
+    parent = {**FIELD, "data_type": "Parent", "database_data_type": "Table"}
+    schema_manager.db.processors.update_one(
+        {}, {"$set": {"attributes": [parent, {**FIELD, "name": "depth::value"}]}}
+    )
+    before = schema_manager.db.processors.find_one()
+    assert (
+        edit(client, {"data_type": "Number", "database_data_type": "int"}).status_code
+        == 400
+    )
     assert schema_manager.db.processors.find_one() == before
 
 
@@ -160,6 +185,8 @@ def test_add_requires_valid_unique_paths_and_parent_types(client):
         {"cleaning_function": "not_a_function"},
         {"alias": {"$ne": None}},
         {"unexpected": "value"},
+        {"data_type": "Checkbox", "database_data_type": "float"},
+        {"database_data_type": "unsupported"},
     ],
 )
 def test_bad_updates_are_rejected_without_writes(client, schema_manager, updates):

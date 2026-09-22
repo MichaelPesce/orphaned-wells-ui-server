@@ -89,8 +89,10 @@ shows its schemas read-only. `USE_DB_PROCESSORS=true` enables Mongo schema
 management. The Mongo catalog is shared by all teams in the database.
 
 - `manage_schema` permits viewing schemas, editing cleaning functions, aliases,
-  order and display metadata, adding fields, and uploading new schemas.
-- `manage_schema_destructive` additionally permits field removal, type changes,
+  data types, database data types, order and display metadata, adding fields,
+  and uploading new schemas. Type combinations and parent/child structure are
+  validated before saving.
+- `manage_schema_destructive` additionally permits field removal,
   schema replacement/deletion, and changing existing processor/model bindings.
   It can only be assigned to the `sys_admin` system role. Auth-disabled and
   anonymous access cannot authorize these actions.

@@ -5,8 +5,14 @@ import copy
 
 
 DESTRUCTIVE_PERMISSION = "manage_schema_destructive"
-SAFE_FIELD_UPDATES = {"alias", "cleaning_function", "page_order_sort"}
-FIELD_UPDATES = SAFE_FIELD_UPDATES | {"name", "data_type", "database_data_type"}
+SAFE_FIELD_UPDATES = {
+    "alias",
+    "cleaning_function",
+    "page_order_sort",
+    "data_type",
+    "database_data_type",
+}
+FIELD_UPDATES = SAFE_FIELD_UPDATES | {"name"}
 FIELD_KEYS = FIELD_UPDATES | {
     "occurrence",
     "grouping",

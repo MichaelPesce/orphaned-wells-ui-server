@@ -2477,20 +2477,22 @@ async def add_user(
         ## check if this user exists already. if not add to database
         new_user = data_manager.getUser(email)
         if new_user is None:
-            resp = data_manager.addUser({"email": email}, team, team_lead, sys_admin)
-
+            data_manager.addUser({"email": email}, team, team_lead, sys_admin)
         else:
-            ## this user exists already. add them to this team
-            new_user_team = new_user["default_team"]
-            if new_user_team == team:
+            # Membership uses teams.users, just like getUsers. A default_team
+            # alone does not establish membership and may need repairing.
+            resp = data_manager.addUserToTeam(email, team)
+            if resp == "already_exists":
                 _log.info(f"{email} is already on team {team}")
                 raise HTTPException(
                     status_code=406, detail=f"This user is already on this team."
                 )
-            else:
-                ## in this case, just add user to team without creating new user
-                resp = data_manager.addUserToTeam(email, team)
-                return resp
+        data_manager.recordHistory(
+            "addUser",
+            user=user_info["email"],
+            query={"email": email, "team": team},
+        )
+        return "success"
     else:
         raise HTTPException(
             status_code=403, detail=f"User is not authorized to perform this operation"

@@ -1354,8 +1354,6 @@ class DataManager:
                     key in updates and updates[key] != target.get(key)
                     for key in ("data_type", "database_data_type")
                 )
-                if type_changes:
-                    self.requireSchemaPermission(user_info, destructive=True)
                 updated = schema_rules.normalize_fields([{**target, **updates}])[0]
                 schema_rules.validate_field(
                     updated, util.CLEANING_FUNCTIONS, require_types=type_changes
