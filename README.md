@@ -133,6 +133,14 @@ entries/containers, and inspect active attributes up to 12 levels deep. They do
 not depend on an existing `has_errors` cache. Invalid attributes do not prevent
 records from contributing to total/reviewed counts.
 
+For metadata filters and sorts (including All Records ordered by `dateCreated`),
+the query keeps filtering, indexed sorting, ranking, and pagination ahead of
+retired-field hiding. The paged result query prunes its returned records. This
+allows the existing `dateCreated` index to supply the order without a blocking
+sort over every record's attributes. Attribute-based filters/sorts and unknown
+query expressions retain pruning before evaluation so retired values cannot
+affect their results. The fix requires no index migration or disk-sort setting.
+
 Opening a record prepares only that record, synchronously, before returning its
 edit indexes and revision. Malformed entries and containers are ignored during
 preparation; valid values and retired contents are preserved. Record creation
@@ -691,8 +699,17 @@ or production memory usage; use the deployment smoke checks before rollout.
 The GitHub Actions **Checks** workflow runs Black and **Backend tests (pytest)**
 in separate, parallel jobs. Pytest uses Python 3.12 and the development
 requirements, with pip downloads cached between runs; it needs no MongoDB
-service or cloud credentials. Frontend E2E testing starts only after both jobs
-pass, so backend failures are reported before starting the Docker/browser suite.
+credentials or cloud credentials. The test job starts an isolated MongoDB 7
+service and sets its blocking-sort limit to 32 MiB. Query regressions verify
+index use, pagination/navigation, and retired-field filtering with disk spilling
+disabled. Frontend E2E testing starts only after both jobs pass, so backend
+failures are reported before starting the Docker/browser suite.
+
+To include these integration tests locally, set `OGRRE_TEST_MONGO_URI` to a
+disposable local MongoDB (for example `mongodb://127.0.0.1:27029`) before running
+pytest. The tests require localhost, create uniquely named test databases, and
+remove those databases afterward. Without that variable, Mongo integration tests
+are skipped. Do not point tests at staging or production.
 
 For push and pull-request runs, E2E tests pair the triggering backend commit with
 `main` in `CATALOG-Historic-Records/orphaned-wells-ui`. For coordinated changes,

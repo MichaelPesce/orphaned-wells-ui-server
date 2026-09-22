@@ -228,6 +228,40 @@ def active_attributes(attributes):
     return result
 
 
+# These stored metadata fields do not depend on the visible attribute tree.
+# Unknown paths/expressions keep the conservative redact-before-filter path.
+RECORD_METADATA_FIELDS = {
+    "_id",
+    "record_group_id",
+    "dateCreated",
+    "name",
+    "filename",
+    "original_filename",
+    "record_number",
+    "api_number",
+    "status",
+    "review_status",
+    "has_errors",
+    "confidence_median",
+    "confidence_lowest",
+    "defective_categories",
+}
+
+
+def is_record_metadata_filter(query):
+    if not isinstance(query, dict):
+        return False
+    for key, value in query.items():
+        if key in {"$and", "$or", "$nor"}:
+            if not isinstance(value, list) or not all(
+                is_record_metadata_filter(clause) for clause in value
+            ):
+                return False
+        elif key not in RECORD_METADATA_FIELDS:
+            return False
+    return True
+
+
 def active_records_pipeline(filter_by):
     # Apply trusted scope before traversing attributes, then all value filters to
     # the visible tree. $redact recursively prunes children of retired parents.
@@ -896,7 +930,20 @@ def generate_mongo_records_pipeline(
         }
     exclude_attribute_fields : dict
     """
-    pipeline = active_records_pipeline(filter_by)
+    active_pipeline = active_records_pipeline(filter_by)
+    defer_redaction = (
+        primary_sort[0] in RECORD_METADATA_FIELDS
+        and secondary_sort is None
+        and not include_attribute_fields
+        and is_record_metadata_filter(filter_by)
+    )
+    if defer_redaction:
+        # Keep match/sort/window/pagination together so Mongo can use the sort
+        # index. Redacting first also makes $setWindowFields introduce a blocking
+        # sort. Exclude retired root documents before ranking/paging as before.
+        pipeline = [{"$match": {"$and": [filter_by, {"deleted": {"$ne": True}}]}}]
+    else:
+        pipeline = active_pipeline
 
     if include_attribute_fields:
         project = {"$project": {}}
@@ -1111,6 +1158,9 @@ def generate_mongo_records_pipeline(
     if records_per_page is not None and page is not None:
         pipeline.append({"$skip": records_per_page * page})
         pipeline.append({"$limit": records_per_page})
+
+    if defer_redaction:
+        pipeline.append(active_pipeline[1])
 
     if forDownload:
         ## no need for sorting if we are downloading the records

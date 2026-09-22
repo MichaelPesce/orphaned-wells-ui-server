@@ -51,6 +51,18 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      OGRRE_TEST_MONGO_URI: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
@@ -63,6 +75,10 @@ jobs:
             setup.py
       - name: Install backend and test dependencies
         run: python -m pip install -r requirements-dev.txt
+      - name: Match the staging sort-memory limit for query regressions
+        run: >-
+          docker exec ${{ job.services.mongodb.id }} mongosh --quiet --eval
+          'db.adminCommand({setParameter: 1, internalQueryMaxBlockingSortMemoryUsageBytes: 33554432})'
       - name: Run backend tests
         run: python -m pytest ogrre/tests -q
 
