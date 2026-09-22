@@ -88,9 +88,19 @@ def schema_operation(handler, *args, **kwargs):
         raise HTTPException(400, detail=str(error))
 
 
-async def schema_request_body(request):
+async def schema_request_body(request, max_bytes=None):
     try:
-        body = await request.json()
+        if max_bytes is None:
+            body = await request.json()
+        else:
+            payload = bytearray()
+            async for chunk in request.stream():
+                if len(payload) + len(chunk) > max_bytes:
+                    raise HTTPException(
+                        413, detail="Schema preview request is too large."
+                    )
+                payload.extend(chunk)
+            body = json.loads(payload)
     except ValueError:
         raise HTTPException(400, detail="A JSON object is required.")
     if not isinstance(body, dict):
@@ -2580,6 +2590,30 @@ async def get_cleaning_functions(user_info: dict = Depends(authenticate)):
 @router.get("/get_repo_schema_import")
 def get_repo_schema_import(user_info: dict = Depends(authenticate)):
     return schema_operation(data_manager.getRepoSchemaImport, user_info)
+
+
+@router.post("/record_groups/{rg_id}/schema/preview")
+async def preview_record_group_schema(
+    rg_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    from ogrre.internal.schema_inference import MAX_PAYLOAD_BYTES
+
+    data = await schema_request_body(request, MAX_PAYLOAD_BYTES)
+    return await run_in_threadpool(
+        schema_operation, data_manager.previewRecordGroupSchema, rg_id, data, user_info
+    )
+
+
+@router.post("/record_groups/{rg_id}/schema/apply")
+async def apply_record_group_schema(
+    rg_id: str, request: Request, user_info: dict = Depends(authenticate)
+):
+    from ogrre.internal.schema_inference import MAX_PAYLOAD_BYTES
+
+    data = await schema_request_body(request, MAX_PAYLOAD_BYTES)
+    return await run_in_threadpool(
+        schema_operation, data_manager.applyRecordGroupSchema, rg_id, data, user_info
+    )
 
 
 @router.post("/preview_repo_schema_import")

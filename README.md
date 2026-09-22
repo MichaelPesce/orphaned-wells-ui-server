@@ -289,6 +289,48 @@ Keep `pending_import` and the journal intact. Restart the updated API/worker
 versions and resume through the dialog. Do not clear the guard while a writer may
 still be executing. Finish pending imports before switching schema source modes.
 
+### Generate schemas from stored records
+
+In database schema mode, users with `manage_schema` and access to a record group
+can choose **Generate schema** once it contains records and has no attached schema.
+The preview proposes fields from stored attributes; it does not reread uploaded
+files or change values. Review and edit suggestions, then confirm **Create and
+attach schema**. The result is a normal shared catalog entry with creator/team
+and sampling provenance, initially without a processor. Administrators can add
+processor/model identifiers later in the schema editor.
+
+For a group with a schema, **Add fields to schema** offers the same preview for
+new paths only. Existing definitions and retired paths are preserved. The additions
+affect every group using that shared schema. Neither action runs during upload.
+
+`POST /record_groups/{id}/schema/preview` accepts `mode` (`generate` or `extend`)
+and an optional lower `record_limit`. `POST /record_groups/{id}/schema/apply`
+accepts the returned `preview_id`, edited `fields`, and, for generation, `name`
+and `documentType`. Mode, permission, group access, preview ownership, schema
+state, and the sampled records are checked before applying. Preview expiry is
+30 minutes. Preview field names cannot be changed; existing types are edited
+through the regular schema editor instead of the additive workflow.
+
+Sampling uses the `(record_group_id, _id)` index created at backend startup and
+reads in ascending ID order. `SCHEMA_INFERENCE_MAX_RECORDS` defaults to 1,000
+(configurable from 1 to 10,000). Fixed limits also apply: 256 KiB per stored
+record, 8 MiB per sample, 500 discovered paths, 12 nesting levels, 100,000
+attribute instances, a five-second Mongo query limit, and 1 MiB request/schema
+payloads. Oversized records are skipped before their attributes are transferred.
+The preview reports partial coverage and uncertain types. Numeric-looking text
+can receive numeric suggestions; leading-zero identifiers and date-like text
+stay text. Empty-only and mixed-type fields receive conservative suggestions.
+Original blank CSV columns absent from stored attributes cannot be recovered.
+
+Saved previews and apply plans live in `schema_generations`. Apply uses the same
+catalog guard as other schema mutations and saves its exact plan before writing
+the schema and group binding. Retry the same request after a lost response or
+interrupted save; IDs and history entries are reused. A later schema/group change
+causes a conflict instead of overwriting it. If a partial generation saved a
+schema before its group changed, the schema remains available in the shared
+catalog. No record attributes are rewritten by generation or extension. The
+existing catalog-lock crash recovery instructions also apply here.
+
 ### Migrate existing role assignments
 
 Use the backend environment configured for the intended database. Review and

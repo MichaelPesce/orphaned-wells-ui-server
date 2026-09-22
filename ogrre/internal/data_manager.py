@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from bson import BSON, ObjectId
 from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, ExecutionTimeout
 
 import ogrre_data_cleaning.processor_schemas.processor_api as processor_api
 from ogrre.internal import storage_api
@@ -24,6 +24,7 @@ from ogrre.internal import directory_upload
 from ogrre.internal import processing_job_history
 from ogrre.internal import schema_validation as schema_rules
 from ogrre.internal import schema_import
+from ogrre.internal import schema_inference
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
@@ -70,6 +71,9 @@ class DataManager:
             [("record_group_id", 1), ("attribute_schema_revision", 1)]
         )
         self.db.record_groups.create_index("schema_id")
+        self.db.records.create_index(
+            [("record_group_id", 1), ("_id", 1)], name=schema_inference.INDEX
+        )
         self.environment = os.getenv("ENVIRONMENT")
         self.collaborator = os.getenv("COLLABORATOR")
         _log.info(f"working in environment: {self.environment}")
@@ -1079,6 +1083,346 @@ class DataManager:
                 {"schema_id": {"$exists": False}, "processorId": schema["processorId"]}
             )
         return list(self.db.record_groups.find({"$or": clauses}))
+
+    def _schemaGenerationGroup(self, rg_id, user_info):
+        self.requireSchemaPermission(user_info)
+        if not isinstance(rg_id, str) or not ObjectId.is_valid(rg_id):
+            raise schema_rules.SchemaError("A valid record-group ID is required.")
+        if rg_id not in self.getUserRecordGroups(user_info):
+            raise PermissionError("You do not have access to this record group.")
+        group = self.db.record_groups.find_one({"_id": ObjectId(rg_id)})
+        if group is None:
+            raise schema_rules.SchemaError("Record group not found.", 404)
+        return group
+
+    def _sampleSchemaRecords(self, rg_id, limit):
+        records, examined, size, skipped, capped = [], 0, 0, 0, False
+        try:
+            cursor = self.db.records.aggregate(
+                schema_inference.sample_pipeline(rg_id, limit),
+                hint=schema_inference.INDEX,
+                maxTimeMS=5000,
+                batchSize=10,
+            )
+            try:
+                for record in cursor:
+                    if examined == limit:
+                        capped = True
+                        break
+                    examined += 1
+                    if record["size"] > schema_inference.MAX_RECORD_BYTES:
+                        skipped += 1
+                        continue
+                    if size + record["size"] > schema_inference.MAX_SAMPLE_BYTES:
+                        capped = True
+                        break
+                    size += record["size"]
+                    records.append(record)
+            finally:
+                cursor.close()
+        except ExecutionTimeout:
+            raise schema_rules.SchemaError(
+                "Sampling timed out. Retry with a smaller record limit.", 503
+            )
+        return records, {
+            "sampled_records": len(records),
+            "examined_records": examined,
+            "record_limit": limit,
+            "sample_capped": capped,
+            "oversized_records": skipped,
+        }
+
+    def previewRecordGroupSchema(self, rg_id, request, user_info):
+        group = self._schemaGenerationGroup(rg_id, user_info)
+        if not isinstance(request, dict) or set(request) - {"mode", "record_limit"}:
+            raise schema_rules.SchemaError("Invalid schema generation request.")
+        mode = request.get("mode", "generate")
+        if not isinstance(mode, str) or mode not in {"generate", "extend"}:
+            raise schema_rules.SchemaError("Choose generate or extend.")
+        schema = self.resolveRecordGroupSchema(group, user_info)
+        if (mode == "generate" and schema is not None) or (
+            mode == "extend" and schema is None
+        ):
+            raise schema_rules.SchemaError(
+                "The group's schema changed. Reload the record group.", 409
+            )
+        maximum = max(
+            1, min(10000, int(os.getenv("SCHEMA_INFERENCE_MAX_RECORDS", "1000")))
+        )
+        limit = request.get("record_limit", maximum)
+        if type(limit) is not int or not 1 <= limit <= maximum:
+            raise schema_rules.SchemaError(
+                f"record_limit must be between 1 and {maximum}."
+            )
+        records, coverage = self._sampleSchemaRecords(rg_id, limit)
+        if not coverage["examined_records"]:
+            raise schema_rules.SchemaError("Add records before generating a schema.")
+        fields, notes, warnings = schema_inference.infer_fields(
+            records, (schema or {}).get("attributes") or []
+        )
+        if coverage["sample_capped"]:
+            warnings.append(
+                "This preview covers a bounded sample; other fields may exist outside it."
+            )
+        if coverage["oversized_records"]:
+            warnings.append(
+                "Oversized records were skipped. Their stored fields remain unchanged."
+            )
+        warnings.append(
+            "Fields absent from stored attributes, including discarded blank CSV columns, cannot be inferred."
+        )
+        preview_id = str(ObjectId())
+        preview = {
+            "_id": preview_id,
+            "preview_id": preview_id,
+            "mode": mode,
+            "status": "preview",
+            "record_group_id": rg_id,
+            "created_by": user_info.get("email"),
+            "created_at": time.time(),
+            "expires_at": time.time() + 1800,
+            "group_snapshot": schema_import.group_snapshot(group),
+            "schema_snapshot": schema,
+            "sample_digest": self._attributeDigest(records),
+            "schema_id": str(schema["_id"]) if schema else None,
+            "schema_name": (schema or {}).get("displayName")
+            or (schema or {}).get("name"),
+            "name": f"{group.get('name') or 'Imported records'} schema",
+            "documentType": group.get("documentType") or "Imported records",
+            "fields": fields,
+            "field_notes": notes,
+            "warnings": warnings,
+            **coverage,
+        }
+        if len(BSON.encode(preview)) > schema_inference.MAX_PAYLOAD_BYTES:
+            raise schema_rules.SchemaError(
+                "This schema preview is too large. Use a smaller record limit."
+            )
+        self.db.schema_generations.insert_one(preview)
+        return self._publicSchemaGeneration(preview)
+
+    @staticmethod
+    def _publicSchemaGeneration(preview):
+        return {
+            key: value
+            for key, value in preview.items()
+            if key
+            not in {
+                "_id",
+                "group_snapshot",
+                "schema_snapshot",
+                "sample_digest",
+                "plan",
+                "request_digest",
+            }
+        }
+
+    @schema_import.catalog_write
+    def applyRecordGroupSchema(self, rg_id, request, user_info):
+        group = self._schemaGenerationGroup(rg_id, user_info)
+        if not isinstance(request, dict) or set(request) - {
+            "preview_id",
+            "fields",
+            "name",
+            "documentType",
+        }:
+            raise schema_rules.SchemaError("Invalid schema generation request.")
+        if not isinstance(request.get("preview_id"), str):
+            raise schema_rules.SchemaError("Provide a saved preview.")
+        preview = self.db.schema_generations.find_one(
+            {"_id": request["preview_id"], "record_group_id": rg_id}
+        )
+        if preview is None:
+            raise schema_rules.SchemaError("Schema preview not found.", 404)
+        if preview["created_by"] != user_info.get("email"):
+            raise PermissionError("Generate your own preview before applying changes.")
+        request_digest = self._attributeDigest(request)
+        if (
+            preview["status"] != "preview"
+            and request_digest != preview["request_digest"]
+        ):
+            raise schema_rules.SchemaError(
+                "This preview was already submitted with different changes. Reload the group.",
+                409,
+            )
+        if preview["status"] == "preview":
+            current_schema = self.resolveRecordGroupSchema(group, user_info)
+            if (
+                preview["expires_at"] < time.time()
+                or schema_import.group_snapshot(group) != preview["group_snapshot"]
+                or current_schema != preview["schema_snapshot"]
+            ):
+                raise schema_rules.SchemaError(
+                    "The group or schema changed, or the preview expired. Generate a new preview.",
+                    409,
+                )
+            records, coverage = self._sampleSchemaRecords(
+                rg_id, preview["record_limit"]
+            )
+            if (
+                self._attributeDigest(records) != preview["sample_digest"]
+                or not records
+            ):
+                raise schema_rules.SchemaError(
+                    "The sampled records changed. Generate a new preview.", 409
+                )
+            submitted = request.get("fields")
+            if (
+                not isinstance(submitted, list)
+                or not 0 < len(submitted) <= schema_inference.MAX_FIELDS
+            ):
+                raise schema_rules.SchemaError("Provide the preview's fields to save.")
+            expected = {field["name"]: field for field in preview["fields"]}
+            if any(
+                not isinstance(field, dict)
+                or not isinstance(field.get("name"), str)
+                or field.get("name") not in expected
+                or set(field)
+                - (schema_rules.SAFE_FIELD_UPDATES | {"name", "occurrence"})
+                for field in submitted
+            ):
+                raise schema_rules.SchemaError(
+                    "Only the suggested fields may be edited and added."
+                )
+            fields = schema_rules.normalize_fields(submitted)
+            for field in fields:
+                schema_rules.validate_field(field, util.CLEANING_FUNCTIONS)
+            if {field["name"] for field in fields} != set(expected):
+                raise schema_rules.SchemaError(
+                    "Field names in the preview cannot be changed."
+                )
+            if current_schema:
+                attributes = copy.deepcopy(current_schema.get("attributes") or [])
+                schema_rules.validate_structure(
+                    [
+                        field
+                        for field in schema_rules.normalize_fields(
+                            attributes, strict=False
+                        )
+                        if not field.get("deleted")
+                    ]
+                    + fields
+                )
+                after = {
+                    **current_schema,
+                    "attributes": attributes + fields,
+                    "updated_at": time.time(),
+                    "lastUpdated": time.time(),
+                }
+            else:
+                metadata = {
+                    "name": request.get("name"),
+                    "displayName": request.get("name"),
+                    "documentType": request.get("documentType"),
+                }
+                self._checkProcessorMetadata(metadata)
+                if self.db.processors.find_one({"name": metadata["name"]}):
+                    raise schema_rules.SchemaError(
+                        "A schema with this name already exists. Choose another name.",
+                        409,
+                    )
+                schema_rules.validate_structure(fields)
+                after = {
+                    "_id": ObjectId(preview["preview_id"]),
+                    **metadata,
+                    "attributes": fields,
+                    **self._schemaCreator(user_info),
+                    "inference_source": {"record_group_id": rg_id, **coverage},
+                }
+            if len(BSON.encode(after)) > schema_inference.MAX_PAYLOAD_BYTES:
+                raise schema_rules.SchemaError("The resulting schema is too large.")
+            # Save the exact plan before either document write. Retries reuse its
+            # schema ID and compare both original and already-applied states.
+            preview.update(status="applying", request_digest=request_digest, plan=after)
+            self.db.schema_generations.update_one(
+                {"_id": preview["preview_id"]},
+                {
+                    "$set": {
+                        "status": "applying",
+                        "request_digest": request_digest,
+                        "plan": after,
+                    }
+                },
+            )
+        if preview["status"] != "complete":
+            after = preview["plan"]
+            current_schema = self.db.processors.find_one({"_id": after["_id"]})
+            before = preview["schema_snapshot"]
+            before_group = preview["group_snapshot"]
+            after_group = {**before_group, "schema_id": str(after["_id"])}
+            if schema_import.group_snapshot(group) not in (before_group, after_group):
+                raise schema_rules.SchemaError(
+                    "The group's binding changed. Reload the group; any saved schema remains in the catalog.",
+                    409,
+                )
+            if current_schema != after:
+                if current_schema != before:
+                    raise schema_rules.SchemaError(
+                        "The schema changed. Reload the group before trying again.", 409
+                    )
+                if before is None:
+                    if self.db.deleted_processors.find_one({"_id": after["_id"]}):
+                        raise schema_rules.SchemaError(
+                            "The generated schema was deleted. Generate a new preview.",
+                            409,
+                        )
+                    if self.db.processors.find_one({"name": after["name"]}):
+                        raise schema_rules.SchemaError(
+                            "A schema with this name now exists. Reload the group.", 409
+                        )
+                    self.db.processors.insert_one(after)
+                elif not self.db.processors.replace_one(before, after).matched_count:
+                    raise schema_rules.SchemaError(
+                        "The schema changed. Reload the group.", 409
+                    )
+            if preview["mode"] == "generate":
+                query = {"_id": group["_id"]}
+                for key in schema_import.GROUP_FIELDS:
+                    query[key] = (
+                        {"$eq": group[key], "$exists": True}
+                        if key in group
+                        else {"$exists": False}
+                    )
+                if not self.db.record_groups.update_one(
+                    query, {"$set": {"schema_id": str(after["_id"])}}
+                ).matched_count:
+                    raise schema_rules.SchemaError(
+                        "The record group changed. The generated schema is available in the catalog.",
+                        409,
+                    )
+            self.db.history.update_one(
+                {"_id": f"schema-generation:{preview['preview_id']}"},
+                {
+                    "$setOnInsert": {
+                        "action": "generateSchema"
+                        if preview["mode"] == "generate"
+                        else "extendSchema",
+                        "user": user_info.get("email"),
+                        "timestamp": time.time(),
+                        "record_group_id": rg_id,
+                        "query": after,
+                        "previous_state": before,
+                        "notes": {
+                            key: preview[key]
+                            for key in (
+                                "sampled_records",
+                                "record_limit",
+                                "sample_capped",
+                                "oversized_records",
+                            )
+                        },
+                    }
+                },
+                upsert=True,
+            )
+            self.db.schema_generations.update_one(
+                {"_id": preview["preview_id"]}, {"$set": {"status": "complete"}}
+            )
+        group = self.db.record_groups.find_one({"_id": group["_id"]})
+        result = self._recordGroupSchemaInfo(group, user_info)
+        result["_id"] = str(result["_id"])
+        result["has_records"] = True
+        return result
 
     def _saveProcessorChanges(self, processor, changes, user_info, action):
         if "processorId" in changes and any(
@@ -2278,6 +2622,9 @@ class DataManager:
         record_group = cursor.next()
         record_group["_id"] = str(record_group["_id"])
         record_group = self._recordGroupSchemaInfo(record_group, user)
+        record_group["has_records"] = (
+            self.db.records.find_one({"record_group_id": rg_id}, {"_id": 1}) is not None
+        )
 
         project_document = self.getProjectFromRecordGroup(rg_id)
 
