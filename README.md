@@ -297,6 +297,20 @@ previews changes without writing:
 python -m ogrre.migrate_schema_permissions
 ```
 
+To select a different dotenv file, use `--env` on both preview and apply:
+
+```sh
+python -m ogrre.migrate_schema_permissions --env=.env.isgs
+python -m ogrre.migrate_schema_permissions --env=.env.isgs --apply
+```
+
+Relative paths are resolved from your current directory; for files inside the
+backend package, use `--env=ogrre/.env.isgs`. The selected file's values override
+matching process environment variables, and the command prints its resolved path.
+A missing, unreadable, or empty file stops the command before connecting.
+Without `--env`, automatic `.env` discovery and existing environment precedence
+are unchanged.
+
 Every run displays the configured MongoDB hosts, database name, and collaborator
 before the proposed role changes. Credentials and URI query options are omitted.
 The collaborator is informational: the migration covers all roles in the selected
@@ -326,7 +340,8 @@ or a local backend environment configured for that database). Confirm `DB_NAME`
 and the intended cluster in your configuration first. `DB_CONNECTION`, `DB_NAME`,
 and, for the separate-credentials configuration, `DB_USERNAME`/`DB_PASSWORD`
 select the target. Existing process environment variables take precedence over
-the discovered dotenv file. Do not paste credentials into shell history.
+the automatically discovered dotenv file; an explicit `--env` file overrides
+matching variables. Do not paste credentials into shell history.
 
 ```sh
 python -m ogrre.migrate_schema_permissions

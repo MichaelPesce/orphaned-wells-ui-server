@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from pymongo.errors import PyMongoError
@@ -95,10 +96,29 @@ def connection_label(connection):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--env",
+        type=Path,
+        metavar="PATH",
+        help="Load this dotenv file instead of discovering .env; file values override existing environment variables.",
+    )
     args = parser.parse_args(argv)
     from dotenv import load_dotenv
 
-    load_dotenv()
+    if args.env is not None:
+        env_path = args.env.expanduser().resolve()
+        if not env_path.is_file():
+            parser.error("--env must name an existing file.")
+        try:
+            loaded = load_dotenv(env_path, override=True)
+        except (OSError, UnicodeError):
+            parser.error("Unable to read the --env file as UTF-8 text.")
+        if not loaded:
+            parser.error("The --env file did not load any environment values.")
+        print(f"Environment file: {env_path}")
+    else:
+        load_dotenv()
+    # Connection settings are captured on import, after loading the selected file.
     from ogrre.internal import mongodb_connection
 
     print("Target database:")

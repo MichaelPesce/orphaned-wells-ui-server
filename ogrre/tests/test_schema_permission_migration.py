@@ -1,5 +1,9 @@
 """CLI confirmation and target redaction never require a live database."""
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import Mock
 
 import mongomock
@@ -142,3 +146,82 @@ def test_apply_does_not_prompt_when_no_changes_remain(cli_db, monkeypatch, capsy
     assert "No changes needed." in capsys.readouterr().out
     assert cli_db.history.count_documents({}) == 2
     prompt.assert_not_called()
+
+
+@pytest.mark.parametrize("apply", [False, True])
+def test_explicit_env_loads_before_connection_settings(tmp_path, apply):
+    env_file = tmp_path / ".env.isgs"
+    env_file.write_text(
+        "DB_CONNECTION=mongodb://selected-user:selected-password@selected-host:27017\n"
+        "DB_NAME=selected_database\nCOLLABORATOR=selected_collaborator\n"
+    )
+    # A fresh interpreter exercises the real connection module's import-time
+    # configuration. MongoClient is patched before import so no network is used.
+    script = """
+import sys
+from unittest.mock import patch
+import mongomock
+from ogrre.migrate_schema_permissions import main
+
+client = mongomock.MongoClient()
+db = client.selected_database
+db.roles.insert_one({'id': 'team_lead', 'category': 'team', 'permissions': []})
+with patch('pymongo.mongo_client.MongoClient', return_value=client) as connect, patch('builtins.input', return_value='y') as prompt:
+    assert main(sys.argv[1:]) == 0
+    assert connect.call_args.args[0] == 'mongodb://selected-user:selected-password@selected-host:27017'
+    applying = '--apply' in sys.argv
+    assert prompt.call_count == int(applying)
+    assert db.history.count_documents({}) == int(applying)
+"""
+    env = {
+        **os.environ,
+        "DB_CONNECTION": "mongodb://wrong-host:27017",
+        "DB_NAME": "wrong_database",
+        "COLLABORATOR": "wrong_collaborator",
+        "PYTHONPATH": os.pathsep.join(
+            [str(Path(__file__).resolve().parents[2]), *sys.path]
+        ),
+    }
+    env.pop("PYTHON_DOTENV_DISABLED", None)
+    args = ["--env", ".env.isgs", "--apply"] if apply else ["--env=.env.isgs"]
+    result = subprocess.run(
+        [sys.executable, "-c", script, *args],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    for expected in [
+        str(env_file),
+        "selected-host",
+        "selected_database",
+        "selected_collaborator",
+    ]:
+        assert expected in result.stdout
+    for hidden in [
+        "wrong-host",
+        "wrong_database",
+        "wrong_collaborator",
+        "selected-user",
+        "selected-password",
+    ]:
+        assert hidden not in result.stdout
+
+
+@pytest.mark.parametrize("kind", ["missing", "directory", "empty"])
+def test_invalid_env_stops_before_connecting(tmp_path, monkeypatch, kind):
+    from ogrre.internal import mongodb_connection
+
+    env_file = tmp_path / ".env.test"
+    if kind == "directory":
+        env_file.mkdir()
+    elif kind == "empty":
+        env_file.write_text("")
+    connect = Mock(side_effect=AssertionError("Invalid env must not connect"))
+    monkeypatch.setattr(mongodb_connection, "connectToDatabase", connect)
+    with pytest.raises(SystemExit) as error:
+        migration.main(["--env", str(env_file), "--apply"])
+    assert error.value.code == 2
+    connect.assert_not_called()
