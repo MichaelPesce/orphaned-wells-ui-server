@@ -297,11 +297,21 @@ previews changes without writing:
 python -m ogrre.migrate_schema_permissions
 ```
 
-After reviewing the preview, apply it explicitly:
+Every run displays the configured MongoDB hosts, database name, and collaborator
+before the proposed role changes. Credentials and URI query options are omitted.
+The collaborator is informational: the migration covers all roles in the selected
+database, and `DB_NAME` selects the database even when the URI includes another name.
+
+To apply, run:
 
 ```sh
 python -m ogrre.migrate_schema_permissions --apply
 ```
+
+This shows the target and preview again, then waits for `y` at the `[y/N]` prompt.
+Any other answer, end of input, or Ctrl+C cancels without writing. If the preview
+changes while awaiting confirmation, the migration stops and requires a new
+preview. When no changes are needed, it exits without prompting.
 
 The migration grants `manage_schema` to `team_lead` and all system roles, grants
 `manage_schema_destructive` only to `sys_admin`, and removes that permission
@@ -325,18 +335,19 @@ python -m ogrre.migrate_schema_permissions
 ```
 
 The first command previews; run the second after reviewing it and backing up
-the role documents. The last should print `[]` when no changes remain. Apply to
+the role documents, then confirm with `y`. The last should report `No changes
+needed.` with an empty changes list. Apply to
 development first, verify a team lead's safe edits and a signed-in administrator's
 destructive actions, then repeat for each production collaborator database.
 This updates role definitions, not users' assigned roles, schemas, or records.
 Users should refresh or sign in again so their frontend permission state reloads.
 
-The frontend repository's Docker Compose startup currently restores its sample
-dump without this migration. The dump lacks `manage_schema` on `team_lead` and
-`manage_schema_destructive` on `sys_admin`. Run the same migration inside the
-configured backend container after startup and after reseeding; see
-`../orphaned-wells-ui/deployment/README.md`. No cloud permission migration is
-automatically performed by starting Docker or the API.
+The frontend repository's Docker sample dump and downloadable
+`InitializeMongoDB.py` already include these permissions. Fresh databases created
+with either need no schema-permission migration. Existing Docker volumes and
+cloud databases still need the migration; restarting containers does not update
+stored roles. See `../orphaned-wells-ui/deployment/README.md` for the interactive
+Docker command. Starting Docker or the API never migrates a cloud database.
 
 ### Schema edit performance
 

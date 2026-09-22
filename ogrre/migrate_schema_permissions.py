@@ -1,14 +1,21 @@
-"""Preview schema role changes; run with --apply to persist them."""
+"""Preview schema role changes; --apply asks for confirmation before writing."""
 
 import argparse
 import json
+import os
+import re
 import time
+from urllib.parse import urlsplit
+
+from pymongo.errors import PyMongoError
+from pymongo.uri_parser import split_hosts
 
 from ogrre.internal.schema_validation import DESTRUCTIVE_PERMISSION
 
 
-def migrate_schema_permissions(db, apply=False):
+def migrate_schema_permissions(db, apply=False, expected_changes=None):
     changes = []
+    updates = []
     for role in db.roles.find({}):
         before = role.get("permissions") or []
         permissions = set(before)
@@ -31,9 +38,17 @@ def migrate_schema_permissions(db, apply=False):
                 "after": after,
             }
         )
-        if apply:
+        updates.append((role, after))
+    if expected_changes is not None and changes != expected_changes:
+        raise RuntimeError(
+            "Role changes differ from the approved preview; preview again."
+        )
+    if apply:
+        for role, after in updates:
             query = {
                 "_id": role["_id"],
+                "id": role.get("id"),
+                "category": role.get("category"),
                 "permissions": role["permissions"]
                 if "permissions" in role
                 else {"$exists": False},
@@ -53,28 +68,78 @@ def migrate_schema_permissions(db, apply=False):
                         "category": role.get("category"),
                         "permissions": after,
                     },
-                    "previous_state": {"permissions": before},
+                    "previous_state": {"permissions": role.get("permissions") or []},
                     "notes": "Applied by the schema-permission migration CLI.",
                 }
             )
     return changes
 
 
-def main():
+def connection_label(connection):
+    """Show the configured hosts without user info, URI paths, or query options."""
+    if not connection:
+        return "(not configured)"
+    if re.fullmatch(r"[A-Za-z0-9.-]+", connection):
+        return f"mongodb+srv://{connection}.mongodb.net"
+    try:
+        parsed = urlsplit(connection)
+        hosts = parsed.netloc.rsplit("@", 1)[-1]
+        if parsed.scheme not in {"mongodb", "mongodb+srv"} or not hosts:
+            return "(unrecognized connection; details hidden)"
+        split_hosts(hosts, default_port=None)
+        return f"{parsed.scheme}://{hosts}"
+    except (ValueError, PyMongoError):
+        return "(unrecognized connection; details hidden)"
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     from dotenv import load_dotenv
 
     load_dotenv()
-    from ogrre.internal.mongodb_connection import connectToDatabase
+    from ogrre.internal import mongodb_connection
 
+    print("Target database:")
     print(
         json.dumps(
-            migrate_schema_permissions(connectToDatabase(), args.apply), indent=2
+            {
+                "connection": connection_label(mongodb_connection.DB_CONNECTION),
+                "database": mongodb_connection.DB_NAME,
+                "configured_collaborator": os.getenv("COLLABORATOR") or None,
+            },
+            indent=2,
         )
     )
+    print("Scope: all roles in this database; collaborator is informational.")
+    db = mongodb_connection.connectToDatabase()
+    changes = migrate_schema_permissions(db)
+    print("Proposed role changes:")
+    print(json.dumps(changes, indent=2))
+    if not changes:
+        print("No changes needed.")
+        return 0
+    if not args.apply:
+        print("Preview only. Run with --apply to review and confirm these changes.")
+        return 0
+    try:
+        answer = input(
+            f"Apply these changes to database {json.dumps(db.name)}? [y/N]: "
+        )
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    if answer.strip().lower() != "y":
+        print("\nCancelled. No changes were applied.")
+        return 1
+    try:
+        applied = migrate_schema_permissions(db, apply=True, expected_changes=changes)
+    except RuntimeError as error:
+        print(f"Migration stopped: {error}")
+        return 1
+    print(f"Applied changes to {len(applied)} role(s).")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
