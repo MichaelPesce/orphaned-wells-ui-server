@@ -7,6 +7,19 @@ on:
   pull_request:
     branches: [main]
 
+  workflow_dispatch:
+    inputs:
+      frontend_ref:
+        description: Frontend branch, tag, or commit to test against.
+        type: string
+        required: false
+        default: main
+      frontend_repository:
+        description: Frontend repository (owner/name); override to test a fork.
+        type: string
+        required: false
+        default: CATALOG-Historic-Records/orphaned-wells-ui
+
 defaults:
   run:
     shell: bash -l {0}
@@ -60,8 +73,8 @@ jobs:
     permissions:
       contents: read
     with:
-      checkout_repository: CATALOG-Historic-Records/orphaned-wells-ui
-      checkout_ref: main
+      checkout_repository: ${{ inputs.frontend_repository || 'CATALOG-Historic-Records/orphaned-wells-ui' }}
+      checkout_ref: ${{ inputs.frontend_ref || 'main' }}
       backend_mode: source
       backend_repository: ${{ github.repository }}
       backend_ref: ${{ github.sha }}

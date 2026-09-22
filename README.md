@@ -651,3 +651,27 @@ in separate, parallel jobs. Pytest uses Python 3.12 and the development
 requirements, with pip downloads cached between runs; it needs no MongoDB
 service or cloud credentials. Frontend E2E testing starts only after both jobs
 pass, so backend failures are reported before starting the Docker/browser suite.
+
+For push and pull-request runs, E2E tests pair the triggering backend commit with
+`main` in `CATALOG-Historic-Records/orphaned-wells-ui`. For coordinated changes,
+select **Actions → Checks → Run workflow**, choose the backend branch in the
+branch selector, and set `frontend_ref` to the frontend branch, tag, or commit.
+Optionally set `frontend_repository` to a fork (`owner/repository`). Defaults
+remain the upstream frontend's `main`; overrides affect only that manual run.
+
+From this repository, matching branches can be tested with:
+
+```sh
+gh workflow run checks.yml --ref db-schemas -f frontend_ref=db-schemas
+```
+
+Add `-f frontend_repository=OWNER/orphaned-wells-ui` to select a fork. Private
+repositories require the optional `CHECKOUT_TOKEN` secret with read access to
+both repositories. The reusable E2E workflow definition remains on the upstream
+frontend's `main`; the inputs select the application and test source checkouts.
+
+GitHub requires the `workflow_dispatch` trigger to exist on the repository's
+default branch before manual runs are available. Land these CI changes there
+once; no temporary branch names need to be committed or removed for later runs.
+The frontend's **App Tests** workflow has matching `backend_ref` and
+`backend_repository` inputs and builds the selected backend from source.
