@@ -119,9 +119,11 @@ including records never opened after a schema change. Records stream in batches
 of 100 with conditional writes that preserve concurrent edits. These requests
 wait for reconciliation to finish; the first read after deployment or a schema
 change can take longer for large groups. Startup creates an index on
-`record_group_id` and `attribute_schema_revision` to find stale records. Before
-another schema edit or catalog deletion, any pending previous retirement is
-applied so that removing and immediately re-adding a field cannot undo it.
+`record_group_id` and `attribute_schema_revision` to find stale records. Ordinary
+field saves preserve retirement definitions without walking records. Before
+reintroducing a retired field, pending retirement is applied so that removing
+and immediately re-adding a field cannot undo it. Group reassignment/detachment
+and package replacement also reconcile the current schema before changing it.
 
 Deploy the paired frontend and backend updates together and refresh open record
 pages. Attribute edits, inserts, manual deletes, coordinate edits, and review
@@ -214,6 +216,77 @@ data. Startup never runs this migration. Until migration, only unambiguous
 legacy processor-ID lookup is supported; migrate those references before changing
 their processor IDs. Startup adds a `schema_id` index to record groups.
 
+### Import installed package schemas into Mongo
+
+In DB mode, the Schema page offers **Import repo schemas**. The workflow reads
+only the installed `ogrre_data_cleaning` package for the user's active
+collaborator and displays its installed version. It does not synchronize schemas
+or fetch GitHub. Missing files, duplicate package names, and invalid definitions
+are reported instead of silently importing incomplete definitions.
+
+- `GET /get_repo_schema_import`: available definitions, source/version, and any
+  unfinished import.
+- `POST /preview_repo_schema_import`: `{mode: "add" | "replace", selected:
+  [source_id], decisions: {source_id: {action: "keep" | "replace", schema_id}}}`.
+  Returns field/metadata differences, conflict candidates, and affected groups
+  across all teams. A preview does not change catalog entries, groups, or records.
+- `POST /apply_repo_schema_import`: `{import_id}` applies the saved preview.
+  Definitions, operations, and scope cannot be supplied in the apply request.
+
+`manage_schema` permits Add and keeping conflicts. Replacing a definition or the
+catalog requires `manage_schema_destructive`, as does activating a previously
+missing legacy group binding. Permissions are checked again on apply; an
+administrator can resume another user's unfinished import. Imported definitions
+retain package/collaborator/source identity for future matching, but remain
+ordinary editable Mongo schemas. Names and IDs of matched schemas stay stable.
+New entries record their creating user/team; existing unknown creators are not
+invented. There is no team filter on the catalog or impact preview.
+
+Replace archives removed schemas in `deleted_processors` and explicitly detaches
+their groups first. Existing retirement state is reconciled before bindings or
+schemas change; replacement differences preserve retired definitions and values.
+Unknown imported fields stay visible. Ambiguous legacy bindings or divergent
+embedded schemas must be resolved before an affected import can apply.
+
+The provided local Mongo deployment is standalone, so this workflow uses ordered,
+resumable operations instead of requiring replica-set transactions. Deploy all
+API instances together: schema CRUD and group configuration writes participate in
+a shared Mongo guard. Do not run binding migrations, old API versions, or manual
+catalog/binding writes concurrently with an import. Reads and ordinary record
+work remain available; partial application is visible until resumption finishes.
+
+`schema_imports` stores the approved operations, before states, source/version,
+actor/team, decisions, and progress. Repeating apply on the same import ID resumes
+its remaining steps or returns the completed receipt. Previews expire after
+30 minutes; changed catalog/group/source snapshots require a new preview before
+the first write. Interrupted imports retain the approved snapshot and do not
+expire. Each completed step has an idempotent history entry. Preview size is
+limited to 12 MiB and source catalogs to 250 schemas. Saved import journals have
+no automatic TTL because their before states and decisions are audit records.
+
+Handled failures return `status: "partial"` with progress and an error; the UI
+keeps retry available. `schema_catalog_guard.pending_import` prevents other
+catalog/group-configuration changes until that import completes. Reopen the
+dialog and select **Review saved import**, then **Resume import**.
+
+The guard deliberately has no automatic owner expiry: a slow writer must never
+lose exclusivity mid-write. If an API process is killed while holding the guard,
+stop all API/worker writers and confirm the process is no longer running before
+operator recovery. In the intended database, inspect
+`db.schema_catalog_guard.findOne({_id: "catalog"})`, retain the reported owner,
+then clear only that owner using a conditional update:
+
+```javascript
+db.schema_catalog_guard.updateOne(
+  {_id: "catalog", owner: "<observed-owner>"},
+  {$set: {owner: null}}
+)
+```
+
+Keep `pending_import` and the journal intact. Restart the updated API/worker
+versions and resume through the dialog. Do not clear the guard while a writer may
+still be executing. Finish pending imports before switching schema source modes.
+
 ### Migrate existing role assignments
 
 Use the backend environment configured for the intended database. Review and
@@ -236,6 +309,46 @@ from other roles. Other permissions are preserved. It is idempotent, records
 applied changes in history, and rejects concurrent role changes; preview and
 retry after resolving a conflict. Have users refresh their permission state
 after rollout. Neither API startup nor changing schema mode runs the migration.
+
+For cloud development and production, run the three commands below separately
+in each database's configured backend environment (the deployed backend container
+or a local backend environment configured for that database). Confirm `DB_NAME`
+and the intended cluster in your configuration first. `DB_CONNECTION`, `DB_NAME`,
+and, for the separate-credentials configuration, `DB_USERNAME`/`DB_PASSWORD`
+select the target. Existing process environment variables take precedence over
+the discovered dotenv file. Do not paste credentials into shell history.
+
+```sh
+python -m ogrre.migrate_schema_permissions
+python -m ogrre.migrate_schema_permissions --apply
+python -m ogrre.migrate_schema_permissions
+```
+
+The first command previews; run the second after reviewing it and backing up
+the role documents. The last should print `[]` when no changes remain. Apply to
+development first, verify a team lead's safe edits and a signed-in administrator's
+destructive actions, then repeat for each production collaborator database.
+This updates role definitions, not users' assigned roles, schemas, or records.
+Users should refresh or sign in again so their frontend permission state reloads.
+
+The frontend repository's Docker Compose startup currently restores its sample
+dump without this migration. The dump lacks `manage_schema` on `team_lead` and
+`manage_schema_destructive` on `sys_admin`. Run the same migration inside the
+configured backend container after startup and after reseeding; see
+`../orphaned-wells-ui/deployment/README.md`. No cloud permission migration is
+automatically performed by starting Docker or the API.
+
+### Schema edit performance
+
+Ordinary field saves update the shared schema without scanning its record
+groups or rewriting records. Retirement definitions remain in the schema, and
+record reads reconcile against the current definition. Before a retired path
+is reintroduced, existing records are still reconciled to preserve their deletion
+markers; this operation and large first reads can require substantial work.
+The catalog guard uses one atomic acquisition and one release per outer mutation.
+It rejects busy/unfinished imports instead of waiting for their lock. Permission
+checks read the stored user and resolve its roles once, without fetching the
+enriched user response.
 
 ### Schema API contract
 

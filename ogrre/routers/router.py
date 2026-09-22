@@ -2575,6 +2575,31 @@ async def get_cleaning_functions(user_info: dict = Depends(authenticate)):
     return {"cleaning_functions": list(util.CLEANING_FUNCTIONS.keys())}
 
 
+@router.get("/get_repo_schema_import")
+def get_repo_schema_import(user_info: dict = Depends(authenticate)):
+    return schema_operation(data_manager.getRepoSchemaImport, user_info)
+
+
+@router.post("/preview_repo_schema_import")
+async def preview_repo_schema_import(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    data = await schema_request_body(request)
+    return await run_in_threadpool(
+        schema_operation, data_manager.previewRepoSchemaImport, data, user_info
+    )
+
+
+@router.post("/apply_repo_schema_import")
+async def apply_repo_schema_import(
+    request: Request, user_info: dict = Depends(authenticate)
+):
+    data = await schema_request_body(request)
+    return await run_in_threadpool(
+        schema_operation, data_manager.applyRepoSchemaImport, data, user_info
+    )
+
+
 @router.get("/get_ogrre_version")
 async def get_ogrre_version(user_info: dict = Depends(authenticate)):
     """Get backend package and OGRRE dependency version metadata."""

@@ -8,10 +8,13 @@ import re
 import uuid
 import copy
 import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
+from importlib.metadata import version, PackageNotFoundError
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
-from bson import ObjectId
+from bson import BSON, ObjectId
 from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -20,6 +23,7 @@ from ogrre.internal import storage_api
 from ogrre.internal import directory_upload
 from ogrre.internal import processing_job_history
 from ogrre.internal import schema_validation as schema_rules
+from ogrre.internal import schema_import
 from ogrre.internal.mongodb_connection import connectToDatabase
 from ogrre.internal.settings import AppSettings
 from ogrre.internal.util import get_document_image
@@ -27,6 +31,7 @@ import ogrre.internal.util as util
 from ogrre.internal.util import time_it
 
 _log = logging.getLogger(__name__)
+_catalog_writer = ContextVar("schema_catalog_writer", default=None)
 REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() in ("1", "true", "yes")
 
 DEFAULT_UNAUTHENTICATED_TEAM = {
@@ -45,11 +50,12 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_DB_PROCESSORS = os.getenv("USE_DB_PROCESSORS", "false").lower() in (
-    "1",
-    "true",
-    "yes",
-)
+# USE_DB_PROCESSORS = os.getenv("USE_DB_PROCESSORS", "false").lower() in (
+#     "1",
+#     "true",
+#     "yes",
+# )
+USE_DB_PROCESSORS = True
 
 
 class DataManager:
@@ -603,6 +609,390 @@ class DataManager:
                 "This schema change requires manage_schema_destructive permission."
             )
 
+    @contextmanager
+    def _schemaCatalogWrite(self, import_id=None):
+        """Serialize catalog/binding writes across API processes on standalone Mongo.
+
+        No lease expiry: a slow writer must never lose ownership mid-write. After
+        a process crash, operators stop writers before clearing the owner (README).
+        A partial import retains pending_import until its saved steps finish.
+        """
+        if not USE_DB_PROCESSORS or _catalog_writer.get() is self:
+            yield
+            return
+        guards = self.db.schema_catalog_guard
+        owner = str(uuid.uuid4())
+        try:
+            guard = guards.find_one_and_update(
+                {
+                    "_id": "catalog",
+                    "owner": None,
+                    "pending_import": {"$in": [None, import_id]},
+                },
+                {
+                    "$set": {"owner": owner, "started_at": time.time()},
+                    "$setOnInsert": {"pending_import": None},
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER,
+            )
+        except DuplicateKeyError:
+            # A busy guard does not match; its unique _id prevents a second owner.
+            guard = None
+        if not guard:
+            raise schema_rules.SchemaError(
+                "Schema changes are busy or an import needs to be resumed. Open Import repo schemas to check its status.",
+                409,
+            )
+        token = _catalog_writer.set(self)
+        try:
+            yield
+        finally:
+            _catalog_writer.reset(token)
+            guards.update_one(
+                {"_id": "catalog", "owner": owner}, {"$set": {"owner": None}}
+            )
+
+    def _installedSchemaPackage(self, user_info):
+        collaborator = self.getCollaboratorForUser(user_info)
+        metadata = processor_api.get_processor_list(collaborator)
+        if metadata is None:
+            raise schema_rules.SchemaError(
+                "No schema catalog was found for this collaborator in the installed package.",
+                404,
+            )
+        if not isinstance(metadata, list) or len(metadata) > 250:
+            raise schema_rules.SchemaError(
+                "The installed package schema catalog is invalid or exceeds 250 schemas."
+            )
+        try:
+            package_version = version("ogrre_data_cleaning")
+        except PackageNotFoundError:
+            package_version = "unknown"
+        schemas, seen = [], set()
+        for item in metadata:
+            name = item.get("Processor Name") if isinstance(item, dict) else None
+            if not isinstance(name, str) or not name or name in seen:
+                raise schema_rules.SchemaError(
+                    "The installed package contains missing or duplicate schema names."
+                )
+            seen.add(name)
+            result = {"source_id": name, "name": item.get("displayName") or name}
+            try:
+                definition = processor_api.get_processor_by_name(collaborator, name)
+                if not definition or "attributes" not in definition:
+                    raise schema_rules.SchemaError(
+                        "The package schema file is missing; it cannot be imported as an empty schema."
+                    )
+                canonical = self._canonicalRepoProcessor(definition)
+                fields = schema_rules.validate_fields(
+                    canonical["attributes"], util.CLEANING_FUNCTIONS
+                )
+                normalized = {
+                    key: canonical.get(key) for key in ("name", *schema_import.METADATA)
+                }
+                self._checkProcessorMetadata(normalized)
+                result.update(
+                    definition={**normalized, "attributes": fields},
+                    field_count=len(fields),
+                )
+            except schema_rules.SchemaError as error:
+                result["error"] = str(error)
+            schemas.append(result)
+        return {
+            "source": {
+                "package": "ogrre_data_cleaning",
+                "version": package_version,
+                "collaborator": collaborator,
+            },
+            "schemas": schemas,
+        }
+
+    def _schemaImportState(self):
+        return {
+            "catalog": list(self.db.processors.find({}).sort("_id", 1)),
+            "groups": [
+                schema_import.group_snapshot(group)
+                for group in self.db.record_groups.find(
+                    {}, {key: 1 for key in schema_import.GROUP_FIELDS}
+                ).sort("_id", 1)
+            ],
+        }
+
+    @staticmethod
+    def _publicSchemaImport(job):
+        return {
+            key: copy.deepcopy(value)
+            for key, value in job.items()
+            if key
+            not in {
+                "_id",
+                "operations",
+                "snapshot",
+                "package_digest",
+                "request",
+                "creator",
+            }
+        }
+
+    def getRepoSchemaImport(self, user_info):
+        self.requireSchemaPermission(user_info)
+        guard = self.db.schema_catalog_guard.find_one({"_id": "catalog"}) or {}
+        pending = (
+            self.db.schema_imports.find_one({"_id": guard.get("pending_import")})
+            if guard.get("pending_import")
+            else None
+        )
+        # A saved import can be resumed even if the installed package changes.
+        try:
+            package = self._installedSchemaPackage(user_info)
+        except schema_rules.SchemaError as error:
+            if not pending:
+                raise
+            package = {"source": pending["source"], "schemas": [], "error": str(error)}
+        return {
+            **package,
+            "schemas": [
+                {key: value for key, value in item.items() if key != "definition"}
+                for item in package["schemas"]
+            ],
+            "pending_import": self._publicSchemaImport(pending) if pending else None,
+            "busy": bool(guard.get("owner")),
+        }
+
+    def previewRepoSchemaImport(self, request, user_info):
+        if not isinstance(request, dict) or set(request) - {
+            "mode",
+            "selected",
+            "decisions",
+        }:
+            raise schema_rules.SchemaError("Invalid schema import request.")
+        self.requireSchemaPermission(
+            user_info, destructive=request.get("mode") == "replace"
+        )
+        package = self._installedSchemaPackage(user_info)
+        with self._schemaCatalogWrite():
+            state = self._schemaImportState()
+            now = time.time()
+            creator = self._schemaCreator(user_info)
+            plan = schema_import.build_plan(
+                package, state["catalog"], state["groups"], request, creator, now
+            )
+            self.requireSchemaPermission(user_info, destructive=plan["destructive"])
+            import_id = str(ObjectId())
+            job = {
+                **plan,
+                "_id": import_id,
+                "import_id": import_id,
+                "status": "preview",
+                "next_step": 0,
+                "total_steps": len(plan["operations"]),
+                "created_by": user_info.get("email"),
+                "created_by_team": creator["created_by_team"],
+                "created_at": now,
+                "expires_at": now + 1800,
+                "snapshot": self._attributeDigest(state),
+                "package_digest": self._attributeDigest(package),
+                "request": copy.deepcopy(request),
+                "creator": creator,
+            }
+            if len(BSON.encode(job)) > 12 * 1024 * 1024:
+                raise schema_rules.SchemaError(
+                    "This import preview is too large. Import a smaller selection."
+                )
+            self.db.schema_imports.insert_one(job)
+            return self._publicSchemaImport(job)
+
+    def _applySchemaImportStep(self, operation, job, user_info):
+        kind = operation["kind"]
+        before, after = operation.get("before"), operation.get("after")
+        if kind == "reconcile":
+            self._ensureRecordGroupsReconciled([operation["group_id"]], user_info)
+            return
+        if kind == "binding":
+            group = self.db.record_groups.find_one({"_id": before["_id"]})
+            if group is None:
+                return  # A concurrently deleted group needs no binding update.
+            current = schema_import.group_snapshot(group)
+            if current == after:
+                return
+            if current != before:
+                raise schema_rules.SchemaError(
+                    "A record-group binding changed during import.", 409
+                )
+            self.db.record_groups.update_one(
+                {"_id": before["_id"]}, {"$set": {"schema_id": after["schema_id"]}}
+            )
+        elif kind == "schema":
+            current = self.db.processors.find_one({"_id": after["_id"]})
+            if current == after:
+                return
+            if current != before:
+                raise schema_rules.SchemaError("A schema changed during import.", 409)
+            if before is None:
+                self.db.processors.insert_one(after)
+            else:
+                self.db.processors.replace_one({"_id": before["_id"]}, after)
+        elif kind == "remove":
+            current = self.db.processors.find_one({"_id": before["_id"]})
+            if current is None:
+                return
+            if current != before or self._groupsUsingSchema(before):
+                raise schema_rules.SchemaError(
+                    "A schema or its record-group bindings changed during import.", 409
+                )
+            self.db.deleted_processors.replace_one(
+                {"_id": before["_id"]},
+                {
+                    **before,
+                    "deleted_by": user_info.get("email"),
+                    "deleted_at": time.time(),
+                    "schema_import_id": job["import_id"],
+                },
+                upsert=True,
+            )
+            self.db.processors.delete_one(before)
+
+    def applyRepoSchemaImport(self, request, user_info):
+        self.requireSchemaPermission(user_info)
+        if (
+            not isinstance(request, dict)
+            or set(request) != {"import_id"}
+            or not isinstance(request["import_id"], str)
+        ):
+            raise schema_rules.SchemaError("Provide the saved import preview.")
+        import_id = request["import_id"]
+        job = self.db.schema_imports.find_one({"_id": import_id})
+        if not job:
+            raise schema_rules.SchemaError("Import preview not found.", 404)
+        self.requireSchemaPermission(
+            user_info,
+            destructive=job["destructive"]
+            or job["created_by"] != user_info.get("email"),
+        )
+        if job["status"] == "complete":
+            guard = self.db.schema_catalog_guard.find_one({"_id": "catalog"}) or {}
+            if guard.get("pending_import") == import_id:
+                with self._schemaCatalogWrite(import_id):
+                    self.db.schema_catalog_guard.update_one(
+                        {"_id": "catalog", "pending_import": import_id},
+                        {"$set": {"pending_import": None}},
+                    )
+            return self._publicSchemaImport(job)
+        with self._schemaCatalogWrite(import_id):
+            job = self.db.schema_imports.find_one({"_id": import_id})
+            if job["status"] == "complete":
+                self.db.schema_catalog_guard.update_one(
+                    {"_id": "catalog", "pending_import": import_id},
+                    {"$set": {"pending_import": None}},
+                )
+                return self._publicSchemaImport(job)
+            if not job["can_apply"]:
+                raise schema_rules.SchemaError(
+                    "Resolve all import conflicts before applying.", 409
+                )
+            if job["status"] == "preview":
+                if (
+                    job["expires_at"] < time.time()
+                    or job["snapshot"]
+                    != self._attributeDigest(self._schemaImportState())
+                    or job["package_digest"]
+                    != self._attributeDigest(self._installedSchemaPackage(user_info))
+                ):
+                    raise schema_rules.SchemaError(
+                        "The catalog, groups, or installed package changed, or the preview expired. Review a new preview.",
+                        409,
+                    )
+                now = time.time()
+                for operation in job["operations"]:
+                    if operation["kind"] == "schema":
+                        operation["after"].update(
+                            imported_at=now, updated_at=now, lastUpdated=now
+                        )
+                        if operation["before"] is None:
+                            operation["after"]["created_at"] = now
+            self.db.schema_catalog_guard.update_one(
+                {"_id": "catalog"}, {"$set": {"pending_import": import_id}}
+            )
+            self.db.schema_imports.update_one(
+                {"_id": import_id},
+                {
+                    "$set": {
+                        "status": "applying",
+                        "operations": job["operations"],
+                        "last_actor": user_info.get("email"),
+                        "error": None,
+                    }
+                },
+            )
+            try:
+                for index in range(job["next_step"], len(job["operations"])):
+                    operation = job["operations"][index]
+                    self._applySchemaImportStep(operation, job, user_info)
+                    self.db.history.update_one(
+                        {"_id": f"schema-import:{import_id}:{index}"},
+                        {
+                            "$setOnInsert": {
+                                "action": "importRepoSchemaStep",
+                                "user": user_info.get("email"),
+                                "timestamp": time.time(),
+                                "schema_import_id": import_id,
+                                "record_group_id": str(operation["before"]["_id"])
+                                if operation["kind"] == "binding"
+                                else operation.get("group_id"),
+                                "source": job["source"],
+                                "step": index,
+                                "previous_state": operation.get("before"),
+                                "query": operation.get("after"),
+                                "notes": operation["kind"],
+                            }
+                        },
+                        upsert=True,
+                    )
+                    self.db.schema_imports.update_one(
+                        {"_id": import_id}, {"$set": {"next_step": index + 1}}
+                    )
+                self.recordHistory(
+                    "importRepoSchemas",
+                    user_info.get("email"),
+                    query={"import_id": import_id, "counts": job["counts"]},
+                    notes={
+                        "source": job["source"],
+                        "decisions": job["request"],
+                        "team": job["created_by_team"],
+                    },
+                )
+                self.db.schema_imports.update_one(
+                    {"_id": import_id},
+                    {
+                        "$set": {
+                            "status": "complete",
+                            "completed_at": time.time(),
+                            "error": None,
+                        }
+                    },
+                )
+                self.db.schema_catalog_guard.update_one(
+                    {"_id": "catalog", "pending_import": import_id},
+                    {"$set": {"pending_import": None}},
+                )
+            except Exception:
+                _log.exception(
+                    "Schema import %s paused; its saved steps can be resumed", import_id
+                )
+                self.db.schema_imports.update_one(
+                    {"_id": import_id},
+                    {
+                        "$set": {
+                            "status": "partial",
+                            "error": "Import paused before completion. Applied changes are saved. Retry to resume the remaining steps; schema changes are held until it finishes.",
+                        }
+                    },
+                )
+            return self._publicSchemaImport(
+                self.db.schema_imports.find_one({"_id": import_id})
+            )
+
     def _findUniqueProcessor(self, query, required=True):
         matches = list(self.db.processors.find(query).limit(2))
         if len(matches) > 1:
@@ -653,6 +1043,7 @@ class DataManager:
             "lastUpdated": now,
         }
 
+    @schema_import.catalog_write
     def createSchema(self, data, user_info):
         self.requireSchemaPermission(user_info)
         if not isinstance(data, dict):
@@ -690,8 +1081,6 @@ class DataManager:
         return list(self.db.record_groups.find({"$or": clauses}))
 
     def _saveProcessorChanges(self, processor, changes, user_info, action):
-        affected = [str(group["_id"]) for group in self._groupsUsingSchema(processor)]
-        self._ensureRecordGroupsReconciled(affected, user_info)
         if "processorId" in changes and any(
             "schema_id" not in group for group in self._groupsUsingSchema(processor)
         ):
@@ -700,6 +1089,26 @@ class DataManager:
                 409,
             )
         if "attributes" in changes:
+            retired = {
+                field["name"]
+                for field in schema_rules.normalize_fields(
+                    processor.get("attributes") or [], strict=False
+                )
+                if field.get("deleted")
+            }
+            active = {
+                field["name"]
+                for field in changes["attributes"]
+                if not field.get("deleted")
+            }
+            if retired & active:
+                # Materialize old retirement before reintroducing its definition.
+                # Other edits retain the tombstones, so reads can reconcile the
+                # latest schema without walking every record during a field save.
+                affected = [
+                    str(group["_id"]) for group in self._groupsUsingSchema(processor)
+                ]
+                self._ensureRecordGroupsReconciled(affected, user_info)
             changes["attributes"] = schema_rules.retain_retired_fields(
                 processor.get("attributes"), changes["attributes"]
             )
@@ -776,6 +1185,7 @@ class DataManager:
             "read_only": not USE_DB_PROCESSORS,
         }
 
+    @schema_import.catalog_write
     def uploadProcessorSchema(self, file, schema_meta, user_info, schema_id=None):
         self.requireSchemaPermission(user_info)
         existing = (
@@ -813,6 +1223,7 @@ class DataManager:
             return self.createSchema(new_processor, user_info)
         return self._serializeSchema({**existing, **new_processor})
 
+    @schema_import.catalog_write
     def deleteProcessorSchema(self, processorName, user_info, schema_id=None):
         self.requireSchemaPermission(user_info, destructive=True)
         processor = self._schemaDocument(schema_id, processorName)
@@ -844,6 +1255,7 @@ class DataManager:
         )
         return {"name": processorName}
 
+    @schema_import.catalog_write
     def updateProcessor(self, processor_data, user_info):
         self.requireSchemaPermission(user_info)
         if not isinstance(processor_data, dict):
@@ -881,6 +1293,8 @@ class DataManager:
             self._saveProcessorChanges(processor, changes, user_info, "updateProcessor")
         return "success"
 
+    @time_it
+    @schema_import.catalog_write
     def updateProcessorAttribute(
         self,
         processor_name,
@@ -1179,12 +1593,12 @@ class DataManager:
             return False
         if not REQUIRE_AUTH:
             return True
-        user_doc = self.getUser(email)
-        user_permissions = self.getUserPermissions(user_doc)
-        if permission in user_permissions:
-            return True
-        else:
+        # getUser enriches the response with roles and collaborator data. Reading
+        # the stored user avoids fetching permissions twice for every check.
+        user_doc = self.db.users.find_one({"email": email})
+        if user_doc is None:
             return False
+        return permission in self.getUserPermissions(user_doc)
 
     def getUserInfo(self, email):
         user_document = self.getDocument("users", {"email": email}, clean_id=True)
@@ -2747,6 +3161,7 @@ class DataManager:
 
         return str(new_project_id)
 
+    @schema_import.catalog_write
     def createRecordGroup(self, rg_info, user_info):
         if not isinstance(rg_info, dict):
             raise schema_rules.SchemaError("Record group data must be an object.")
@@ -3706,6 +4121,7 @@ class DataManager:
             return document
         return None
 
+    @schema_import.catalog_write
     def updateRecordGroup(self, rg_id, new_data, user_info=None):
         user_info = user_info or {}
         _, current = self.fetchRecordGroupData(rg_id, user_info)
