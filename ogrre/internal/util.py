@@ -5,6 +5,7 @@ import datetime
 import functools
 import zipstream
 import csv
+import io
 import json
 import copy
 from pathlib import Path
@@ -14,6 +15,7 @@ import importlib.metadata as importlib_metadata
 import fitz
 from ogrre_data_cleaning import CLEANING_FUNCTIONS
 from ogrre.internal import storage_api
+from ogrre.internal import schema_validation
 
 _log = logging.getLogger(__name__)
 BUCKET_NAME = os.getenv("STORAGE_BUCKET_NAME")
@@ -87,7 +89,7 @@ def normalize_record_attribute_tree(attributes):
     def normalize_attribute(
         attribute, top_level_attribute=None, parent_identifier=None
     ):
-        if not isinstance(attribute, dict):
+        if not isinstance(attribute, dict) or attribute.get("deleted"):
             return attribute
 
         attribute_key = attribute.get("key")
@@ -121,14 +123,16 @@ def normalize_record_attribute_tree(attributes):
     return attributes
 
 
-def iter_attribute_tree(attributes, parent_identifier=None):
+def iter_attribute_tree(attributes, parent_identifier=None, include_deleted=False):
     for attribute in attributes or []:
-        if not isinstance(attribute, dict):
+        if not isinstance(attribute, dict) or (
+            attribute.get("deleted") and not include_deleted
+        ):
             continue
         attribute_identifier = get_attribute_identifier(attribute, parent_identifier)
         yield attribute, attribute_identifier
         yield from iter_attribute_tree(
-            attribute.get("subattributes") or [], attribute_identifier
+            attribute.get("subattributes") or [], attribute_identifier, include_deleted
         )
 
 
@@ -190,133 +194,130 @@ def time_it(func):
     return wrapper
 
 
-def sortRecordAttributes(
-    attributes, processor, keep_all_attributes=False, data_fusion=None
-):
-    if processor is None:
-        _log.info(f"no processor found")
-        return normalize_record_attribute_tree(attributes), False
-    if attributes is None:
-        attributes = []
-    processor_attributes = processor.get("attributes", None)
-    if processor_attributes is None or len(processor_attributes) == 0:
-        _log.info(f"no processor attributes found")
-        return normalize_record_attribute_tree(attributes), False
-    processor_attributes.sort(key=lambda x: x.get("page_order_sort", float("inf")))
-
-    original_attributes = copy.deepcopy(attributes)
-    attributes = normalize_record_attribute_tree(attributes)
-    processor_attributes_dict = convert_processor_attributes_to_dict(
-        processor_attributes
-    )
-    processor_attribute_tree = create_processor_attribute_tree(processor_attributes)
-
-    def sort_subattributes(record_attribute, parent_identifier):
-        subattributes = record_attribute.get("subattributes") or []
-        if len(subattributes) == 0:
-            record_attribute["subattributes"] = []
-            return
-
-        sorted_subattributes = []
-        used_indexes = set()
-        child_names = processor_attribute_tree.get(parent_identifier, [])
-
-        for child_name in child_names:
-            child_identifier = combine_attribute_identifier(
-                parent_identifier, child_name
-            )
-            for idx, subattribute in enumerate(subattributes):
-                if idx in used_indexes:
-                    continue
-                if (
-                    get_attribute_identifier(subattribute, parent_identifier)
-                    == child_identifier
-                ):
-                    processor_attribute_data = processor_attributes_dict.get(
-                        child_identifier
-                    )
-                    if processor_attribute_data:
-                        subattribute["alias"] = processor_attribute_data.get("alias")
-                    sort_subattributes(subattribute, child_identifier)
-                    sorted_subattributes.append(subattribute)
-                    used_indexes.add(idx)
-
-        for idx, subattribute in enumerate(subattributes):
-            if idx in used_indexes:
-                continue
-            child_identifier = get_attribute_identifier(subattribute, parent_identifier)
-            if child_identifier not in processor_attributes_dict:
-                _log.info(
-                    f"{child_identifier} was not in processor's attributes. keeping it at the end of the subattributes list"
-                )
-            sort_subattributes(subattribute, child_identifier)
-            sorted_subattributes.append(subattribute)
-
-        record_attribute["subattributes"] = sorted_subattributes
-
-    ## match record attribute to each processor attribute
-    sorted_attributes = []
-    used_top_level_indexes = set()
-    for each in processor_attributes:
-        attribute_name = each["name"]
-
-        ## if we are using data_fusion for this record group, only
-        ## keep fields that are in the data_fusion list
-        if data_fusion and attribute_name not in data_fusion:
+def active_attributes(attributes):
+    """A read/export copy. Never persist this filtered list as the stored record."""
+    result = []
+    for attribute in attributes or []:
+        if not isinstance(attribute, dict) or attribute.get("deleted"):
             continue
-        if ATTRIBUTE_PATH_SEPARATOR in attribute_name:
-            continue
+        item = copy.deepcopy(attribute)
+        item["subattributes"] = active_attributes(item.get("subattributes"))
+        result.append(item)
+    return result
 
-        found_indexes = [
-            idx
-            for idx, item in enumerate(attributes)
-            if isinstance(item, dict) and item.get("key") == attribute_name
+
+def active_records_pipeline(filter_by):
+    # Apply trusted scope before traversing attributes, then all value filters to
+    # the visible tree. $redact recursively prunes children of retired parents.
+    scope = {
+        key: filter_by[key] for key in ("record_group_id", "_id") if key in filter_by
+    }
+    return [
+        {"$match": scope},
+        {
+            "$redact": {
+                "$cond": [
+                    {"$eq": [{"$ifNull": ["$deleted", False]}, True]},
+                    "$$PRUNE",
+                    "$$DESCEND",
+                ]
+            }
+        },
+        {"$match": filter_by},
+    ]
+
+
+def preserve_retired_attributes(previous, replacement):
+    """Keep retired values through reprocessing and full-list internal writes."""
+    result = copy.deepcopy(replacement or [])
+    # Match each original replacement occurrence once; appended entries cannot match.
+    unmatched_retired = [item for item in result if item.get("deleted")]
+    for index, old in enumerate(previous or []):
+        if old.get("deleted"):
+            try:
+                unmatched_retired.remove(old)
+            except ValueError:
+                result.append(copy.deepcopy(old))
+            continue
+        retired_children = preserve_retired_attributes(old.get("subattributes"), [])
+        if not retired_children:
+            continue
+        # Pair repeated parents by occurrence, not just key.
+        occurrence = sum(
+            item.get("key") == old.get("key") and not item.get("deleted")
+            for item in (previous or [])[:index]
+        )
+        matches = [
+            item
+            for item in result
+            if item.get("key") == old.get("key") and not item.get("deleted")
         ]
-        for idx in found_indexes:
-            attribute = attributes[idx]
-            if attribute is None:
-                _log.debug(f"{attribute_name} is None")
-                continue
-
-            sort_subattributes(attribute, attribute_name)
-            sorted_attributes.append(attribute)
-            used_top_level_indexes.add(idx)
-
-        if len(found_indexes) == 0:
-            _log.debug(
-                f"{attribute_name} was not in record's attributes. adding this to the sorted attributes"
+        if occurrence < len(matches):
+            target = matches[occurrence]
+            target["subattributes"] = preserve_retired_attributes(
+                old.get("subattributes"), target.get("subattributes")
             )
-            new_attr = createNewAttribute(key=attribute_name)
-            sorted_attributes.append(new_attr)
+        else:
+            # Retain the container too if extraction no longer supplies it.
+            container = copy.deepcopy(old)
+            container["deleted"] = True
+            result.append(container)
+    return result
 
-    obsolete_fields_amt = 0
-    ## obsolete fields will get removed automatically.
-    for idx, attr in enumerate(attributes):
-        if idx in used_top_level_indexes:
-            continue
-        attribute_name = attr["key"]
-        ## if we are using data_fusion for this record group, only
-        ## keep fields that are in the data_fusion list
-        if data_fusion and attribute_name not in data_fusion:
-            continue
-        if attribute_name not in processor_attributes_dict:
-            if keep_all_attributes:
-                _log.info(
-                    f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
-                )
-                sorted_attributes.append(attr)
-            else:
-                obsolete_fields_amt += 1
-                _log.info(
-                    f"{attribute_name} was not in processor's attributes. adding this to the end of the sorted attributes list"
-                )
-    _log.info(f"found {obsolete_fields_amt} obsolete fields.")
-    if obsolete_fields_amt >= 10:
-        _log.info(f"many obsolete fields found, this is probably a mistake.")
-    ## only persist when the stored list is actually different from the sorted list
-    requires_db_update = sorted_attributes != original_attributes
-    _log.info(f"sorted attributes. requires_db_update: {requires_db_update}")
-    return sorted_attributes, requires_db_update
+
+def sortRecordAttributes(
+    attributes, processor, keep_all_attributes=False, *, add_missing_attributes=True
+):
+    original = copy.deepcopy(attributes or [])
+    attributes = normalize_record_attribute_tree(copy.deepcopy(original))
+    if processor is None or "attributes" not in processor:
+        return attributes, attributes != original
+    fields = schema_validation.normalize_fields(
+        processor.get("attributes") or [], strict=False
+    )
+    names = [field.get("name") for field in fields]
+    if len(names) != len(set(names)):
+        raise schema_validation.SchemaError(
+            "Duplicate schema fields cannot be used to sort a record.", 409
+        )
+    fields.sort(key=lambda field: field.get("page_order_sort", float("inf")))
+    by_name = {field["name"]: field for field in fields}
+    order = {
+        name: index for index, name in enumerate(field["name"] for field in fields)
+    }
+
+    def reconcile(items, parent=None):
+        for item in items:
+            if item.get("deleted"):
+                continue
+            path = get_attribute_identifier(item, parent)
+            definition = by_name.get(path)
+            if (definition and definition.get("deleted")) or (
+                definition is None and not keep_all_attributes
+            ):
+                item["deleted"] = True
+                continue
+            if definition:
+                item["alias"] = definition.get("alias")
+            item["subattributes"] = reconcile(item.get("subattributes") or [], path)
+        return sorted(
+            items,
+            key=lambda item: (
+                bool(item.get("deleted")),
+                order.get(get_attribute_identifier(item, parent), len(order)),
+            ),
+        )
+
+    attributes = reconcile(attributes)
+    existing_keys = {item.get("key") for item in attributes}
+    for field in fields if add_missing_attributes else []:
+        name = field["name"]
+        # Re-adding a definition never restores an old retired value or creates
+        # an active placeholder over it. Restoration is a separate workflow.
+        if "::" not in name and not field.get("deleted") and name not in existing_keys:
+            attributes.append(createNewAttribute(key=name))
+    attributes = reconcile(attributes)
+    return attributes, attributes != original
 
 
 def imageIsValid(image):
@@ -648,7 +649,7 @@ def convert_processor_list_to_dict(processor_list):
 
 def iter_processor_attribute_schema(attributes, parent_identifier=None):
     for attr in attributes or []:
-        if not isinstance(attr, dict):
+        if not isinstance(attr, dict) or attr.get("deleted"):
             continue
 
         name = attr.get("name")
@@ -687,16 +688,20 @@ def create_processor_attribute_tree(attributes):
 
 
 def cleanRecordAttribute(processor_attributes, attribute, subattributeKey=None):
+    if not isinstance(attribute, dict) or attribute.get("deleted"):
+        return False
+    attribute_key = subattributeKey or get_attribute_identifier(attribute)
+    attribute_schema = (processor_attributes or {}).get(attribute_key)
+    if attribute_schema and attribute_schema.get("deleted"):
+        return False
     unclean_val = attribute.get("value")
     ## regardless of whether we clean the value, we must update uncleaned value
     _log.info(f"updating uncleaned value to {unclean_val}")
     attribute["uncleaned_value"] = unclean_val
-    if not processor_attributes or not isinstance(attribute, dict):
+    if not processor_attributes:
         attribute["cleaned"] = False
         return False
 
-    attribute_key = subattributeKey or get_attribute_identifier(attribute)
-    attribute_schema = processor_attributes.get(attribute_key)
     if attribute_schema:
         cleaning_function_name = attribute_schema.get("cleaning_function")
         if cleaning_function_name == "" or cleaning_function_name is None:
@@ -746,6 +751,7 @@ def summarize_attribute_for_cleaning(attribute, parent_identifier=None):
         summary["subattributes"] = [
             summarize_attribute_for_cleaning(subattribute, attribute_identifier)
             for subattribute in subattributes
+            if not subattribute.get("deleted")
         ]
     return summary
 
@@ -763,6 +769,8 @@ def cleanRecords(processor_attributes, documents):
             "attributesList_after": [],
         }
         for attr in attributes_list:
+            if attr.get("deleted"):
+                continue
             attribute_before_cleaning = summarize_attribute_for_cleaning(attr)
             cleanRecordAttribute(
                 processor_attributes=processor_attributes, attribute=attr
@@ -855,7 +863,7 @@ def generate_mongo_records_pipeline(
         }
     exclude_attribute_fields : dict
     """
-    pipeline = [{"$match": filter_by}]
+    pipeline = active_records_pipeline(filter_by)
 
     if include_attribute_fields:
         project = {"$project": {}}
@@ -1086,47 +1094,32 @@ def remap_airtable_keys(original_dict):
 
 
 def csv_to_dict(upload_file):
-    # upload_file.file is already a file-like object
-    upload_file.file.seek(0)  # ensure start
-    reader = csv.reader(upload_file.file.read().decode("utf-8").splitlines())
-    headers = next(reader)
-
-    data = []
-    for row in reader:
-        item = dict(zip(headers, row))
-        data.append(item)
+    upload_file.file.seek(0)
+    reader = csv.DictReader(
+        io.StringIO(upload_file.file.read().decode("utf-8-sig")), strict=True
+    )
+    try:
+        headers = reader.fieldnames
+        if not headers or any(not name.strip() for name in headers):
+            raise schema_validation.SchemaError(
+                "The CSV schema must contain column headers."
+            )
+        if len(set(headers)) != len(headers):
+            raise schema_validation.SchemaError(
+                "The CSV schema contains duplicate column headers."
+            )
+        data = list(reader)
+    except csv.Error as error:
+        raise schema_validation.SchemaError(f"Invalid CSV schema: {error}.") from error
+    if any(None in row or None in row.values() for row in data):
+        raise schema_validation.SchemaError(
+            "Every CSV row must match the column headers."
+        )
     return data
 
 
 def convert_to_target_format(data):
-    target_format = []
-    key_map = {
-        "Name": "name",
-        "Database Data Type": "database_data_type",
-        "Occurrence": "occurrence",
-        "Grouping": "grouping",
-        "Page Order Sort": "page_order_sort",
-        "Cleaning Function": "cleaning_function",
-        # "Data Type" OR "Google DataType" -> "data_type"
-    }
-
-    for row in data:
-        target_item = {}
-        for item_key in row:
-            item = row[item_key]
-            json_key = key_map.get(item_key, None)
-            if json_key:
-                target_item[json_key] = item
-            else:
-                ## TODO: we can add these if we want to, but it might just be a waste of space
-                # target_item[item_key] = item
-                _log.debug(f"we dont have a matching key for: {item_key}")
-        if "Data Type" in row:
-            target_item["data_type"] = row["Data Type"]
-        elif "Google Data Type" in row:
-            target_item["data_type"] = row["Google Data Type"]
-        target_format.append(target_item)
-    return target_format
+    return schema_validation.normalize_fields(data)
 
 
 def convert_csv_to_dict(csv_file):
@@ -1174,36 +1167,7 @@ def format_schema_json(json_file):
     else:
         raw = json_file
 
-    data = json.loads(raw)
-    if not isinstance(data, list):
-        raise ValueError("schema json must be a list of objects")
-
-    allowed_keys = {
-        "name",
-        "data_type",
-        "database_data_type",
-        "occurrence",
-        "grouping",
-        "page_order_sort",
-        "cleaning_function",
-    }
-    data_type_aliases = {"google_data_type", "Google Data type"}
-
-    formatted = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        new_item = {}
-        for key in allowed_keys:
-            if key in item:
-                new_item[key] = item[key]
-        if "data_type" not in new_item:
-            for alias in data_type_aliases:
-                if alias in item:
-                    new_item["data_type"] = item[alias]
-                    break
-        formatted.append(new_item)
-    return formatted
+    return schema_validation.normalize_fields(json.loads(raw))
 
 
 def upload_to_gcs(
@@ -1220,9 +1184,7 @@ def upload_to_gcs(
 
 
 def generate_record_group_stats(rg_ids):
-    ## pipeline for getting the following record group stats:
-    ## total amount, amount reviewed (reviewed or defected), amount containing cleaning errors
-    pipeline = [
+    return [
         {"$match": {"record_group_id": {"$in": rg_ids}}},
         {
             "$group": {
@@ -1237,101 +1199,10 @@ def generate_record_group_stats(rg_ids):
                         ]
                     }
                 },
-                "error_amt": {
-                    "$sum": {
-                        "$cond": [
-                            {
-                                "$or": [
-                                    {
-                                        "$anyElementTrue": {
-                                            "$map": {
-                                                "input": {
-                                                    "$ifNull": [
-                                                        "$attributesList",
-                                                        [],
-                                                    ]
-                                                },
-                                                "as": "attr",
-                                                "in": {
-                                                    "$and": [
-                                                        {
-                                                            "$ne": [
-                                                                "$$attr.cleaning_error",
-                                                                False,
-                                                            ]
-                                                        },
-                                                        {
-                                                            "$ne": [
-                                                                {
-                                                                    "$type": "$$attr.cleaning_error"
-                                                                },
-                                                                "missing",
-                                                            ]
-                                                        },
-                                                    ]
-                                                },
-                                            }
-                                        }
-                                    },
-                                    {
-                                        "$anyElementTrue": {
-                                            "$map": {
-                                                "input": {
-                                                    "$reduce": {
-                                                        "input": {
-                                                            "$ifNull": [
-                                                                "$attributesList",
-                                                                [],
-                                                            ]
-                                                        },
-                                                        "initialValue": [],
-                                                        "in": {
-                                                            "$concatArrays": [
-                                                                "$$value",
-                                                                {
-                                                                    "$ifNull": [
-                                                                        "$$this.subattributes",
-                                                                        [],
-                                                                    ]
-                                                                },
-                                                            ]
-                                                        },
-                                                    }
-                                                },
-                                                "as": "sub",
-                                                "in": {
-                                                    "$and": [
-                                                        {
-                                                            "$ne": [
-                                                                "$$sub.cleaning_error",
-                                                                False,
-                                                            ]
-                                                        },
-                                                        {
-                                                            "$ne": [
-                                                                {
-                                                                    "$type": "$$sub.cleaning_error"
-                                                                },
-                                                                "missing",
-                                                            ]
-                                                        },
-                                                    ]
-                                                },
-                                            }
-                                        }
-                                    },
-                                ]
-                            },
-                            1,
-                            0,
-                        ]
-                    }
-                },
+                "error_amt": {"$sum": {"$cond": ["$has_errors", 1, 0]}},
             }
         },
     ]
-
-    return pipeline
 
 
 def getPreviousAttributeOrSubattributeValue(key_parts, record_doc):
