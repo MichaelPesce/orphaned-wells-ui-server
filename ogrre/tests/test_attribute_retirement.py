@@ -228,6 +228,76 @@ def test_reprocessing_keeps_retired_children_in_their_repeated_parent(
     assert util.preserve_retired_attributes(previous, merged) == merged
 
 
+@pytest.mark.parametrize("existing_occurrences", [0, 1, 2])
+def test_preservation_keeps_identical_retired_occurrences(existing_occurrences):
+    retired = {
+        "key": "material",
+        "value": "cement",
+        "deleted": True,
+        "subattributes": [{"key": "source", "value": "original"}],
+    }
+    previous = [copy.deepcopy(retired) for _ in range(2)]
+    replacement = [
+        {"key": "first", "value": 1},
+        *[copy.deepcopy(retired) for _ in range(existing_occurrences)],
+        {"key": "last", "value": 2},
+    ]
+    original_inputs = copy.deepcopy((previous, replacement))
+
+    merged = util.preserve_retired_attributes(previous, replacement)
+
+    assert merged == replacement + [retired] * (2 - existing_occurrences)
+    assert util.preserve_retired_attributes(previous, merged) == merged
+    assert (previous, replacement) == original_inputs
+
+
+def test_preservation_keeps_identical_retired_children_in_repeated_parents():
+    retired = {"key": "material", "value": "cement", "deleted": True}
+    previous = [
+        {"key": "parent", "subattributes": [copy.deepcopy(retired) for _ in range(2)]}
+        for _ in range(2)
+    ]
+    replacement = [
+        {"key": "parent", "subattributes": [{"key": "depth", "value": 1}]},
+        {"key": "parent", "subattributes": [copy.deepcopy(retired)]},
+    ]
+    original_inputs = copy.deepcopy((previous, replacement))
+
+    merged = util.preserve_retired_attributes(previous, replacement)
+
+    assert merged == [
+        {
+            "key": "parent",
+            "subattributes": [{"key": "depth", "value": 1}, retired, retired],
+        },
+        {"key": "parent", "subattributes": [retired, retired]},
+    ]
+    assert util.preserve_retired_attributes(previous, merged) == merged
+    assert (previous, replacement) == original_inputs
+
+
+def test_internal_record_replacement_preserves_identical_retired_occurrences(
+    retirement_manager,
+):
+    manager = retirement_manager
+    retired = {"key": "material", "value": "cement", "deleted": True}
+    record_id = insert_record(manager, [copy.deepcopy(retired) for _ in range(2)])
+    replacement = {"attributesList": [{"key": "depth", "value": 42}]}
+
+    for _ in range(2):
+        manager.updateRecord(
+            str(record_id),
+            replacement,
+            update_type="record",
+            forceUpdate=True,
+            user_info=USER,
+            calling_function="batch_process_document",
+        )
+        stored = manager.db.records.find_one({"_id": record_id})["attributesList"]
+        assert [field for field in stored if field.get("deleted")] == [retired, retired]
+        assert stored[0]["key"] == "depth" and stored[0]["value"] == 42
+
+
 def test_import_preserves_deleted_marker(retirement_manager):
     result = retirement_manager._normalizeImportedAttribute(
         {

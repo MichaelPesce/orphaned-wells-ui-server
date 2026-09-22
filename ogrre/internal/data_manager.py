@@ -2802,7 +2802,9 @@ class DataManager:
             raise schema_rules.SchemaError("Record group not found.", 404)
         schema = self.resolveRecordGroupSchema(group, user)
         if returnNameOnly:
-            return (schema or {}).get("name")
+            if schema is None:
+                return group.get("documentType") or group.get("name")
+            return schema.get("name")
         if schema is None:
             return None, None, []
         return (

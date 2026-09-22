@@ -1,4 +1,5 @@
 import copy
+import csv
 import io
 import json
 from unittest.mock import Mock
@@ -140,6 +141,53 @@ def test_detach_preserves_records_and_suppresses_legacy_fallback(admin):
     assert stored[1]["deleted"]
     with pytest.raises(SchemaError):
         admin.getRecordGroupProcessingConfig(GROUP, USER)
+
+
+@pytest.mark.parametrize("database_mode", [False, True])
+@pytest.mark.parametrize(
+    "document_type, expected_name",
+    [("Imported wells", "Imported wells"), (None, "Group")],
+)
+def test_schema_less_csv_export_preserves_all_group_records(
+    admin, monkeypatch, database_mode, document_type, expected_name
+):
+    from ogrre.internal import data_manager
+
+    monkeypatch.setattr(data_manager, "USE_DB_PROCESSORS", database_mode)
+    admin.db.record_groups.update_one(
+        {"_id": ObjectId(GROUP)},
+        {"$set": {"schema_id": None, "documentType": document_type}},
+    )
+    records = [
+        {
+            "_id": ObjectId(),
+            "record_group_id": GROUP,
+            "filename": f"well-{index}.json",
+            "attributesList": [{"key": "depth", "value": index}],
+        }
+        for index in range(3)
+    ]
+
+    grouped = admin.organizeRecordsByDocumentType(records)
+
+    assert grouped == {expected_name: records}
+    assert admin.getProcessorByRecordGroupID(GROUP, user=USER) == (None, None, [])
+    path = admin.downloadRecords(
+        grouped[expected_name], "csv", USER, GROUP, "project", keep_all_columns=True
+    )
+    with open(path, newline="") as exported:
+        rows = list(csv.DictReader(exported))
+    assert [row["file"] for row in rows] == [record["filename"] for record in records]
+    assert [row["depth"] for row in rows] == ["0", "1", "2"]
+
+
+def test_attached_schema_export_name_uses_schema_name(admin):
+    admin.db.record_groups.update_one({}, {"$set": {"documentType": "Group type"}})
+
+    assert (
+        admin.getProcessorByRecordGroupID(GROUP, returnNameOnly=True, user=USER)
+        == PROCESSOR["name"]
+    )
 
 
 def test_repo_mode_ignores_mongo_and_embedded_fields(admin, monkeypatch):

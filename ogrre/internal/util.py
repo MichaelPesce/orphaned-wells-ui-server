@@ -230,9 +230,13 @@ def active_records_pipeline(filter_by):
 def preserve_retired_attributes(previous, replacement):
     """Keep retired values through reprocessing and full-list internal writes."""
     result = copy.deepcopy(replacement or [])
+    # Match each original replacement occurrence once; appended entries cannot match.
+    unmatched_retired = [item for item in result if item.get("deleted")]
     for index, old in enumerate(previous or []):
         if old.get("deleted"):
-            if old not in result:
+            try:
+                unmatched_retired.remove(old)
+            except ValueError:
                 result.append(copy.deepcopy(old))
             continue
         retired_children = preserve_retired_attributes(old.get("subattributes"), [])
