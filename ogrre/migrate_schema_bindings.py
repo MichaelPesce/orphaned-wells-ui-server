@@ -1,4 +1,4 @@
-"""Preview legacy Mongo schema bindings; --apply writes only unambiguous/resolved changes."""
+"""Preview legacy Mongo schema bindings; --apply asks for confirmation before writing."""
 
 import argparse
 import copy
@@ -6,10 +6,12 @@ import hashlib
 import json
 import os
 import time
+from pathlib import Path
 
 from bson import ObjectId
 
 from ogrre.internal import schema_validation as rules
+from ogrre.migrate_schema_permissions import connection_label
 
 
 def _fields(attributes):
@@ -18,7 +20,19 @@ def _fields(attributes):
     return sorted(fields, key=lambda field: field["name"])
 
 
-def migrate_schema_bindings(db, apply=False, resolutions=None):
+def _binding_state(db):
+    """Capture schema contents too: IDs alone cannot detect a stale approval."""
+    return {
+        name: {str(item["_id"]): item for item in db[name].find({})}
+        for name in ("record_groups", "processors")
+    }
+
+
+def migrate_schema_bindings(db, apply=False, resolutions=None, expected_state=None):
+    if expected_state is not None and _binding_state(db) != expected_state:
+        raise RuntimeError(
+            "Record groups or schemas changed since the approved preview; preview again."
+        )
     resolutions = resolutions or {}
     if not isinstance(resolutions, dict):
         raise ValueError(
@@ -196,30 +210,103 @@ def migrate_schema_bindings(db, apply=False, resolutions=None):
     return report
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--env",
+        type=Path,
+        metavar="PATH",
+        help="Load this dotenv file instead of discovering .env; file values override existing environment variables.",
+    )
     parser.add_argument(
         "--resolutions",
         help="JSON file mapping group IDs to schema IDs, null, or 'embedded'.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     from dotenv import load_dotenv
 
-    load_dotenv()
-    from ogrre.internal.mongodb_connection import connectToDatabase
+    if args.env is not None:
+        env_path = args.env.expanduser().resolve()
+        if not env_path.is_file():
+            parser.error("--env must name an existing file.")
+        try:
+            loaded = load_dotenv(env_path, override=True)
+        except (OSError, UnicodeError):
+            parser.error("Unable to read the --env file as UTF-8 text.")
+        if not loaded:
+            parser.error("The --env file did not load any environment values.")
+        print(f"Environment file: {env_path}")
+    else:
+        load_dotenv()
 
     if os.getenv("USE_DB_PROCESSORS", "false").lower() not in ("1", "true", "yes"):
         parser.error("Enable USE_DB_PROCESSORS before migrating Mongo schema bindings.")
     resolutions = None
     if args.resolutions:
-        with open(args.resolutions) as source:
-            resolutions = json.load(source)
-    report = migrate_schema_bindings(connectToDatabase(), args.apply, resolutions)
+        try:
+            with open(args.resolutions, encoding="utf-8") as source:
+                resolutions = json.load(source)
+        except (OSError, UnicodeError, ValueError):
+            parser.error("--resolutions must name a readable JSON file.")
+        if not isinstance(resolutions, dict):
+            parser.error(
+                "Resolutions must map group IDs to schema IDs, null, or 'embedded'."
+            )
+    # Connection settings are captured on import, after loading the selected file.
+    from ogrre.internal import mongodb_connection
+
+    print("Target database:")
+    print(
+        json.dumps(
+            {
+                "connection": connection_label(mongodb_connection.DB_CONNECTION),
+                "database": mongodb_connection.DB_NAME,
+                "configured_collaborator": os.getenv("COLLABORATOR") or None,
+            },
+            indent=2,
+        )
+    )
+    print("Scope: all record groups in this database; collaborator is informational.")
+    db = mongodb_connection.connectToDatabase()
+    state = _binding_state(db) if args.apply else None
+    report = migrate_schema_bindings(db, resolutions=resolutions)
+    print("Proposed binding changes:")
     print(json.dumps(report, indent=2, default=str))
+    if not report["changes"]:
+        print(
+            "No applicable changes. Resolve the reported conflicts."
+            if report["conflicts"]
+            else "No changes needed."
+        )
+        return int(bool(report["conflicts"]))
+    if not args.apply:
+        print("Preview only. Run with --apply to review and confirm these changes.")
+        return int(bool(report["conflicts"]))
     if report["conflicts"]:
-        raise SystemExit(1)
+        print(
+            "Only the listed changes will be applied; unresolved groups will remain unchanged."
+        )
+    try:
+        answer = input(
+            f"Apply these changes to {len(report['changes'])} record group(s) in database {json.dumps(db.name)}? [y/N]: "
+        )
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    if answer.strip().lower() != "y":
+        print("\nCancelled. No changes were applied.")
+        return 1
+    try:
+        applied = migrate_schema_bindings(
+            db, apply=True, resolutions=resolutions, expected_state=state
+        )
+    except RuntimeError as error:
+        print(f"Migration stopped: {error}")
+        return 1
+    print("Migration result:")
+    print(json.dumps(applied, indent=2, default=str))
+    return int(bool(applied["conflicts"]))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

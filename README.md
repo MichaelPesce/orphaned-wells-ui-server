@@ -190,13 +190,28 @@ preview without writing:
 python -m ogrre.migrate_schema_bindings
 ```
 
+Use `--env=.env.isgs` to select a dotenv file explicitly (relative to the
+current directory). Its values override existing environment variables; without
+the flag, normal `.env` discovery is unchanged. The command prints the Mongo
+hosts without credentials, the database name, and the configured collaborator.
+The scope is all record groups in that database; collaborator is informational.
+
 The preview reports unique processor-ID matches, embedded schemas to create,
 schema-less groups, and conflicts. Missing or duplicate processor matches,
 divergent embedded fields, and invalid existing references require an explicit
 choice. Creator metadata for converted embedded schemas comes from the group
 only when known. Old processor IDs remain available for repo-mode operation.
 
-Apply unambiguous changes with `--apply`. To resolve conflicts, pass
+Apply unambiguous changes with `--apply`. It always displays the preview first
+and requires `y` at the confirmation prompt before writing. Any other answer,
+EOF, or Ctrl+C cancels. If groups or schemas change while you review the preview,
+the apply stops and requires a fresh preview. For example:
+
+```sh
+python -m ogrre.migrate_schema_bindings --env=.env.isgs --apply
+```
+
+To resolve conflicts, pass
 `--resolutions path/to/resolutions.json` to preview, then to apply. The JSON
 maps record-group IDs to an existing schema ID, `"embedded"` to preserve their
 embedded definition as a catalog entry, or `null` to detach them:
