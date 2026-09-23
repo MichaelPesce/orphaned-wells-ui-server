@@ -343,7 +343,7 @@ class DataManager:
     def _schemaDocument(self, schema_id=None, name=None):
         if schema_id is not None:
             if not isinstance(schema_id, str) or not ObjectId.is_valid(schema_id):
-                raise schema_rules.SchemaError("A valid schema_id is required.")
+                raise schema_rules.SchemaLookupError("A valid schema_id is required.")
             return self._findUniqueProcessor({"_id": ObjectId(schema_id)})
         if not isinstance(name, str) or not name:
             raise schema_rules.SchemaError("A schema identifier is required.")
@@ -365,7 +365,19 @@ class DataManager:
             or definition.get("Processor Name"),
         }
 
-    def resolveRecordGroupSchema(self, group, user=None):
+    def resolveRecordGroupSchema(self, group, user=None, *, strict=False):
+        """Existing data remains usable when its stored schema cannot be resolved."""
+        try:
+            return self._resolveRecordGroupSchema(group, user)
+        except schema_rules.SchemaLookupError as error:
+            if strict:
+                raise
+            _log.warning(
+                "Record group %s is using no schema: %s", group.get("_id"), error
+            )
+            return None
+
+    def _resolveRecordGroupSchema(self, group, user=None):
         """Resolve one active source. An explicit null binding never uses legacy fallback."""
         if USE_DB_PROCESSORS:
             if "schema_id" in group:
@@ -379,14 +391,14 @@ class DataManager:
                     {"processorId": group["processorId"]}, required=False
                 )
                 if schema is None:
-                    raise schema_rules.SchemaError(
+                    raise schema_rules.SchemaLookupError(
                         "The record group's schema is missing. Select a schema or detach the group.",
                         409,
                     )
                 return schema
             if group.get("attributes"):
-                raise schema_rules.SchemaError(
-                    "This record group has a legacy embedded schema. Migrate its schema binding before using it.",
+                raise schema_rules.SchemaLookupError(
+                    "This record group has a legacy embedded schema. Migrate its schema binding to use the schema.",
                     409,
                 )
             return None
@@ -395,7 +407,7 @@ class DataManager:
             return None
         schema = self.getProcessorById(processor_id, user)
         if schema is None:
-            raise schema_rules.SchemaError(
+            raise schema_rules.SchemaLookupError(
                 "The configured processor is missing from the installed package.", 409
             )
         return self._canonicalRepoProcessor(schema)
@@ -404,7 +416,7 @@ class DataManager:
         group = self.db.record_groups.find_one({"_id": ObjectId(rg_id)})
         if group is None:
             raise schema_rules.SchemaError("Record group not found.", 404)
-        schema = self.resolveRecordGroupSchema(group, user)
+        schema = self.resolveRecordGroupSchema(group, user, strict=True)
         if not schema or not all(
             isinstance(schema.get(key), str) and schema[key].strip()
             for key in ("processorId", "modelId")
@@ -431,7 +443,7 @@ class DataManager:
         result = dict(group)
         result["schema_source"] = "database" if USE_DB_PROCESSORS else "repo"
         try:
-            schema = self.resolveRecordGroupSchema(group, user)
+            schema = self.resolveRecordGroupSchema(group, user, strict=True)
             result.update(
                 has_schema=schema is not None
                 and (USE_DB_PROCESSORS or "attributes" in schema),
@@ -445,8 +457,14 @@ class DataManager:
                 else None,
                 schema_error=None,
             )
-        except schema_rules.SchemaError as error:
-            result.update(has_schema=False, can_process=False, schema_error=str(error))
+        except schema_rules.SchemaLookupError as error:
+            result.update(
+                has_schema=False,
+                can_process=False,
+                schema_name=None,
+                active_schema_id=None,
+                schema_error=str(error),
+            )
         return result
 
     def _normalizeCollaborator(self, collaborator):
@@ -999,13 +1017,13 @@ class DataManager:
     def _findUniqueProcessor(self, query, required=True):
         matches = list(self.db.processors.find(query).limit(2))
         if len(matches) > 1:
-            raise schema_rules.SchemaError(
+            raise schema_rules.SchemaLookupError(
                 "Multiple schemas match this identifier. Resolve the duplicate schemas first.",
                 409,
             )
         if not matches:
             if required:
-                raise schema_rules.SchemaError("Schema not found.", 404)
+                raise schema_rules.SchemaLookupError("Schema not found.", 404)
             return None
         return matches[0]
 
@@ -1138,7 +1156,7 @@ class DataManager:
         mode = request.get("mode", "generate")
         if not isinstance(mode, str) or mode not in {"generate", "extend"}:
             raise schema_rules.SchemaError("Choose generate or extend.")
-        schema = self.resolveRecordGroupSchema(group, user_info)
+        schema = self.resolveRecordGroupSchema(group, user_info, strict=True)
         if (mode == "generate" and schema is not None) or (
             mode == "extend" and schema is None
         ):
@@ -1245,7 +1263,9 @@ class DataManager:
                 409,
             )
         if preview["status"] == "preview":
-            current_schema = self.resolveRecordGroupSchema(group, user_info)
+            current_schema = self.resolveRecordGroupSchema(
+                group, user_info, strict=True
+            )
             if (
                 preview["expires_at"] < time.time()
                 or schema_import.group_snapshot(group) != preview["group_snapshot"]
@@ -1424,6 +1444,7 @@ class DataManager:
         return result
 
     def _saveProcessorChanges(self, processor, changes, user_info, action):
+        retirement_groups = []
         if "processorId" in changes and any(
             "schema_id" not in group for group in self._groupsUsingSchema(processor)
         ):
@@ -1444,10 +1465,9 @@ class DataManager:
                 for field in changes["attributes"]
                 if not field.get("deleted")
             }
+            affected = None
             if retired & active:
                 # Materialize old retirement before reintroducing its definition.
-                # Other edits retain the tombstones, so reads can reconcile the
-                # latest schema without walking every record during a field save.
                 affected = [
                     str(group["_id"]) for group in self._groupsUsingSchema(processor)
                 ]
@@ -1455,6 +1475,24 @@ class DataManager:
             changes["attributes"] = schema_rules.retain_retired_fields(
                 processor.get("attributes"), changes["attributes"]
             )
+            newly_retired = {
+                field["name"] for field in changes["attributes"] if field.get("deleted")
+            } - retired
+            if newly_retired:
+                # Finish retirement in the explicit schema operation, never on
+                # the next page read. The catalog guard protects the definition
+                # until the conditional record writes complete.
+                if affected is None:
+                    affected = [
+                        str(group["_id"])
+                        for group in self._groupsUsingSchema(processor)
+                    ]
+                self._ensureRecordGroupsReconciled(
+                    affected,
+                    user_info,
+                    schema_state=self._schemaState({**processor, **changes}),
+                )
+                retirement_groups = affected
         # Compare the original state so simultaneous edits cannot overwrite one another.
         result = self.db.processors.update_one(
             processor,
@@ -1470,6 +1508,10 @@ class DataManager:
             raise schema_rules.SchemaError(
                 "The schema changed. Reload it before saving again.", 409
             )
+        if retirement_groups:
+            # Catch records created against the old definition during the first
+            # pass. Already prepared records are excluded by the revision index.
+            self._ensureRecordGroupsReconciled(retirement_groups, user_info)
         previous = {key: processor.get(key) for key in changes}
         self.recordHistory(
             user=user_info.get("email"),
@@ -2028,7 +2070,6 @@ class DataManager:
         return record_groups
 
     def getRecordGroupProgress(self, rg_ids, user=None):
-        self._ensureRecordGroupsReconciled(rg_ids, user)
         pipeline = util.generate_record_group_stats(rg_ids)
         stats = {str(s["_id"]): s for s in self.db.records.aggregate(pipeline)}
         return stats
@@ -2122,7 +2163,6 @@ class DataManager:
         user=None,
     ):
         records = []
-        self._prepareRecordQuery(filter_by, user)
 
         pipeline = util.generate_mongo_records_pipeline(
             filter_by=filter_by,
@@ -2407,6 +2447,9 @@ class DataManager:
     def _recordSchema(self, group, user=None):
         """Resolve reconciliation rules; a missing definition never retires data."""
         processor = self.resolveRecordGroupSchema(group, user)
+        return self._schemaState(processor)
+
+    def _schemaState(self, processor):
         schema = (
             processor
             if processor and (USE_DB_PROCESSORS or "attributes" in processor)
@@ -2481,42 +2524,35 @@ class DataManager:
             "The record changed during schema reconciliation. Reload and retry.", 409
         )
 
-    def _ensureRecordGroupsReconciled(self, group_ids, user=None):
-        # Stream stale records in bounded batches. Reads wait for the current
-        # schema state before filtering/counting, including never-opened records.
+    def _ensureRecordGroupsReconciled(
+        self, group_ids, user=None, schema_state=None, *, limit=None
+    ):
+        # Explicit schema/cleaning mutations only. Page reads must never call this.
+        # Conditional writes preserve concurrent edits; cursor batches bound memory.
         group_ids = list(dict.fromkeys(group_ids))
         for group in self.db.record_groups.find(
             {"_id": {"$in": [ObjectId(value) for value in group_ids]}}
         ):
-            schema_state = self._recordSchema(group, user)
+            original_state = self._recordSchema(group, user)
+            target_state = schema_state or original_state
             query = {
                 "record_group_id": str(group["_id"]),
-                "attribute_schema_revision": {"$ne": schema_state[2]},
+                "attribute_schema_revision": {"$ne": target_state[2]},
             }
-            for record in self.db.records.find(query).batch_size(100):
-                self._reconcileRecord(record, schema_state, user)
+            records = self.db.records.find(query).batch_size(100)
+            if limit is not None:
+                records = records.limit(limit)
+            for record in records:
+                self._reconcileRecord(record, target_state, user)
             current_group = self.db.record_groups.find_one({"_id": group["_id"]})
             if (
                 current_group is None
-                or self._recordSchema(current_group, user)[2] != schema_state[2]
+                or self._recordSchema(current_group, user)[2] != original_state[2]
             ):
                 raise schema_rules.SchemaError(
                     "The schema changed while preparing records. Retry the request.",
                     409,
                 )
-
-    def _prepareRecordQuery(self, filter_by, user=None):
-        scope = filter_by.get("record_group_id")
-        if isinstance(scope, str):
-            group_ids = [scope]
-        elif isinstance(scope, dict) and "$in" in scope:
-            group_ids = scope["$in"]
-        else:
-            group_ids = [
-                str(group["_id"])
-                for group in self.db.record_groups.find({}, {"_id": 1})
-            ]
-        self._ensureRecordGroupsReconciled(group_ids, user)
 
     def getRecordGroupSchemaAttributes(self, rg_id=None, user=None, rg_document=None):
         group = rg_document
@@ -2539,7 +2575,6 @@ class DataManager:
         if not record_group_ids:
             return []
 
-        self._ensureRecordGroupsReconciled(record_group_ids, user)
         cursor = self.db.records.find(
             {"record_group_id": {"$in": record_group_ids}},
             {"attributesList": 1},
@@ -2715,11 +2750,6 @@ class DataManager:
         ## Get Record index, next id, and previous id
         self.getRecordIndexes(document, filterBy, tuple(sortBy), user_info)
 
-        # Persist the exact layout before returning indexes that the editor can use.
-        document = self._reconcileRecord(
-            document, self._recordSchema(rg, user_info), user_info
-        )
-
         return document, not attained_lock
 
     def getRecordGroupIdsByGroup(self, location, group_id):
@@ -2767,7 +2797,6 @@ class DataManager:
 
     @time_it
     def getRecordIndexes(self, document, filterBy, sortBy, user=None):
-        self._prepareRecordQuery(filterBy, user)
         target_id = (
             ObjectId(document["_id"])
             if not isinstance(document["_id"], ObjectId)
@@ -3551,7 +3580,7 @@ class DataManager:
                     schema = self._schemaDocument(rg_info["schema_id"])
                     rg_info["schema_id"] = str(schema["_id"])
             elif rg_info.get("processorId"):
-                schema = self.resolveRecordGroupSchema(rg_info, user_info)
+                schema = self.resolveRecordGroupSchema(rg_info, user_info, strict=True)
                 rg_info["schema_id"] = str(schema["_id"])
             elif rg_info.get("attributes"):
                 schema = self.createSchema(
@@ -3573,7 +3602,7 @@ class DataManager:
                 raise schema_rules.SchemaError(
                     "Mongo schemas are inactive in repo mode.", 409
                 )
-            self.resolveRecordGroupSchema(rg_info, user_info)
+            self.resolveRecordGroupSchema(rg_info, user_info, strict=True)
 
         ## add user and timestamp to record group
         rg_info["creator"] = user_info
@@ -3600,6 +3629,15 @@ class DataManager:
 
     def createRecord(self, record, user_info={}):
         user = user_info.get("email", None)
+        schema_state = None
+        if record.get("attributesList") and record.get("record_group_id"):
+            group = self.db.record_groups.find_one(
+                {"_id": ObjectId(record["record_group_id"])}
+            )
+            schema_state = self._recordSchema(group or {}, user_info)
+            record.update(
+                self._recordAttributeState(record["attributesList"], schema_state)
+            )
         ## add timestamp to project
         record["dateCreated"] = time.time()
 
@@ -3615,6 +3653,13 @@ class DataManager:
         ## add record to db collection
         db_response = self.db.records.insert_one(record)
         new_id = db_response.inserted_id
+        if schema_state is not None:
+            group = self.db.record_groups.find_one(
+                {"_id": ObjectId(record["record_group_id"])}
+            )
+            current_state = self._recordSchema(group or {}, user_info)
+            if current_state[2] != schema_state[2]:
+                self._reconcileRecord(record, current_state, user_info)
         self.recordHistory("createRecord", user, record_id=str(new_id))
         return str(new_id)
 
@@ -4524,7 +4569,7 @@ class DataManager:
             )
         elif "processorId" in new_data:
             self.resolveRecordGroupSchema(
-                {"processorId": new_data["processorId"]}, user_info
+                {"processorId": new_data["processorId"]}, user_info, strict=True
             )
         changes = {
             key: value
@@ -4536,11 +4581,16 @@ class DataManager:
         if binding_change:
             # Missing/ambiguous legacy bindings must still be repairable or detachable.
             try:
-                self.resolveRecordGroupSchema(current, user_info)
-            except schema_rules.SchemaError:
+                self.resolveRecordGroupSchema(current, user_info, strict=True)
+            except schema_rules.SchemaLookupError:
                 pass
             else:
                 self._ensureRecordGroupsReconciled([rg_id], user_info)
+            self._ensureRecordGroupsReconciled(
+                [rg_id],
+                user_info,
+                schema_state=self._recordSchema({**current, **changes}, user_info),
+            )
         query = {"_id": ObjectId(rg_id)}
         for key in set(changes) | (
             {"schema_id", "processorId", "attributes"} if binding_change else set()
@@ -4551,6 +4601,8 @@ class DataManager:
             raise schema_rules.SchemaError(
                 "The record group changed. Reload before saving.", 409
             )
+        if binding_change:
+            self._ensureRecordGroupsReconciled([rg_id], user_info)
         self.recordHistory(
             "updateRecordGroup",
             user_info.get("email"),
@@ -5130,7 +5182,6 @@ class DataManager:
     def deleteRecordsByRecordGroup(self, rg_id, filter_by, user_info):
         query = dict(filter_by or {})
         query["record_group_id"] = rg_id
-        self._prepareRecordQuery(query, user_info)
         ids = [
             record["_id"]
             for record in self.db.records.aggregate(

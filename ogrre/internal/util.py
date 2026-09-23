@@ -79,12 +79,18 @@ def get_attribute_identifier(attribute, parent_identifier=None):
         if parent_attribute:
             return combine_attribute_identifier(parent_attribute, key)
 
-    return key
+    return combine_attribute_identifier(None, key)
 
 
 def normalize_record_attribute_tree(attributes):
-    if attributes is None:
+    if not isinstance(attributes, list):
         return []
+    attributes = [
+        attribute
+        for attribute in attributes
+        if isinstance(attribute, dict)
+        and (attribute.get("deleted") or isinstance(attribute.get("key"), str))
+    ]
 
     def normalize_attribute(
         attribute, top_level_attribute=None, parent_identifier=None
@@ -95,7 +101,17 @@ def normalize_record_attribute_tree(attributes):
         attribute_key = attribute.get("key")
         is_subattribute = top_level_attribute is not None
         attribute["isSubattribute"] = is_subattribute
-        attribute["subattributes"] = attribute.get("subattributes") or []
+        children = attribute.get("subattributes")
+        attribute["subattributes"] = (
+            [
+                child
+                for child in children
+                if isinstance(child, dict)
+                and (child.get("deleted") or isinstance(child.get("key"), str))
+            ]
+            if isinstance(children, list)
+            else []
+        )
 
         if is_subattribute:
             attribute["topLevelAttribute"] = top_level_attribute
@@ -124,10 +140,14 @@ def normalize_record_attribute_tree(attributes):
 
 
 def iter_attribute_tree(attributes, parent_identifier=None, include_deleted=False):
+    if not isinstance(attributes, list):
+        return
     for attribute in attributes or []:
         if not isinstance(attribute, dict) or (
             attribute.get("deleted") and not include_deleted
         ):
+            continue
+        if not isinstance(attribute.get("key"), str):
             continue
         attribute_identifier = get_attribute_identifier(attribute, parent_identifier)
         yield attribute, attribute_identifier
@@ -197,6 +217,8 @@ def time_it(func):
 def active_attributes(attributes):
     """A read/export copy. Never persist this filtered list as the stored record."""
     result = []
+    if not isinstance(attributes, list):
+        return result
     for attribute in attributes or []:
         if not isinstance(attribute, dict) or attribute.get("deleted"):
             continue
@@ -204,6 +226,40 @@ def active_attributes(attributes):
         item["subattributes"] = active_attributes(item.get("subattributes"))
         result.append(item)
     return result
+
+
+# These stored metadata fields do not depend on the visible attribute tree.
+# Unknown paths/expressions keep the conservative redact-before-filter path.
+RECORD_METADATA_FIELDS = {
+    "_id",
+    "record_group_id",
+    "dateCreated",
+    "name",
+    "filename",
+    "original_filename",
+    "record_number",
+    "api_number",
+    "status",
+    "review_status",
+    "has_errors",
+    "confidence_median",
+    "confidence_lowest",
+    "defective_categories",
+}
+
+
+def is_record_metadata_filter(query):
+    if not isinstance(query, dict):
+        return False
+    for key, value in query.items():
+        if key in {"$and", "$or", "$nor"}:
+            if not isinstance(value, list) or not all(
+                is_record_metadata_filter(clause) for clause in value
+            ):
+                return False
+        elif key not in RECORD_METADATA_FIELDS:
+            return False
+    return True
 
 
 def active_records_pipeline(filter_by):
@@ -229,10 +285,15 @@ def active_records_pipeline(filter_by):
 
 def preserve_retired_attributes(previous, replacement):
     """Keep retired values through reprocessing and full-list internal writes."""
-    result = copy.deepcopy(replacement or [])
+    previous = previous if isinstance(previous, list) else []
+    result = copy.deepcopy(replacement if isinstance(replacement, list) else [])
     # Match each original replacement occurrence once; appended entries cannot match.
-    unmatched_retired = [item for item in result if item.get("deleted")]
+    unmatched_retired = [
+        item for item in result if isinstance(item, dict) and item.get("deleted")
+    ]
     for index, old in enumerate(previous or []):
+        if not isinstance(old, dict):
+            continue
         if old.get("deleted"):
             try:
                 unmatched_retired.remove(old)
@@ -244,13 +305,17 @@ def preserve_retired_attributes(previous, replacement):
             continue
         # Pair repeated parents by occurrence, not just key.
         occurrence = sum(
-            item.get("key") == old.get("key") and not item.get("deleted")
+            isinstance(item, dict)
+            and item.get("key") == old.get("key")
+            and not item.get("deleted")
             for item in (previous or [])[:index]
         )
         matches = [
             item
             for item in result
-            if item.get("key") == old.get("key") and not item.get("deleted")
+            if isinstance(item, dict)
+            and item.get("key") == old.get("key")
+            and not item.get("deleted")
         ]
         if occurrence < len(matches):
             target = matches[occurrence]
@@ -309,7 +374,9 @@ def sortRecordAttributes(
         )
 
     attributes = reconcile(attributes)
-    existing_keys = {item.get("key") for item in attributes}
+    existing_keys = {
+        item.get("key") for item in attributes if isinstance(item.get("key"), str)
+    }
     for field in fields if add_missing_attributes else []:
         name = field["name"]
         # Re-adding a definition never restores an old retired value or creates
@@ -863,7 +930,20 @@ def generate_mongo_records_pipeline(
         }
     exclude_attribute_fields : dict
     """
-    pipeline = active_records_pipeline(filter_by)
+    active_pipeline = active_records_pipeline(filter_by)
+    defer_redaction = (
+        primary_sort[0] in RECORD_METADATA_FIELDS
+        and secondary_sort is None
+        and not include_attribute_fields
+        and is_record_metadata_filter(filter_by)
+    )
+    if defer_redaction:
+        # Keep match/sort/window/pagination together so Mongo can use the sort
+        # index. Redacting first also makes $setWindowFields introduce a blocking
+        # sort. Exclude retired root documents before ranking/paging as before.
+        pipeline = [{"$match": {"$and": [filter_by, {"deleted": {"$ne": True}}]}}]
+    else:
+        pipeline = active_pipeline
 
     if include_attribute_fields:
         project = {"$project": {}}
@@ -887,7 +967,7 @@ def generate_mongo_records_pipeline(
                         ] = f"$$subattr.{subtattributesField}"
                     subattributesProject = {
                         "$map": {
-                            "input": {"$ifNull": ["$$attr.subattributes", []]},
+                            "input": mongo_attribute_array("$$attr.subattributes"),
                             "as": "subattr",
                             "in": subattributesList_include,
                         }
@@ -899,7 +979,7 @@ def generate_mongo_records_pipeline(
                     ] = f"$$attr.{attributesListField}"
             project["$project"]["attributesList"] = {
                 "$map": {
-                    "input": "$attributesList",
+                    "input": mongo_attribute_array("$attributesList"),
                     "as": "attr",
                     "in": attributesList_include,
                 }
@@ -931,7 +1011,9 @@ def generate_mongo_records_pipeline(
                                     "$map": {
                                         "input": {
                                             "$filter": {
-                                                "input": "$attributesList",
+                                                "input": mongo_attribute_array(
+                                                    "$attributesList"
+                                                ),
                                                 "as": "attr",
                                                 "cond": {
                                                     "$eq": ["$$attr.key", attr_key_name]
@@ -962,7 +1044,14 @@ def generate_mongo_records_pipeline(
                                 "vars": {
                                     "match": {
                                         "$regexFind": {
-                                            "input": {"$toString": "$targetValue"},
+                                            "input": {
+                                                "$convert": {
+                                                    "input": "$targetValue",
+                                                    "to": "string",
+                                                    "onError": "",
+                                                    "onNull": "",
+                                                }
+                                            },
                                             # "input": "$targetValue",
                                             "regex": "\\d+",
                                         }
@@ -971,7 +1060,14 @@ def generate_mongo_records_pipeline(
                                 "in": {
                                     "$cond": [
                                         {"$ne": ["$$match", None]},
-                                        {"$toInt": "$$match.match"},
+                                        {
+                                            "$convert": {
+                                                "input": "$$match.match",
+                                                "to": "double",
+                                                "onError": None,
+                                                "onNull": None,
+                                            }
+                                        },
                                         None,
                                     ]
                                 },
@@ -1062,6 +1158,9 @@ def generate_mongo_records_pipeline(
     if records_per_page is not None and page is not None:
         pipeline.append({"$skip": records_per_page * page})
         pipeline.append({"$limit": records_per_page})
+
+    if defer_redaction:
+        pipeline.append(active_pipeline[1])
 
     if forDownload:
         ## no need for sorting if we are downloading the records
@@ -1183,6 +1282,102 @@ def upload_to_gcs(
     )
 
 
+def mongo_attribute_array(value):
+    """Ignore malformed containers and entries in read-only Mongo expressions."""
+    return {
+        "$filter": {
+            "input": {"$cond": [{"$isArray": value}, value, []]},
+            "as": "entry",
+            "cond": {
+                "$and": [
+                    {"$eq": [{"$type": "$$entry"}, "object"]},
+                    {"$ne": [{"$ifNull": ["$$entry.deleted", False]}, True]},
+                ]
+            },
+        }
+    }
+
+
+def record_error_expression():
+    # Best-effort statistics, bounded to the same 12 levels as schema inference.
+    # Stop traversing once an error is found or there are no children left.
+    return {
+        "$let": {
+            "vars": {
+                "scan": {
+                    "$reduce": {
+                        "input": {"$range": [0, 12]},
+                        "initialValue": {
+                            "attributes": mongo_attribute_array("$attributesList"),
+                            "has_errors": False,
+                        },
+                        "in": {
+                            "$cond": [
+                                {
+                                    "$or": [
+                                        "$$value.has_errors",
+                                        {"$eq": [{"$size": "$$value.attributes"}, 0]},
+                                    ]
+                                },
+                                "$$value",
+                                {
+                                    "has_errors": {
+                                        "$anyElementTrue": [
+                                            {
+                                                "$map": {
+                                                    "input": "$$value.attributes",
+                                                    "as": "attribute",
+                                                    "in": {
+                                                        "$not": [
+                                                            {
+                                                                "$in": [
+                                                                    {
+                                                                        "$ifNull": [
+                                                                            "$$attribute.cleaning_error",
+                                                                            False,
+                                                                        ]
+                                                                    },
+                                                                    [
+                                                                        False,
+                                                                        None,
+                                                                        "",
+                                                                        0,
+                                                                        [],
+                                                                        {},
+                                                                    ],
+                                                                ]
+                                                            }
+                                                        ]
+                                                    },
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "attributes": {
+                                        "$reduce": {
+                                            "input": "$$value.attributes",
+                                            "initialValue": [],
+                                            "in": {
+                                                "$concatArrays": [
+                                                    "$$value",
+                                                    mongo_attribute_array(
+                                                        "$$this.subattributes"
+                                                    ),
+                                                ]
+                                            },
+                                        }
+                                    },
+                                },
+                            ]
+                        },
+                    }
+                }
+            },
+            "in": "$$scan.has_errors",
+        }
+    }
+
+
 def generate_record_group_stats(rg_ids):
     return [
         {"$match": {"record_group_id": {"$in": rg_ids}}},
@@ -1199,7 +1394,7 @@ def generate_record_group_stats(rg_ids):
                         ]
                     }
                 },
-                "error_amt": {"$sum": {"$cond": ["$has_errors", 1, 0]}},
+                "error_amt": {"$sum": {"$cond": [record_error_expression(), 1, 0]}},
             }
         },
     ]

@@ -321,6 +321,7 @@ def build_plan(package, catalog, groups, request, creator, now):
         + changes
         + late_bindings
         + [{"kind": "remove", "before": schema} for schema in removed]
+        + [{"kind": "reconcile", "group_id": key} for key in affected]
     )
     return {
         "source": package["source"],
