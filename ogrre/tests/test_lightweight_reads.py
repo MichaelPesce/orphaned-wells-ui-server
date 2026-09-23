@@ -169,7 +169,11 @@ def test_lists_statistics_navigation_and_columns_do_not_prepare_records(
 def test_opening_record_prepares_only_that_record_and_keeps_edit_indexes(
     query_manager, monkeypatch
 ):
+    from ogrre.internal import data_manager
+
     manager = query_manager
+    image_url = Mock(return_value="test-image")
+    monkeypatch.setattr(data_manager, "get_document_image", image_url)
     selected = insert_record(
         manager,
         [
@@ -193,6 +197,8 @@ def test_opening_record_prepares_only_that_record_and_keeps_edit_indexes(
     )
     record, locked = manager.fetchRecordData(str(selected), USER)
     assert not locked
+    image_url.assert_called_once_with(GROUP, str(selected), "test")
+    assert record["img_urls"] == ["test-image"]
     assert record["attributesList"][0]["subattributes"][0]["value"] == "keep"
     assert record["attribute_revision"]
     assert updates.call_count == 1
