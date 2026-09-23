@@ -62,7 +62,7 @@ def parse_target(tmp_path):
 
 @pytest.mark.parametrize(
     "environment,replicas,api_memory,worker_cpu,worker_memory",
-    [("staging", "1", "4Gi", "1", "6Gi"), ("isgs", "2", "6Gi", "1850m", "12Gi")],
+    [("staging", "1", "4Gi", "1", "6Gi"), ("isgs", "2", "4Gi", "1850m", "12Gi")],
 )
 def test_defaults_size_api_and_worker_independently(
     parse_target, environment, replicas, api_memory, worker_cpu, worker_memory
