@@ -482,12 +482,15 @@ def compute_total_size(local_file_paths, gcs_paths):
             _log.warning(f"Local file not found: {file_path}")
 
     # GCS blob sizes
-    for blob_name in gcs_paths or []:
-        size = storage_api.get_file_size(blob_name, bucket_name=BUCKET_NAME)
-        if size is not None:
-            total_size += size
-        else:
-            _log.warning(f"blob has no size info or was not found: {blob_name}")
+    gcs_sizes, missing_count = storage_api.get_file_sizes(
+        gcs_paths, bucket_name=BUCKET_NAME
+    )
+    total_size += sum(gcs_sizes.values())
+    if missing_count:
+        _log.warning(
+            "Skipped %s missing or unreadable blob(s) while computing download size",
+            missing_count,
+        )
 
     return total_size
 
@@ -607,14 +610,24 @@ def zip_files_stream(
             zs.write_iter(arcname, [pdf_bytes])
 
     gcs_paths = generate_gcs_paths(documents)
-    i = 0
-    not_found_amt = 0
-    for gcs_path in gcs_paths:
-        i += 1
-        # check if blob exists before writing to ZIP
-        if not storage_api.file_exists(gcs_path, bucket_name=BUCKET_NAME):
-            not_found_amt += 1
-            logg(f"image #{i} not found, skipping: {gcs_path}", level="info")
+    gcs_sizes, missing_count = storage_api.get_file_sizes(
+        gcs_paths.keys(), bucket_name=BUCKET_NAME
+    )
+    available_gcs_paths = set(gcs_sizes)
+    not_found_amt = missing_count
+    if missing_count:
+        logg(f"{missing_count} image(s) not found, skipping", level="info")
+
+    last_existing_index = max(
+        (
+            index
+            for index, gcs_path in enumerate(gcs_paths, start=1)
+            if gcs_path in available_gcs_paths
+        ),
+        default=0,
+    )
+    for i, gcs_path in enumerate(gcs_paths, start=1):
+        if gcs_path not in available_gcs_paths:
             continue
         arcname = gcs_paths[gcs_path]
 
@@ -636,7 +649,7 @@ def zip_files_stream(
             )
 
             # Add log file to download on last iteration
-            if i == len(gcs_paths):
+            if i == last_existing_index:
                 if log_to_file and os.path.isfile(log_to_file):
                     elapsed_total = time.time() - start_total
                     logg(
