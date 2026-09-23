@@ -36,9 +36,7 @@ def test_compute_total_size_logs_missing_blob_summary(caplog):
     with patch.object(
         storage_api, "get_file_sizes", return_value=({"a": 10, "b": 20}, 2)
     ):
-        total_size = util.compute_total_size(
-            [], ["a", "b", "missing-1", "missing-2"]
-        )
+        total_size = util.compute_total_size([], ["a", "b", "missing-1", "missing-2"])
 
     assert total_size == 30
     assert "Skipped 2 missing or unreadable blob(s)" in caplog.text
