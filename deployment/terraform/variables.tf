@@ -202,7 +202,7 @@ variable "gke_backends" {
   }))
 
   default = {
-    # Validate 4Gi in staging while collaborator APIs use 6Gi.
+    # Staging keeps a single API replica and smaller worker defaults.
     staging = {
       upload_bucket_name            = "uploaded_documents_v0"
       replicas                      = 1
