@@ -86,7 +86,9 @@ The full Compose stack also includes nginx/certbot for deployed-hostname setups.
 
 `USE_DB_PROCESSORS=false` uses the installed `ogrre_data_cleaning` package and
 shows its schemas read-only. `USE_DB_PROCESSORS=true` enables Mongo schema
-management. The Mongo catalog is shared by all teams in the database.
+management. The setting defaults to `false` when omitted; enable database mode
+explicitly when the deployment should use the Mongo catalog. The Mongo catalog
+is shared by all teams in the database.
 
 Existing projects, record groups, and records remain accessible when their
 schema cannot be resolved. Missing package processors (including after changing
@@ -702,8 +704,10 @@ requirements, with pip downloads cached between runs; it needs no MongoDB
 credentials or cloud credentials. The test job starts an isolated MongoDB 7
 service and sets its blocking-sort limit to 32 MiB. Query regressions verify
 index use, pagination/navigation, and retired-field filtering with disk spilling
-disabled. Frontend E2E testing starts only after both jobs pass, so backend
-failures are reported before starting the Docker/browser suite.
+disabled. Loading integration tests exercise projects, record groups, records,
+columns, and schemas with `USE_DB_PROCESSORS` both disabled and enabled. Frontend
+E2E testing starts only after both jobs pass, so backend failures are reported
+before starting the Docker/browser suite.
 
 To include these integration tests locally, set `OGRRE_TEST_MONGO_URI` to a
 disposable local MongoDB (for example `mongodb://127.0.0.1:27029`) before running

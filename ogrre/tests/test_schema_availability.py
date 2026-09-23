@@ -9,6 +9,7 @@ from bson import ObjectId
 
 from ogrre.internal import util
 from ogrre.internal.schema_validation import SchemaError
+from ogrre.tests.test_attribute_retirement import query_manager, retirement_manager
 from ogrre.tests.test_schema_management import (
     FIELD,
     GROUP,
@@ -17,6 +18,142 @@ from ogrre.tests.test_schema_management import (
     client,
     schema_manager,
 )
+
+
+@pytest.mark.parametrize("database_mode", [False, True])
+def test_complete_read_path_works_in_both_schema_modes(
+    query_manager, monkeypatch, database_mode
+):
+    from ogrre.internal import data_manager
+
+    manager = query_manager
+    manager.hasPermission.side_effect = None
+    manager.hasPermission.return_value = True
+    monkeypatch.setattr(data_manager, "USE_DB_PROCESSORS", database_mode)
+    monkeypatch.setattr(data_manager, "get_document_image", lambda *args: "test-image")
+
+    repo_processor = {
+        "Processor Name": PROCESSOR["name"],
+        "Processor ID": PROCESSOR["processorId"],
+        "Model ID": PROCESSOR["modelId"],
+        "displayName": PROCESSOR["displayName"],
+        "documentType": PROCESSOR["documentType"],
+        "attributes": copy.deepcopy(PROCESSOR["attributes"]),
+    }
+    monkeypatch.setattr(
+        data_manager.processor_api,
+        "get_processor_list",
+        lambda collaborator: [copy.deepcopy(repo_processor)],
+    )
+    monkeypatch.setattr(
+        data_manager.processor_api,
+        "get_processor_by_id",
+        lambda collaborator, processor_id: copy.deepcopy(repo_processor)
+        if collaborator == "isgs" and processor_id == PROCESSOR["processorId"]
+        else None,
+    )
+
+    schema_id = manager.db.processors.find_one()["_id"]
+    valid_group_id = GROUP
+    schema_less_group_id = str(ObjectId())
+    unavailable_group_id = str(ObjectId())
+    manager.db.record_groups.update_one(
+        {"_id": ObjectId(valid_group_id)},
+        {
+            "$set": {
+                "name": "Valid group",
+                "processorId": PROCESSOR["processorId"],
+                "schema_id": str(schema_id),
+            }
+        },
+    )
+    manager.db.record_groups.insert_many(
+        [
+            {
+                "_id": ObjectId(schema_less_group_id),
+                "name": "Schema-less group",
+                "processorId": None,
+                "schema_id": None,
+            },
+            {
+                "_id": ObjectId(unavailable_group_id),
+                "name": "Unavailable group",
+                "processorId": "missing-processor",
+                "schema_id": str(ObjectId()),
+            },
+        ]
+    )
+    group_ids = [valid_group_id, schema_less_group_id, unavailable_group_id]
+    project_id = manager.db.projects.insert_one(
+        {"name": "Loading project", "record_groups": group_ids}
+    ).inserted_id
+    manager.db.teams.insert_one(
+        {"name": "team", "project_list": [project_id], "users": [USER["email"]]}
+    )
+    monkeypatch.setattr(manager, "getUserProjectList", lambda *args: [project_id])
+    monkeypatch.setattr(manager, "getUserRecordGroups", lambda *args: group_ids)
+    monkeypatch.setattr(manager, "getDefaultTeamForUser", lambda *args: "team")
+    monkeypatch.setattr(
+        manager,
+        "getProjectFromRecordGroup",
+        lambda *args: manager.fetchProject(str(project_id)),
+    )
+
+    attribute_trees = [
+        [{"key": "depth", "value": 1}],
+        [None, {"key": "depth", "value": 2, "subattributes": [None]}],
+        [{"key": "depth", "value": 3}],
+    ]
+    record_ids = []
+    for index, (group_id, attributes) in enumerate(zip(group_ids, attribute_trees)):
+        record_ids.append(
+            manager.db.records.insert_one(
+                {
+                    "record_group_id": group_id,
+                    "name": f"record-{index}",
+                    "filename": f"record-{index}.json",
+                    "dateCreated": index + 1,
+                    "attributesList": attributes,
+                }
+            ).inserted_id
+        )
+
+    projects = manager.fetchProjects(USER)
+    assert [project["name"] for project in projects] == ["Loading project"]
+    project = manager.fetchRecordGroups(str(project_id), USER)
+    assert {group["_id"] for group in project["record_groups"]} == set(group_ids)
+
+    expected_schema = {
+        valid_group_id: True,
+        schema_less_group_id: False,
+        unavailable_group_id: False,
+    }
+    for group_id in group_ids:
+        _, group = manager.fetchRecordGroupData(group_id, USER)
+        assert group["schema_source"] == ("database" if database_mode else "repo")
+        assert group["has_schema"] is expected_schema[group_id]
+        rows, count = manager.fetchRecordsByRecordGroup(USER, group_id, filter_by={})
+        assert count == len(rows) == 1
+        columns = manager.fetchColumnData("record_group", group_id, USER)["columns"]
+        assert {"depth", "record_notes"} <= set(columns)
+
+    for fetch in (
+        lambda: manager.fetchRecordsByProject(USER, str(project_id), filter_by={}),
+        lambda: manager.fetchRecordsByTeam(USER, filter_by={}),
+    ):
+        rows, count = fetch()
+        assert count == len(rows) == 3
+
+    for record_id in record_ids:
+        record, locked = manager.fetchRecordData(str(record_id), USER)
+        assert not locked
+        assert record["record_group_id"] in group_ids
+        assert record["attributesList"][0]["key"] == "depth"
+
+    schema = manager.getSchema(USER)
+    assert schema["source"] == ("database" if database_mode else "repo")
+    assert schema["read_only"] is not database_mode
+    assert len(schema["processors"]) == 1
 
 
 @pytest.fixture(
