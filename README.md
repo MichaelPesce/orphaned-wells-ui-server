@@ -80,8 +80,6 @@ cd <orphaned-wells-ui-server-path>/deployment
 docker compose --env-file ../ogrre/.env up web
 ```
 
-The full Compose stack also includes nginx/certbot for deployed-hostname setups. If you run the full stack, `NGINX_ENV` in `ogrre/.env` must select an existing config directory under `deployment/nginx/`.
-
 ## Schema management
 
 `USE_DB_PROCESSORS=false` uses the installed `ogrre_data_cleaning` package and
@@ -676,11 +674,12 @@ external submission guarantee. Automatic Kubernetes retries stay disabled.
 GCS-source batches retain their existing manual recovery workflow.
 
 Single-file/ZIP uploads, record-image uploads, imports, rotation, and exports
-still execute work in API pods. Staging now targets 1 CPU / 4 GiB for its single
-API pod with two Uvicorn workers; its processing worker retains 1 CPU / 6 GiB.
-Production targets two API replicas at 1 CPU / 6 GiB each; its processing
-workers retain 1850m CPU / 12 GiB. Further API reductions depend on staging
-measurements establishing safe headroom.
+still execute work in API pods. Staging requests 500m CPU / 1 GiB memory for
+its single API pod with two Uvicorn workers, with limits of 1 CPU / 2 GiB; its
+processing worker retains 1 CPU / 6 GiB.
+Production targets two API replicas at 1 CPU / 4 GiB each; its processing
+workers retain 1850m CPU / 12 GiB. Further API reductions require measured
+headroom from staging and production rollout data.
 See the [resource rollout](deployment/kubernetes/README.md#staging-checks-before-reducing-api-resources)
 for validation, deployment, and rollback steps. API and worker sizing remain
 independent.
