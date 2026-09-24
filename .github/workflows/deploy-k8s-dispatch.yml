@@ -184,10 +184,10 @@ jobs:
           # Explicit Terraform target values take precedence over these defaults.
           if [ "$DEPLOY_ENV" = "staging" ]; then
             : "${replicas:=1}"
-            : "${cpu_request:=1}"
-            : "${memory_request:=4Gi}"
+            : "${cpu_request:=500m}"
+            : "${memory_request:=1Gi}"
             : "${cpu_limit:=1}"
-            : "${memory_limit:=4Gi}"
+            : "${memory_limit:=2Gi}"
           else
             : "${replicas:=2}"
             : "${cpu_request:=1}"
