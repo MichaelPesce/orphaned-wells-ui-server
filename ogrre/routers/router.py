@@ -2322,6 +2322,7 @@ async def download_records(
         # _log.info(f"returning streaming response")
         return StreamingResponse(z, media_type="application/zip", headers=headers)
     except Exception as e:
+        _log.exception("Failed to export records for %s %s", location, _id)
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 
@@ -2432,6 +2433,7 @@ async def download_project_records_by_document_types(
         headers = {"Content-Disposition": "attachment; filename=records.zip"}
         return StreamingResponse(z, media_type="application/zip", headers=headers)
     except Exception as e:
+        _log.exception("Failed to export records for project %s", project_id)
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 
