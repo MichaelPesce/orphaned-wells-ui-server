@@ -38,8 +38,11 @@ a newer one; comparing against the last applied inputs, rather than only the
 latest push diff, means a later backend-only commit still reconciles any pending
 infrastructure. Failed or rejected applies never release staging deployment.
 
-Collaborator workflows retain their existing branch-promotion behavior. Their
-shared deploy workflow checks the current `main` infrastructure revision before
+Collaborator workflows retain their existing branch-promotion behavior. PRs
+targeting collaborator branches do not run Terraform PR checks, and pushes or
+merges to those branches do not start a Terraform plan or apply. Infrastructure
+changes must reach `main` to be reconciled. Their shared deploy workflow checks
+the current `main` infrastructure revision before
 mutation. If it is pending or failed, deployment stops with a retry instruction;
 it does not silently fall back to the secret. Retry after the gated apply succeeds.
 No application version is automatically promoted to collaborator environments
@@ -139,10 +142,14 @@ for planning/applying instead of saving a short-lived token in the plan.
 
 ## Enable and verify
 
-1. With the flag disabled, first land the reusable `terraform-plan.yml` alone
-   on `main` through a bootstrap PR, then merge the full implementation. The
-   checks reference this workflow at `@main`, which must exist even when their
-   credentialed job is disabled. The reusable file has no automatic trigger.
+1. With the flag disabled, merge the full implementation into `main` through
+   one reviewed PR. The initial Deployment checks workflow may fail to load
+   because its trusted `terraform-plan.yml@main` reference does not exist yet,
+   even with the credentialed job disabled. Subsequent PRs can resolve it after
+   the merge. Satisfy existing approval/check requirements and verify the new
+   checks with a follow-up Terraform PR. A separate bootstrap PR containing only
+   the unchanged reusable workflow is needed only if required checks prevent
+   this first merge; see the [rollout checklist](ROLLOUT.md#2-review-merge-and-distribute-the-implementation).
 2. Propagate the updated reusable deployment workflow to every enabled
    collaborator branch **before** turning the flag on. Old branch workflows do
    not understand the readiness gate. Keep automatic collaborator promotion paused

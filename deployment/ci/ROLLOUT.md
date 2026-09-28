@@ -41,19 +41,29 @@ proceeding. Keep the existing deployment and target secrets intact.
 
 ## 2. Review, merge, and distribute the implementation
 
-First land **only** `.github/workflows/terraform-plan.yml` on upstream `main`
-through a small bootstrap PR. Copy it unchanged from the implementation branch.
-It has only a `workflow_call` trigger, so merging it alone does not run Terraform.
-The remaining PR checks call this trusted file at `@main`; that reference must
-exist even while the credentialed job is disabled. Do not work around the
-bootstrap ordering by trusting the PR branch's workflow for cloud credentials.
+Merge the full backend implementation through one reviewed PR into upstream
+`main`, keeping `ENABLE_TERRAFORM_CI=false`. Include the remaining backend
+documentation changes in the same PR. The Terraform plan/apply jobs stay disabled;
+with the GKE flags paused in step 1, the merge also skips application deployment.
+If you choose to leave GKE deployment enabled, the merge deploys staging using
+the existing deployment key and `K8S_DEPLOY_TARGETS` fallback.
 
-Then commit the remaining backend documentation changes alongside the
-implementation, push the implementation branch, and open a new reviewed PR into
-backend `main`. The earlier merged PR from a branch with the same name does not
-include this implementation. Keep `ENABLE_TERRAFORM_CI=false` during both merges.
-Formatting, backend-free Terraform validation, and applicable manifest checks
-should pass on the full implementation PR; credentialed PR plans remain disabled.
+The first PR's new **Deployment checks** workflow may fail to load because it
+references `.github/workflows/terraform-plan.yml@main`, which does not exist until
+this merge. A disabled cloud-plan job does not remove that reference. Merging all
+files together resolves the dependency for subsequent PRs; use the local checks
+for this first PR and satisfy the repository's existing approval and required
+check rules. Do not count the new checks as passed until they have actually run.
+GitHub documents workflow reference resolution in
+[Reuse workflows](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow).
+
+If repository rules require the new checks to pass before this initial merge,
+land the unchanged `terraform-plan.yml` through a bootstrap PR first. Otherwise
+there is no need to split the implementation. Keep the trusted `@main` reference
+for cloud credentials. After setup, test the PR checks with a new change under
+`deployment/terraform/`; a root README-only change will not trigger them. The
+first plan/apply integration test can be dispatched manually in step 6 without
+another code change.
 
 Commit and submit the frontend documentation through its own reviewed PR.
 Both the manual and automated Terraform guides should ship together.
