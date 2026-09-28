@@ -15,11 +15,24 @@ For the ordered first rollout and live test commands, use the
 - `terraform-checks.yml` checks PR diffs against `main`. Terraform changes run
   formatting and backend-free validation. Kubernetes changes render and check
   the workload manifest, including its GKE resources, without cloud credentials.
-- `terraform-plan.yml` is a reusable workflow called at `@main`. Trusted
-  same-repository PRs receive a speculative cloud plan in the workflow summary.
-  Fork PRs and other untrusted PRs receive static checks only. To cloud-plan a
-  fork contribution, a maintainer first reviews it and opens a PR from a trusted
-  repository branch. Never run unreviewed PR code using `pull_request_target`.
+- `terraform-plan.yml` runs from upstream `main` after a successful **Deployment
+  checks** PR run (`workflow_run`). This includes fork PRs. It independently
+  identifies the open PR and checks the complete diff using upstream helpers.
+  Terraform input/helper changes queue a job behind the `terraform-plan`
+  Environment. Kubernetes-only, application-only, and Terraform documentation
+  changes do not request a cloud-plan approval.
+- The plan job's name and preparation summary identify the PR and exact commit.
+  A required reviewer can approve their own plan run when **Prevent self-review**
+  is unchecked. Approval authorizes the reviewed configuration to use cloud/state
+  read credentials; it does not approve merging or applying. After approval, the
+  job rechecks that the PR is still open and its head/base commits are unchanged,
+  then checks out that exact head SHA. Only then does it authenticate through WIF.
+  PR plans are informational and are never uploaded for apply.
+- The PR commit's **Terraform PR plan** status links to the upstream run and its
+  summary. A failed, rejected, cancelled, or outdated plan cannot report success.
+  The plan uses the PR head configuration; update the fork branch from `main`
+  before reviewing a plan if the branch is behind. Merging always generates the
+  authoritative plan from `main` when reconciliation is needed.
 - `deploy-k8s-staging.yml` coordinates every `main` push and manual dispatch.
   It builds the commit's image and calls `terraform-apply.yml`. The latter checks
   the last successful apply against the tracked Terraform inputs and the remote
@@ -76,15 +89,22 @@ just because shared infrastructure changed.
    administration, service activation, and bucket administration. These are
    operator permissions, not additional permissions for the CI plan account.
 
-4. Create the GitHub Environment **`terraform-apply`** before enabling CI:
-   - Add the people/team authorized to approve infrastructure changes as required reviewers.
-   - Restrict deployment branches to the **branch** `main`; do not allow a tag named `main`.
-   - Disable administrator bypass. Enable prevention of self-review when the reviewer team permits it.
-   - Protect `main` with reviewed changes, especially for `.github/` and `deployment/`.
+4. Create both GitHub Environments before enabling CI:
+
+   | Environment | Required reviewers | Prevent self-review |
+   | --- | --- | --- |
+   | `terraform-plan` | You and/or your infrastructure maintainer team | **Unchecked**, so an authorized PR author can approve planning |
+   | `terraform-apply` | People/team authorized to approve infrastructure changes | Independent apply policy; if checked, another reviewer must approve runs you initiate |
+
+   For both, restrict deployment branches to the **branch** `main` and disable
+   administrator bypass. The fork plan's upstream `workflow_run` also runs on
+   `main`; do not allow fork branches or tags to request this identity.
+   Keep the normal PR approval requirement on `main`. Environment self-approval
+   does not allow an author to approve their own PR for merging.
 
    Merely referencing the Environment in YAML creates it without approval rules.
-   CI checks for required reviewers before planning and again before apply
-   authentication, and fails if they are absent. Check the branch and bypass
+   CI checks for required reviewers before queueing a PR plan and again before
+   its authentication, as well as before main plan/apply. Check the branch and bypass
    settings explicitly; the Environment is the human approval boundary.
 
 5. Add the repository variables printed by bootstrap:
@@ -106,12 +126,16 @@ just because shared infrastructure changed.
 
 ## Identities and artifact permissions
 
-The WIF provider checks immutable repository/owner IDs and `job_workflow_ref`.
-Only the trusted reusable PR-plan workflow from `main` can obtain the PR plan
-identity, and that workflow checks the PR origin and author association before
-starting its credentialed job. A PR's editable caller cannot replace those checks.
+The WIF provider checks immutable repository/owner IDs and workflow claims.
+The PR plan identity requires `workflow_ref` for upstream `terraform-plan.yml`
+on `main`, event `workflow_run`, and subject Environment `terraform-plan`.
+The preparation and status-reporting jobs cannot authenticate to GCP. The plan
+job uses upstream helpers and a separately checked-out approved PR revision;
+it never restores PR artifacts or caches. Ordinary fork `pull_request` runs
+cannot obtain this identity, even if they modify their workflow permissions.
 Only the main reconciliation workflow's environment-gated job can impersonate
-the apply account.
+the apply account, using its separate `job_workflow_ref` and Environment claims.
+Rerun bootstrap if the previous same-repository-only WIF configuration was installed.
 
 - **Plan account:** Compute, GKE, DNS, project-service and bucket-metadata reads;
   state object reads; creation/deletion of this workspace's `.tflock` object.
@@ -143,25 +167,24 @@ for planning/applying instead of saving a short-lived token in the plan.
 ## Enable and verify
 
 1. With the flag disabled, merge the full implementation into `main` through
-   one reviewed PR. The initial Deployment checks workflow may fail to load
-   because its trusted `terraform-plan.yml@main` reference does not exist yet,
-   even with the credentialed job disabled. Subsequent PRs can resolve it after
-   the merge. Satisfy existing approval/check requirements and verify the new
-   checks with a follow-up Terraform PR. A separate bootstrap PR containing only
-   the unchanged reusable workflow is needed only if required checks prevent
-   this first merge; see the [rollout checklist](ROLLOUT.md#2-review-merge-and-distribute-the-implementation).
+   one reviewed PR. Static checks no longer call a reusable PR-plan workflow,
+   so there is no two-PR bootstrap dependency. The automatic fork-plan workflow
+   becomes available after it lands on upstream `main`; verify it with a new
+   fork PR after completing setup.
 2. Propagate the updated reusable deployment workflow to every enabled
    collaborator branch **before** turning the flag on. Old branch workflows do
    not understand the readiness gate. Keep automatic collaborator promotion paused
    during this rollout using their existing deployment enablement variables.
-3. Complete bootstrap, variable setup, and Environment protection. Preserve the
+3. Complete bootstrap, variable setup, and both Environments' protection. Preserve the
    existing secrets. Allow time for GCP IAM propagation.
 4. Set `ENABLE_TERRAFORM_CI=true` and manually dispatch **Deploy Staging Server to
    GKE** on `main`. The initial absent readiness record requires a reviewed apply,
    even if the plan has no resource changes. Inspect the complete plan before approval.
-5. Verify the apply job waits for review, the apply and target read succeed, and
-   staging rolls out the expected image. Test a Terraform PR and a Kubernetes-only
-   PR, a rejected apply, a backend-only follow-up, and a collaborator deployment.
+5. Verify apply, live target reads, and staging rollout. Test a Terraform PR from
+   your normal fork: static checks pass, the upstream plan queues, you approve
+   `terraform-plan`, and the PR status links to the plan. Test a newer commit
+   while approval waits, a rejected plan, a Kubernetes-only PR, a rejected apply,
+   a backend-only follow-up, and a collaborator deployment.
 6. Restore collaborator promotion settings. Delete `K8S_DEPLOY_TARGETS` only after
    all active branches use the enabled path and the rollout is confirmed. Keep
    `DEPLOYMENT_SERVICE_KEY_JSON`; deployment WIF migration is phase two.
@@ -170,9 +193,17 @@ The existing GKE enablement variables still control automatic application
 deployment. Infrastructure reconciliation is independently controlled by
 `ENABLE_TERRAFORM_CI`, even when automatic staging application deployment is off.
 Manual staging dispatch also reconciles infrastructure and always requires `main`.
+The PR plan status is only produced for Terraform-related PRs. Do not make it an
+unconditional required check for all PRs; application-only PRs will not produce it.
 
 ## Retry and recovery
 
+- **PR plan rejected, failed, stale, or cancelled:** rerun the PR's **Deployment
+  checks** workflow (all jobs) to queue a new upstream plan and approval. No PR
+  number or SHA needs to be entered. A new PR commit also runs checks and queues
+  a fresh approval. The PR must still be open and target `main`. If the base moved
+  during approval, update the fork from `main` and rerun checks. Existing queued
+  approvals cannot authorize the newer head/base revision.
 - **Apply rejected, failed, or interrupted:** no successful readiness record is
   published. A marker written just before mutation remains `applying` after
   failure, including failed forced applies of unchanged inputs. Rerun the entire
@@ -216,7 +247,8 @@ gh workflow list --repo "$OGRRE_REPO" --all --limit 100 --json id,path,state \
   > "$OGRRE_PAUSE_DIR/workflows.json"
 jq -r '.[] | select(.state == "active") |
   select((.path | test("/deploy-k8s-.*\\.yml$")) or
-         (.path == ".github/workflows/terraform-checks.yml")) | .id' \
+         (.path == ".github/workflows/terraform-checks.yml") or
+         (.path == ".github/workflows/terraform-plan.yml")) | .id' \
   "$OGRRE_PAUSE_DIR/workflows.json" > "$OGRRE_PAUSE_DIR/paused-ids.txt"
 while IFS= read -r workflow_id; do
   gh workflow disable "$workflow_id" --repo "$OGRRE_REPO" || break
@@ -273,8 +305,8 @@ is required in that mode.
 ## Local checks
 
 ```bash
-python -m pytest ogrre/tests/test_terraform_ci.py ogrre/tests/test_deployment_resources.py -q
-python -m py_compile deployment/ci/*.py ogrre/tests/test_terraform_ci.py ogrre/tests/test_deployment_resources.py
+python -m pytest ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_plan.py ogrre/tests/test_deployment_resources.py -q
+python -m py_compile deployment/ci/*.py ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_plan.py ogrre/tests/test_deployment_resources.py
 python deployment/ci/validate_manifest.py
 shellcheck deployment/ci/bootstrap_terraform_ci.sh
 actionlint .github/workflows/terraform-*.yml .github/workflows/deploy-k8s-*.yml

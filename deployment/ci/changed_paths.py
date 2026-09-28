@@ -6,9 +6,18 @@ import sys
 
 def classify(paths):
     terraform = any(
-        path.startswith(("deployment/terraform/", ".github/actions/setup-terraform/"))
+        (
+            path.startswith("deployment/terraform/")
+            and not path.endswith((".md", ".example"))
+        )
+        or path.startswith(".github/actions/setup-terraform/")
         or path.startswith(".github/workflows/terraform-")
-        or path in ("deployment/ci/terraform_ci.py", "deployment/ci/changed_paths.py")
+        or path
+        in (
+            "deployment/ci/terraform_ci.py",
+            "deployment/ci/terraform_pr_plan.py",
+            "deployment/ci/changed_paths.py",
+        )
         for path in paths
     )
     kubernetes = any(

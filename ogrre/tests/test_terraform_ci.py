@@ -33,6 +33,10 @@ manifest = load_script("validate_manifest")
         (["ogrre/routers/router.py"], (False, False)),
         (["deployment/kubernetes/backend.yaml"], (False, True)),
         (["deployment/terraform/.terraform.lock.hcl"], (True, False)),
+        (["deployment/terraform/.terraform-version"], (True, False)),
+        (["deployment/terraform/README.md"], (False, False)),
+        (["deployment/terraform/terraform.tfvars.example"], (False, False)),
+        (["deployment/ci/terraform_pr_plan.py"], (True, False)),
         (["deployment/terraform/modules/backend_vm/startup.sh"], (True, False)),
         (
             ["deployment/terraform/main.tf", "deployment/kubernetes/backend.yaml"],

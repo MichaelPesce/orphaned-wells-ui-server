@@ -48,14 +48,6 @@ jobs:
           terraform -chdir=deployment/terraform fmt -check -recursive
           terraform -chdir=deployment/terraform validate
 
-  cloud-plan:
-    needs: [changes, terraform]
-    if: needs.changes.outputs.terraform == 'true' && vars.ENABLE_TERRAFORM_CI == 'true'
-    permissions:
-      contents: read
-      id-token: write
-    uses: CATALOG-Historic-Records/orphaned-wells-ui-server/.github/workflows/terraform-plan.yml@main
-
   kubernetes:
     needs: changes
     if: needs.changes.outputs.kubernetes == 'true'

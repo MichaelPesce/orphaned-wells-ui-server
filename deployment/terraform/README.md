@@ -2,7 +2,7 @@
 
 This directory contains the Terraform configuration used to manage OGRRE backend infrastructure.
 
-For automated PR plans and approval-gated applies, follow
+For approval-gated fork PR plans and applies, follow
 [Terraform CI setup and rollout](../ci/README.md). When `ENABLE_TERRAFORM_CI=true`,
 merge infrastructure changes to `main` and approve the saved plan in GitHub.
 Updated backend workflows read deploy targets live from the shared workspace;

@@ -121,15 +121,15 @@ def assert_current():
         raise ValueError("Terraform inputs changed on main; run and approve a new plan")
 
 
-def approval():
-    endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/environments/terraform-apply"
+def approval(name="terraform-apply"):
+    endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/environments/{name}"
     environment = json.loads(run("gh", "api", endpoint))
     if not any(
         rule.get("type") == "required_reviewers" and rule.get("reviewers")
         for rule in environment.get("protection_rules", [])
     ):
         raise ValueError(
-            "Configure required reviewers on the terraform-apply Environment before enabling CI"
+            f"Configure required reviewers on the {name} Environment before enabling CI"
         )
 
 

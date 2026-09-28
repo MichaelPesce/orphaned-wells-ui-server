@@ -34,10 +34,10 @@ if ! gcloud iam workload-identity-pools describe "$POOL" --location=global --pro
   gcloud iam workload-identity-pools create "$POOL" --location=global --project="$PROJECT_ID" --display-name='OGRRE Terraform CI'
 fi
 
-# Claims identify trusted reusable workflow code, not a PR's editable caller.
+# Claims identify upstream workflow code and the appropriate approval environment.
 apply_workflow="$REPOSITORY/.github/workflows/terraform-apply.yml@refs/heads/main"
 plan_workflow="$REPOSITORY/.github/workflows/terraform-plan.yml@refs/heads/main"
-pipeline="('job_workflow_ref' in assertion && assertion.job_workflow_ref == '$apply_workflow' && assertion.ref == 'refs/heads/main' && assertion.event_name in ['push', 'workflow_dispatch']) ? (assertion.sub == 'repo:$REPOSITORY:environment:terraform-apply' ? 'apply' : 'main-plan') : (('job_workflow_ref' in assertion && assertion.job_workflow_ref == '$plan_workflow' && assertion.event_name == 'pull_request') ? 'pr-plan' : 'denied')"
+pipeline="('job_workflow_ref' in assertion && assertion.job_workflow_ref == '$apply_workflow' && assertion.ref == 'refs/heads/main' && assertion.event_name in ['push', 'workflow_dispatch']) ? (assertion.sub == 'repo:$REPOSITORY:environment:terraform-apply' ? 'apply' : 'main-plan') : ((assertion.workflow_ref == '$plan_workflow' && assertion.ref == 'refs/heads/main' && assertion.event_name == 'workflow_run' && assertion.sub == 'repo:$REPOSITORY:environment:terraform-plan') ? 'pr-plan' : 'denied')"
 condition="assertion.repository_id == '$repository_id' && assertion.repository_owner_id == '$owner_id' && attribute.pipeline != 'denied'"
 if gcloud iam workload-identity-pools providers describe "$PROVIDER" --workload-identity-pool="$POOL" --location=global --project="$PROJECT_ID" >/dev/null 2>&1; then
   provider_operation=update-oidc
@@ -116,6 +116,6 @@ TF_APPLY_SERVICE_ACCOUNT=$APPLY_ACCOUNT
 TF_WORKSPACE=$TF_WORKSPACE
 TF_CI_BUCKET=$TF_CI_BUCKET
 
-Create and protect the terraform-apply GitHub Environment before setting
+Create and protect the terraform-plan and terraform-apply GitHub Environments before setting
 ENABLE_TERRAFORM_CI=true. See deployment/ci/README.md for the rollout procedure.
 EOF
