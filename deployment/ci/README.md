@@ -6,6 +6,10 @@
 workflow reads `kubernetes_deploy_targets` from the existing remote workspace.
 `DEPLOYMENT_SERVICE_KEY_JSON` remains the deployment credential in phase one.
 
+For the ordered first rollout and live test commands, use the
+[rollout checklist](ROLLOUT.md). Manual operations are documented in the
+[Terraform guide](../terraform/README.md#terraform-commands) and remain supported.
+
 ## Workflow sequence
 
 - `terraform-checks.yml` checks PR diffs against `main`. Terraform changes run
@@ -49,7 +53,8 @@ just because shared infrastructure changed.
 2. Reproduce production inputs from tracked `variables.tf` defaults and modules.
    Required local `terraform.tfvars` overrides must be incorporated into reviewed
    non-secret configuration before enabling CI. CI does not load a developer's
-   local overrides. Shared infrastructure changes go through `main` thereafter.
+   local overrides. Keep desired shared infrastructure configuration reviewed
+   and committed to `main`, whether an operator or CI performs the apply.
 3. Review and run the bootstrap script below using a human administrator. It
    creates WIF and CI accounts, grants permissions, and configures a **dedicated**
    private plan bucket. It does not enable workflows or apply application
@@ -134,8 +139,10 @@ for planning/applying instead of saving a short-lived token in the plan.
 
 ## Enable and verify
 
-1. Merge the workflows with the flag disabled. The reusable PR workflow must
-   exist on `main` before credentialed PR checks can call it.
+1. With the flag disabled, first land the reusable `terraform-plan.yml` alone
+   on `main` through a bootstrap PR, then merge the full implementation. The
+   checks reference this workflow at `@main`, which must exist even when their
+   credentialed job is disabled. The reusable file has no automatic trigger.
 2. Propagate the updated reusable deployment workflow to every enabled
    collaborator branch **before** turning the flag on. Old branch workflows do
    not understand the readiness gate. Keep automatic collaborator promotion paused
@@ -179,6 +186,82 @@ Manual staging dispatch also reconciles infrastructure and always requires `main
   fallback, including its dependency on a current `K8S_DEPLOY_TARGETS` secret.
   Coordinate the switch with running workflows, refresh/recreate that secret,
   and verify there is no pending or failed infrastructure apply first.
+
+## Manual plan and apply
+
+Manual planning and applying remain supported. Use the
+[manual Terraform commands](../terraform/README.md#terraform-commands) for
+authentication, workspace selection, plan review, and saved-plan apply.
+
+Speculative local plans use Terraform's state lock and can coexist with CI.
+For a manual **apply** while CI is enabled, reserve a maintenance window with
+other operators and pause workflow entry points first. Do not toggle
+`ENABLE_TERRAFORM_CI` off just to run Terraform locally; that would restore
+secret-based deployment behavior.
+
+From the backend repository root, save the IDs of currently active deployment
+and Terraform-check workflows, then disable those entry points:
+
+```bash
+export OGRRE_REPO=CATALOG-Historic-Records/orphaned-wells-ui-server
+OGRRE_PAUSE_DIR="$(mktemp -d)"
+gh workflow list --repo "$OGRRE_REPO" --all --limit 100 --json id,path,state \
+  > "$OGRRE_PAUSE_DIR/workflows.json"
+jq -r '.[] | select(.state == "active") |
+  select((.path | test("/deploy-k8s-.*\\.yml$")) or
+         (.path == ".github/workflows/terraform-checks.yml")) | .id' \
+  "$OGRRE_PAUSE_DIR/workflows.json" > "$OGRRE_PAUSE_DIR/paused-ids.txt"
+while IFS= read -r workflow_id; do
+  gh workflow disable "$workflow_id" --repo "$OGRRE_REPO" || break
+done < "$OGRRE_PAUSE_DIR/paused-ids.txt"
+```
+
+Check that every listed workflow is disabled before continuing. Disabling a
+workflow does **not** stop an existing run. Inspect all incomplete runs:
+
+```bash
+gh run list --repo "$OGRRE_REPO" --limit 100 \
+  --json databaseId,workflowName,status,url \
+  --jq '.[] | select(.status != "completed")'
+```
+
+Let running applies finish; reject approval-waiting deployment runs and cancel
+queued deployment runs as appropriate. Check Actions for older pending runs if
+the first 100 results are insufficient. Proceed only when none of the paused
+workflows has an active, queued, or approval-waiting run, and other operators
+have agreed not to apply concurrently. Keep the pause-directory path available
+in the shell while following the manual Terraform commands.
+
+After the manual apply, enable **only** the staging coordinator first and run a
+new full reconciliation on `main`:
+
+```bash
+gh workflow enable deploy-k8s-staging.yml --repo "$OGRRE_REPO"
+gh workflow run deploy-k8s-staging.yml --repo "$OGRRE_REPO" --ref main \
+  -f force_terraform_plan=true
+```
+
+Review and approve the fresh plan. This also builds and deploys current `main`
+to staging. Local state writes change its GCS generation, so CI's old readiness
+record deliberately fails until reconciliation succeeds. Investigate any
+unexpected changes, especially uncommitted local overrides, rather than letting
+CI silently undo them.
+
+Once staging reconciliation succeeds, re-enable only the workflows that were
+active before the maintenance window:
+
+```bash
+while IFS= read -r workflow_id; do
+  gh workflow enable "$workflow_id" --repo "$OGRRE_REPO" || break
+done < "$OGRRE_PAUSE_DIR/paused-ids.txt"
+```
+
+Verify each saved workflow is active. If staging was disabled before the
+maintenance window, disable it again after reconciliation to restore that
+setting too. Do not delete the pause record until restoration is verified.
+If CI has never been enabled, use the manual Terraform path and refresh the
+`K8S_DEPLOY_TARGETS` fallback secret before deployment; no CI readiness record
+is required in that mode.
 
 ## Local checks
 

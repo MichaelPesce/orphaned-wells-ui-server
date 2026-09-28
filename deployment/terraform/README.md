@@ -89,23 +89,81 @@ The import script also unsets `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_AUTHORIZ
 
 ## Terraform commands
 
-Initialize the working directory, backend, and providers:
+Manual planning and applying remain supported alongside GitHub Actions. Both
+paths operate on the same remote workspace and the same shared infrastructure;
+using the staging workflow does not isolate Terraform changes to staging.
+
+### Manual plan
+
+Use Terraform at the version in `.terraform-version` and install the Kubernetes
+authentication plugin. For human ADC authentication, start with:
 
 ```bash
-terraform init
+cd orphaned-wells-ui-server/deployment/terraform
+unset GOOGLE_APPLICATION_CREDENTIALS GOOGLE_AUTHORIZED_USER_CREDENTIALS CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+gcloud auth login
+gcloud config set project tidy-outlet-412020
+gcloud auth application-default login
+gcloud components install gke-gcloud-auth-plugin
+
+terraform version
+terraform init -input=false -lockfile=readonly
+terraform workspace select ogrre
+terraform workspace show
+terraform fmt -check -recursive
+terraform validate
+terraform plan -input=false -lock-timeout=5m
 ```
 
-Create an execution plan with the configured variables:
+Confirm the CLI matches `.terraform-version` and the workspace is `ogrre`
+before proceeding. A speculative plan does not apply changes. It can run while
+CI is enabled, although it may wait for the Terraform state lock. Never disable
+state locking to work around a concurrent operation.
+
+Local `terraform.tfvars` files are loaded automatically. CI uses the committed
+defaults, so reconcile any required production overrides into reviewed shared
+configuration before comparing local and CI plans.
+
+### Manual apply
+
+Use the reviewed infrastructure configuration from current `main`. Coordinate
+the operation with other operators. If Terraform CI is enabled, follow
+[pause and resume for manual operations](../ci/README.md#manual-plan-and-apply)
+before changing the shared infrastructure. Keep the CI flag enabled while
+pausing workflows so deploys do not switch back to stale secret-based targets.
+
+Create a saved plan outside the repository, inspect it, and apply that exact
+plan as a separate deliberate step:
 
 ```bash
-terraform plan
+OGRRE_PLAN_DIR="$(mktemp -d)"
+chmod 700 "$OGRRE_PLAN_DIR"
+terraform plan -input=false -lock-timeout=5m -out="$OGRRE_PLAN_DIR/manual.tfplan"
+terraform show -no-color "$OGRRE_PLAN_DIR/manual.tfplan"
 ```
 
-Apply the planned changes:
+After reviewing all proposed changes:
 
 ```bash
-terraform apply
+terraform apply -input=false -lock-timeout=5m "$OGRRE_PLAN_DIR/manual.tfplan"
+terraform output -json kubernetes_deploy_targets | jq .
+rm -f "$OGRRE_PLAN_DIR/manual.tfplan"
+rmdir "$OGRRE_PLAN_DIR"
 ```
+
+Passing a saved plan to `terraform apply` executes it without another approval
+prompt. Keep the plan private; it can contain sensitive values. If the state or
+desired configuration changes before apply, generate and review a new plan.
+
+When CI is enabled, a manual state write invalidates the recorded successful
+apply. Resume the staging workflow first and dispatch a fresh run with
+`force_terraform_plan=true`. Review and approve the reconciliation plan (normally
+no resource changes if local inputs match `main`), then resume the remaining
+deployment workflows. Never fabricate or manually edit the CI readiness record.
+
+When CI is disabled, refresh the fallback `K8S_DEPLOY_TARGETS` secret using the
+commands below before deploying. Keep `DEPLOYMENT_SERVICE_KEY_JSON` in either
+mode for phase one.
 
 ## Existing GKE namespaces
 
