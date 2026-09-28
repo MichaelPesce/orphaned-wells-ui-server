@@ -2,6 +2,12 @@
 
 This directory contains the Terraform configuration used to manage OGRRE backend infrastructure.
 
+For automated PR plans and approval-gated applies, follow
+[Terraform CI setup and rollout](../ci/README.md). When `ENABLE_TERRAFORM_CI=true`,
+merge infrastructure changes to `main` and approve the saved plan in GitHub.
+Updated backend workflows read deploy targets live from the shared workspace;
+the secret-update commands below apply only to the disabled rollout fallback.
+
 ## What is included
 
 - `variables.tf` defines the shared defaults, including the default GKE backends and legacy VM inventory.
@@ -17,8 +23,9 @@ This directory contains the Terraform configuration used to manage OGRRE backend
 
 ## Prerequisites
 
-- Terraform installed (compatible with Terraform 1.x)
+- Terraform installed at the version in `.terraform-version` (1.13.5)
 - Google Cloud SDK installed
+- `gke-gcloud-auth-plugin` installed (`gcloud components install gke-gcloud-auth-plugin`)
 - `jq` installed
 - GitHub CLI `gh` installed and authenticated when updating GitHub Actions secrets from the command line
 - Access to the target GCP project for this deployment
@@ -151,7 +158,7 @@ Export the GitHub Actions target map:
 terraform output -json kubernetes_deploy_targets | jq -c .
 ```
 
-Store that JSON as the GitHub secret `K8S_DEPLOY_TARGETS`:
+Only for the disabled CI rollout fallback, store that JSON as `K8S_DEPLOY_TARGETS`:
 
 ```bash
 gh auth login
@@ -193,8 +200,9 @@ retain 1 CPU and 6Gi while the staging API requests 500m CPU and 1Gi memory,
 with limits of 1 CPU and 2Gi, across one replica with two Uvicorn workers.
 Production API defaults target two replicas, each with 1 CPU and 4Gi.
 Production workers retain their larger allocation independently.
-After Terraform changes these output values, update `K8S_DEPLOY_TARGETS` and
-deploy the backend; no resource setting takes effect from Terraform alone.
+After approving Terraform changes to these outputs, deploy the backend; no
+resource setting takes effect from Terraform alone. Refresh `K8S_DEPLOY_TARGETS`
+only when the CI rollout flag is disabled.
 
 ### API resource reduction
 
@@ -488,7 +496,7 @@ terraform apply
 terraform output -json kubernetes_deploy_targets | jq -c .
 ```
 
-Store the updated output as the backend repository secret `K8S_DEPLOY_TARGETS`:
+Only for the disabled CI rollout fallback, update the `K8S_DEPLOY_TARGETS` secret:
 
 ```bash
 gh secret set K8S_DEPLOY_TARGETS \

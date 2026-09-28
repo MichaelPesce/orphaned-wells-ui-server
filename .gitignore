@@ -21,3 +21,6 @@ deployment/secrets/
 .terraform
 
 github-deploy-targets.json
+gha-creds-*.json
+.infra/
+*.tfplan

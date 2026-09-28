@@ -1,6 +1,10 @@
 # orphaned-wells-ui-server
 Backend server-side code for the orphaned wells UI
 
+Backend infrastructure automation and the approval-gated deployment rollout are
+documented in [Terraform CI](deployment/ci/README.md). The new flow is disabled
+until `ENABLE_TERRAFORM_CI=true`; phase one retains the existing deployment key.
+
 ## Getting started (developer)
 
 ### Prerequisites
