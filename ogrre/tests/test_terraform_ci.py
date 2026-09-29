@@ -39,7 +39,7 @@ manifest = load_script("validate_manifest")
         (["deployment/terraform/.terraform-version"], (True, False)),
         (["deployment/terraform/README.md"], (False, False)),
         (["deployment/terraform/terraform.tfvars.example"], (False, False)),
-        (["deployment/ci/terraform_pr_plan.py"], (True, False)),
+        (["deployment/ci/bootstrap_terraform_ci.sh"], (True, False)),
         (["deployment/terraform/modules/backend_vm/startup.sh"], (True, False)),
         (
             ["deployment/terraform/main.tf", "deployment/kubernetes/backend.yaml"],
@@ -286,7 +286,7 @@ def test_only_main_publisher_uploads_with_direct_federation():
     assert (
         publisher["with"]["workload_identity_provider"] == "${{ vars.TF_WIF_PROVIDER }}"
     )
-    pr_workflow = (ROOT / ".github/workflows/terraform-plan.yml").read_text()
+    pr_workflow = (ROOT / ".github/workflows/terraform-checks.yml").read_text()
     assert "terraform_ci.py upload" not in pr_workflow
 
 

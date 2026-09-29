@@ -70,8 +70,8 @@ jobs:
       - id: plan
         if: steps.needed.outputs.value == 'true'
         run: python3 deployment/ci/terraform_ci.py plan
-      # Direct federation has main-plan-only object creation rights. The shared
-      # plan service account cannot publish an executable plan from a PR.
+      # Direct federation has main-plan-only object creation rights. The plan
+      # service account itself has no artifact publication permission.
       - if: steps.needed.outputs.value == 'true'
         uses: google-github-actions/auth@v3
         with:

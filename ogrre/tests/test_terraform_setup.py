@@ -1,4 +1,4 @@
-"""Exercise output initialization with real Terraform and synthetic local state."""
+"""Exercise Terraform setup offline, without cloud credentials or real state."""
 
 import json
 import os
@@ -11,6 +11,55 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_validate_mode_does_not_initialize_cloud_backend(tmp_path):
+    terraform = shutil.which("terraform")
+    if terraform is None:
+        pytest.skip("Install the pinned Terraform CLI to run this offline regression")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "backend.tf").write_text(
+        'terraform {\n  backend "gcs" {\n'
+        '    bucket = "nonexistent-terraform-test-bucket"\n  }\n}\n'
+        'resource "terraform_data" "example" { input = "static validation" }\n'
+    )
+    (source / ".terraform.lock.hcl").write_text("")
+    environment = {
+        "PATH": f"{Path(terraform).parent}:{os.defpath}",
+        "HOME": str(tmp_path),
+        "CHECKPOINT_DISABLE": "1",
+        "TF_WORKSPACE": "ogrre",
+        "TF_DIRECTORY": str(source),
+        "TF_MODE": "validate",
+        "GITHUB_OUTPUT": str(tmp_path / "github-output"),
+        # Backend initialization must not attempt to read credentials at all.
+        "GOOGLE_APPLICATION_CREDENTIALS": str(tmp_path / "missing-credentials.json"),
+    }
+    action = yaml.safe_load(
+        (ROOT / ".github/actions/setup-terraform/action.yml").read_text()
+    )
+    script = next(
+        step["run"] for step in action["runs"]["steps"] if step.get("id") == "directory"
+    )
+    setup = subprocess.run(
+        ["bash", "-c", script],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert setup.returncode == 0, setup.stdout + setup.stderr
+    validation = subprocess.run(
+        [terraform, f"-chdir={source}", "validate", "-no-color"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert validation.returncode == 0, validation.stdout + validation.stderr
+    assert not (source / ".terraform/terraform.tfstate").exists()
+    assert not (source / "terraform.tfstate").exists()
 
 
 @pytest.mark.parametrize("mode", ["remote", "output"])

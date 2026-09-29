@@ -2,7 +2,7 @@
 
 This directory contains the Terraform configuration used to manage OGRRE backend infrastructure.
 
-For approval-gated fork PR plans and applies, follow
+For credential-free PR checks and approval-gated applies from `main`, follow
 [Terraform CI setup and rollout](../ci/README.md). When `ENABLE_TERRAFORM_CI=true`,
 merge infrastructure changes to `main` and approve the saved plan in GitHub.
 Updated backend workflows read deploy targets live from the shared workspace;
@@ -140,6 +140,7 @@ gcloud auth application-default login
 gcloud components install gke-gcloud-auth-plugin
 
 terraform version
+unset TF_WORKSPACE
 terraform init -input=false -lockfile=readonly
 terraform workspace select ogrre
 terraform workspace show
