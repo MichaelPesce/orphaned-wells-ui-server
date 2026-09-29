@@ -66,10 +66,11 @@ if [[ "$has_pr_binding" == True ]]; then
   gcloud iam service-accounts remove-iam-policy-binding "$PLAN_ACCOUNT" --project="$PROJECT_ID" \
     --role=roles/iam.workloadIdentityUser --member="$principal_base/pr-plan" --condition=None >/dev/null
 fi
+# Explicit None avoids prompts when a policy already has conditional bindings.
 gcloud iam service-accounts add-iam-policy-binding "$PLAN_ACCOUNT" --project="$PROJECT_ID" \
-  --role=roles/iam.workloadIdentityUser --member="$principal_base/main-plan" >/dev/null
+  --role=roles/iam.workloadIdentityUser --member="$principal_base/main-plan" --condition=None >/dev/null
 gcloud iam service-accounts add-iam-policy-binding "$APPLY_ACCOUNT" --project="$PROJECT_ID" \
-  --role=roles/iam.workloadIdentityUser --member="$principal_base/apply" >/dev/null
+  --role=roles/iam.workloadIdentityUser --member="$principal_base/apply" --condition=None >/dev/null
 
 for role in roles/container.admin roles/compute.networkAdmin roles/dns.admin roles/storage.admin roles/serviceusage.serviceUsageAdmin; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$APPLY_ACCOUNT" --role="$role" --condition=None >/dev/null
@@ -93,7 +94,7 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$P
 
 for account in "$PLAN_ACCOUNT" "$DEPLOY_SERVICE_ACCOUNT"; do
   gcloud storage buckets add-iam-policy-binding "gs://$STATE_BUCKET" \
-    --member="serviceAccount:$account" --role=roles/storage.objectViewer >/dev/null
+    --member="serviceAccount:$account" --role=roles/storage.objectViewer --condition=None >/dev/null
 done
 # Planning can acquire/release this workspace's lock, but cannot write state.
 gcloud storage buckets add-iam-policy-binding "gs://$STATE_BUCKET" \
@@ -112,7 +113,7 @@ JSON
 gcloud storage buckets update "gs://$TF_CI_BUCKET" --lifecycle-file="$lifecycle_file"
 for account in "$PLAN_ACCOUNT" "$DEPLOY_SERVICE_ACCOUNT"; do
   gcloud storage buckets add-iam-policy-binding "gs://$TF_CI_BUCKET" \
-    --member="serviceAccount:$account" --role=roles/storage.objectViewer >/dev/null
+    --member="serviceAccount:$account" --role=roles/storage.objectViewer --condition=None >/dev/null
 done
 # No PR identity can publish plans or readiness records. Object Creator cannot
 # overwrite another run's saved plan; apply additionally verifies its checksum.

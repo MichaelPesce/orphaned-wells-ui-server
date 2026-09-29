@@ -268,6 +268,12 @@ An optional manual staging deployment with unapplied Terraform changes is
 documented in the [manual staging override plan](MANUAL_STAGING_OVERRIDE_PLAN.md).
 This is proposed follow-up work, not a currently available workflow option.
 
+- **Bootstrap asks for an IAM condition:** older scripts omitted `--condition=None`
+  on unconditional read/impersonation grants. Existing conditional policies then
+  cause `gcloud` to prompt on reruns. Cancel with Ctrl-C and rerun the updated
+  bootstrap with the same inputs. It explicitly specifies every grant's condition
+  and preserves the restrictions on lock writes and plan publication. Wait for
+  `Bootstrap complete` before proceeding.
 - **First run with no readiness record:** a missing `status/<workspace>.json`
   means reconciliation is needed. CI should generate a plan and wait for apply
   approval. The apply job creates the record and marks it ready only after

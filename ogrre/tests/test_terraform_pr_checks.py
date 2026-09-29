@@ -68,6 +68,9 @@ import sys
 args = sys.argv[1:]
 with open(os.environ["CLI_LOG"], "a") as log:
     log.write(json.dumps([Path(sys.argv[0]).name, *args]) + "\\n")
+# Model a rerun against policies that already contain conditional bindings.
+if "add-iam-policy-binding" in args and not any(arg.startswith("--condition=") for arg in args):
+    sys.exit("An existing conditional policy requires an explicit condition")
 if Path(sys.argv[0]).name == "gh":
     print("456" if args[-1] == ".id" else "789")
 elif args[:2] == ["projects", "describe"]:
@@ -162,6 +165,21 @@ def test_bootstrap_retires_pr_access_and_preserves_main_access(
     assert any(f"--member={PRINCIPAL}/main-plan" in call for call in grants)
     assert any(f"--member={PRINCIPAL}/apply" in call for call in grants)
     assert not any(f"--member={PRINCIPAL}/pr-plan" in call for call in grants)
+    for call in grants:
+        condition = next(arg for arg in call if arg.startswith("--condition="))
+        if "--role=roles/storage.objectAdmin" in call:
+            assert condition == (
+                "--condition=expression=resource.name == 'projects/_/buckets/"
+                "tidy-outlet-412020-ogrre-terraform-state/objects/"
+                "orphaned-wells-ui-server/ogrre.tflock',title=terraform-plan-lock"
+            )
+        elif "--role=roles/storage.objectCreator" in call:
+            assert condition == (
+                "--condition=expression=resource.name.startsWith('projects/_/buckets/"
+                "example-terraform-ci/objects/plans/'),title=main-plan-artifacts"
+            )
+        else:
+            assert condition == "--condition=None"
     assert json.loads(policy.read_text())["bindings"][0]["members"] == [
         f"{PRINCIPAL}/main-plan"
     ]
