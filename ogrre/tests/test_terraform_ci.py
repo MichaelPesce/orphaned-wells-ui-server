@@ -100,7 +100,21 @@ def test_readiness_requires_successful_inputs_and_current_state():
 
 @pytest.mark.parametrize(
     "error_text,missing",
-    [("HTTPError 404", True), ("403 Forbidden", False), ("network error", False)],
+    [
+        ("HTTPError 404", True),
+        ("ERROR: (gcloud.storage.cat) No URLs matched", True),
+        (
+            "ERROR: (gcloud.storage.cat) The following URLs matched no objects or files:\n"
+            "gs://bucket/status/ogrre.json\n",
+            True,
+        ),
+        ("403 Forbidden", False),
+        ("network error", False),
+        ("HTTPError 403: account-404 lacks storage.objects.get", False),
+        ("HTTPError 500: Internal Server Error", False),
+        (None, False),
+        ("", False),
+    ],
 )
 def test_missing_marker_is_distinct_from_unreadable_marker(
     monkeypatch, error_text, missing
@@ -112,8 +126,59 @@ def test_missing_marker_is_distinct_from_unreadable_marker(
     if missing:
         assert ci.read_marker("gs://bucket/status/ogrre.json") is None
     else:
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(
+            ValueError, match="Unable to read Terraform readiness record"
+        ) as error:
             ci.read_marker("gs://bucket/status/ogrre.json")
+        assert "gs://bucket/status/ogrre.json" in str(error.value)
+        if error_text:
+            assert error_text in str(error.value)
+
+
+@pytest.mark.parametrize("require_ready", [False, True])
+def test_first_rollout_requests_reconciliation_but_blocks_deployment(
+    monkeypatch, tmp_path, require_ready
+):
+    marker_uri = "gs://bucket/status/ogrre.json"
+    monkeypatch.setattr(
+        ci, "configuration", lambda: ("ogrre", "gs://bucket", "gs://state")
+    )
+    monkeypatch.setattr(ci, "revision", lambda: "current")
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+
+    def run(*args):
+        if args == ("gcloud", "storage", "cat", marker_uri):
+            raise subprocess.CalledProcessError(
+                1,
+                args,
+                stderr="ERROR: (gcloud.storage.cat) The following URLs matched no objects or files:\n"
+                f"{marker_uri}\n",
+            )
+        assert args == (
+            "gcloud",
+            "storage",
+            "objects",
+            "describe",
+            "gs://state",
+            "--format=value(generation)",
+        )
+        return "42"
+
+    monkeypatch.setattr(ci, "run", run)
+    if require_ready:
+        with pytest.raises(ValueError, match="Complete the gated staging workflow"):
+            ci.status(require_ready=True)
+    else:
+        ci.status()
+    assert output.read_text() == "ready=false\nrevision=current\n"
+
+
+@pytest.mark.parametrize("content", ["not JSON", "[]", "null"])
+def test_invalid_marker_content_still_blocks_readiness(monkeypatch, content):
+    monkeypatch.setattr(ci, "run", lambda *args: content)
+    with pytest.raises(ValueError):
+        ci.read_marker("gs://bucket/status/ogrre.json")
 
 
 def test_saved_plan_binds_content_and_metadata():

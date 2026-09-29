@@ -205,6 +205,12 @@ An optional manual staging deployment with unapplied Terraform changes is
 documented in the [manual staging override plan](MANUAL_STAGING_OVERRIDE_PLAN.md).
 This is proposed follow-up work, not a currently available workflow option.
 
+- **First run with no readiness record:** a missing `status/<workspace>.json`
+  means reconciliation is needed. CI should generate a plan and wait for apply
+  approval. The apply job creates the record and marks it ready only after
+  success. Do not create that file manually. Permission, authentication, network,
+  and malformed-record errors still stop the workflow; readiness-read errors
+  include the underlying `gcloud` message for diagnosis.
 - **PR plan rejected, failed, stale, or cancelled:** rerun the PR's **Deployment
   checks** workflow (all jobs) to queue a new upstream plan and approval. No PR
   number or SHA needs to be entered. A new PR commit also runs checks and queues

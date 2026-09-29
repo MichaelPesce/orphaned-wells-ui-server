@@ -74,9 +74,17 @@ def read_marker(uri):
         marker = json.loads(run("gcloud", "storage", "cat", uri))
     except subprocess.CalledProcessError as error:
         # Only absence means first rollout; IAM/network errors must fail closed.
-        if "404" in error.stderr or "No URLs matched" in error.stderr:
+        stderr = error.stderr or ""
+        if (
+            re.search(r"\bHTTPError\s+404\b", stderr)
+            or "No URLs matched" in stderr
+            or "The following URLs matched no objects or files:" in stderr
+        ):
             return None
-        raise
+        raise ValueError(
+            f"Unable to read Terraform readiness record {uri}: "
+            f"{stderr.strip() or str(error)}"
+        ) from error
     if not isinstance(marker, dict):
         raise ValueError("Invalid Terraform readiness record")
     return marker
