@@ -159,7 +159,10 @@ plan output is published in GitHub summaries. Do not upload raw state or binary
 plans as public workflow artifacts.
 
 Terraform uses `deployment/terraform/.terraform-version` (currently 1.13.5) and
-the checked-in provider lockfile. Local operators must also install
+the checked-in provider lockfile. Follow
+[provider lockfile maintenance](../terraform/README.md#provider-lockfile-maintenance)
+when updating providers so read-only initialization works on Linux and macOS.
+Local operators must also install
 `gke-gcloud-auth-plugin` (`gcloud components install gke-gcloud-auth-plugin`) and
 authenticate with ADC. The Kubernetes provider invokes the plugin separately
 for planning/applying instead of saving a short-lived token in the plan.

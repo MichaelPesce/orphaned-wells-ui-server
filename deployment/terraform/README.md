@@ -93,6 +93,39 @@ Manual planning and applying remain supported alongside GitHub Actions. Both
 paths operate on the same remote workspace and the same shared infrastructure;
 using the staging workflow does not isolate Terraform changes to staging.
 
+### Provider lockfile maintenance
+
+CI and the manual commands below use `-lockfile=readonly`. Commit provider
+checksums for every supported platform before using that mode. The lockfile
+includes Linux x86-64 for GitHub Actions, Linux ARM64 for local containers, and
+both Intel and Apple Silicon macOS.
+
+After changing provider selections, regenerate the platform checksums using
+the pinned Terraform CLI. From the backend repository root:
+
+```bash
+terraform -chdir=deployment/terraform get
+terraform -chdir=deployment/terraform providers lock \
+  -platform=linux_amd64 \
+  -platform=linux_arm64 \
+  -platform=darwin_amd64 \
+  -platform=darwin_arm64
+git diff -- deployment/terraform/.terraform.lock.hcl
+```
+
+These commands prepare modules and fetch provider checksums without accessing
+remote state or applying infrastructure. Review the reported HashiCorp signatures
+and lockfile diff, then commit the updated lockfile. The lock command retains
+existing provider versions that satisfy the configuration constraints.
+
+If initialization warns **Provider lock file not updated**, followed by
+validation reporting **missing or corrupted provider plugins**, check for
+missing platform checksums. Signed archive (`zh:`) checksums can verify a
+download, but validation needs a matching extracted-package (`h1:`) checksum.
+Read-only initialization cannot save that additional checksum. Regenerate the
+lockfile as above instead of disabling checksum verification in CI. See
+[HashiCorp's platform-locking documentation](https://developer.hashicorp.com/terraform/cli/commands/providers/lock#specifying-target-platforms).
+
 ### Manual plan
 
 Use Terraform at the version in `.terraform-version` and install the Kubernetes
