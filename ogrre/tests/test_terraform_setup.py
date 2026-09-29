@@ -13,6 +13,55 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("value,exit_code", [("old", 0), ("new", 2)])
+def test_output_only_changes_are_distinct_from_no_changes(tmp_path, value, exit_code):
+    terraform = shutil.which("terraform")
+    if terraform is None:
+        pytest.skip("Install the pinned Terraform CLI to run this offline regression")
+    (tmp_path / "main.tf").write_text(f'output "example" {{ value = "{value}" }}\n')
+    state = tmp_path / "terraform.tfstate"
+    state.write_text(
+        json.dumps(
+            {
+                "version": 4,
+                "terraform_version": "1.13.5",
+                "serial": 1,
+                "lineage": "00000000-0000-0000-0000-000000000001",
+                "resources": [],
+                "outputs": {
+                    "example": {"value": "old", "type": "string", "sensitive": False}
+                },
+            }
+        )
+    )
+    before = state.read_bytes()
+    environment = {"PATH": os.defpath, "CHECKPOINT_DISABLE": "1"}
+    subprocess.run(
+        [terraform, f"-chdir={tmp_path}", "init", "-backend=false", "-input=false"],
+        env=environment,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    result = subprocess.run(
+        [
+            terraform,
+            f"-chdir={tmp_path}",
+            "plan",
+            "-detailed-exitcode",
+            "-input=false",
+            "-no-color",
+            f"-out={tmp_path / 'tfplan'}",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == exit_code, result.stdout + result.stderr
+    assert state.read_bytes() == before
+
+
 def test_validate_mode_does_not_initialize_cloud_backend(tmp_path):
     terraform = shutil.which("terraform")
     if terraform is None:

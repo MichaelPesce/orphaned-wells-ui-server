@@ -5,8 +5,9 @@ Backend infrastructure automation and the approval-gated deployment rollout are
 documented in [Terraform CI](deployment/ci/README.md). Cloud plan/apply is disabled
 until `ENABLE_TERRAFORM_CI=true`; phase one retains the existing deployment key.
 Terraform PRs, including forks, run formatting and validation without cloud
-credentials or remote state. Live plans run from reviewed `main`; applying the
-saved plan requires separate `terraform-apply` approval. Manual Terraform
+credentials or remote state. Live plans run from reviewed `main`; plans with
+changes require separate `terraform-apply` approval. Verified no-change plans
+finish automatically without applying. Manual Terraform
 plan/apply remains supported in the deployment guide. Existing installations
 should follow the [PR workflow migration](deployment/ci/README.md#migrating-from-approved-fork-plans).
 

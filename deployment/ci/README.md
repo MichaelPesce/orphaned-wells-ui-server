@@ -19,21 +19,29 @@ For the ordered first rollout and live test commands, use the
   no OIDC permission, no cloud secrets, and no remote state. There is no PR plan
   Environment, cloud plan, or approval request. Validation checks configuration
   consistency; it cannot predict live resource changes or test cloud permissions.
-- `deploy-k8s-staging.yml` coordinates every `main` push and manual dispatch.
+- `deploy-k8s-staging.yml` coordinates upstream `main` pushes and manual dispatches.
+  Fork pushes skip the staging jobs, even when the fork has CI variables enabled.
   It builds the commit's image and calls `terraform-apply.yml`. The latter checks
-  the last successful apply against the tracked Terraform inputs and the remote
+  the last successful reconciliation against the tracked Terraform inputs and the remote
   state object's generation. When they match, no plan or apply is needed.
 - When reconciliation is needed, CI saves a fresh plan for that merged commit
-  and publishes its readable summary. The `terraform-apply` Environment holds
-  the apply job for approval. Apply downloads and verifies that exact saved plan,
+  and publishes its readable summary. Terraform's detailed exit code determines
+  the next job: `0` means no changes, `2` means changes, and errors stop the run.
+- A no-change plan runs `infrastructure / noop` automatically. Using the plan
+  account, it verifies the saved plan checksum, commit, workspace, run/attempt,
+  no-change outcome, and unchanged state generation. It checks live outputs and
+  current `main` inputs, then publishes a `verified` readiness record. It never
+  runs `terraform apply` or writes Terraform state.
+- A plan with changes, including output-only changes, waits at the
+  `terraform-apply` Environment. Apply verifies that exact saved plan and state,
   authenticates afresh, and refuses inputs superseded by a newer `main` commit.
 - Only successful reconciliation releases staging deployment. Deployments read
   live targets and preserve the existing immutable image-tag behavior.
 
-The apply job and every updated deployment share a concurrency group per
+The no-change completion job, apply job, and every updated deployment share a concurrency group per
 workspace with cancellation disabled. The staging orchestrator has a separate
 group, avoiding nested-workflow deadlocks. GitHub may replace a pending run with
-a newer one; comparing against the last applied inputs, rather than only the
+a newer one; comparing against the last reconciled inputs, rather than only the
 latest push diff, means a later backend-only commit still reconciles any pending
 infrastructure. Failed or rejected applies never release staging deployment.
 
@@ -43,7 +51,7 @@ merges to those branches do not start a Terraform plan or apply. Infrastructure
 changes must reach `main` to be reconciled. Their shared deploy workflow checks
 the current `main` infrastructure revision before
 mutation. If it is pending or failed, deployment stops with a retry instruction;
-it does not silently fall back to the secret. Retry after the gated apply succeeds.
+it does not silently fall back to the secret. Retry after infrastructure reconciliation succeeds.
 No application version is automatically promoted to collaborator environments
 just because shared infrastructure changed.
 
@@ -119,8 +127,10 @@ removes the former `pr-plan` impersonation grant when it exists.
 
 - **Plan account:** Compute, GKE, DNS, project-service and bucket-metadata reads;
   state object reads; creation/deletion of this workspace's `.tflock` object.
-  Bootstrap grants no state or managed-infrastructure writes, executable-plan
-  publication, or readiness-record writes to this account.
+  No-change completion can also replace only `status/<workspace>.json` in the CI
+  bucket. This conditional grant cannot write other workspaces' readiness records.
+  Bootstrap grants no Terraform state or managed-infrastructure writes or
+  executable-plan publication to this account.
 - **Apply account:** `container.admin`, `compute.networkAdmin`, `dns.admin`,
   `storage.admin`, and `serviceusage.serviceUsageAdmin`, matching the current GKE
   stack. Bootstrap grants no account-management or WIF-administration roles.
@@ -161,7 +171,8 @@ Live planning starts only from reviewed `main`. Protect merges into `main` and
 review provider/module sources, lockfile/CLI changes, and executable programs.
 Code merged into `main` is trusted with planning access before apply approval;
 moving planning after merge does not make malicious merged code safe. The plan
-account remains restricted to reads and lock management, while apply uses a
+account remains restricted to reads, lock management, and its workspace's CI
+readiness record, while apply uses a
 separate account and approval. Sensitive-value redaction in normal plan output
 does not prevent malicious code from printing secrets.
 
@@ -193,9 +204,9 @@ Selection requires an existing workspace; it never uses `workspace new`.
 3. Complete bootstrap, variable setup, and apply Environment protection. Preserve the
    existing secrets. Allow time for GCP IAM propagation.
 4. Set `ENABLE_TERRAFORM_CI=true` and manually dispatch **Deploy Staging Server to
-   GKE** on `main`. The initial absent readiness record requires a reviewed apply,
-   even if the plan has no resource changes. Inspect the complete plan before approval.
-5. Verify apply, live target reads, and staging rollout. Test a Terraform PR from
+   GKE** on `main`. An absent readiness record requires a fresh plan. A no-change
+   plan completes automatically; a plan with changes requires apply approval.
+5. Verify no-change completion, approved apply, live target reads, and staging rollout. Test a Terraform PR from
    your normal fork: static checks pass without cloud authentication or a plan
    approval. Test a Kubernetes-only PR, a rejected main apply, a backend-only
    follow-up, and a collaborator deployment.
@@ -209,6 +220,27 @@ deployment. Infrastructure reconciliation is independently controlled by
 Manual staging dispatch also reconciles infrastructure and always requires `main`.
 The retired `Terraform PR plan` status is no longer produced. Remove it from
 required checks if previously configured. Keep normal PR review requirements.
+
+## Enabling automatic no-change completion on an existing installation
+
+Before merging this update, rerun the updated
+`deployment/ci/bootstrap_terraform_ci.sh` as the human administrator, with the
+existing project, workspace, deployment account, and CI bucket (`ogrre-terraform-ci`
+for the current installation). It adds a condition restricting the plan account's
+readiness writes to exactly `status/ogrre.json` in that bucket. It does not grant
+Terraform state or infrastructure writes. Stop any older bootstrap process before
+running the updated file; do not edit a script while it is running.
+
+No new repository variables, JSON keys, WIF mappings, or GitHub Environments are
+needed. Keep `terraform-apply` protected. Merge the update, then dispatch a **new**
+staging run with `force_terraform_plan=true`. For a no-change plan, expect `noop`
+to succeed, `apply` to be skipped, and `status: verified` in the readiness record.
+Do not rerun old attempts: saved-plan metadata now also binds the outcome and
+state generation. Existing `status: applied` records remain valid.
+
+If no-change completion fails to write the readiness record, confirm bootstrap
+finished successfully and allow IAM propagation, then start a new full run.
+It must not silently fall back to an unapproved apply.
 
 ## Migrating from approved fork plans
 
@@ -253,10 +285,10 @@ can skip this section.
 4. The unused `terraform-plan` Environment may then be deleted in Settings.
    Keep the protected `terraform-apply` Environment and all main CI variables.
 5. Start a new staging run on current `main` with `force_terraform_plan=true`.
-   Review its plan and approve apply to test upload, apply, and live deployment
-   outputs. Test a new fork PR: **Deployment checks** should run without a cloud
+   Review its plan. No-change completion is automatic; plans with changes require
+   apply approval. Test a new fork PR: **Deployment checks** should run without a cloud
    plan or Environment approval. The remaining first-rollout checks are in
-   [ROLLOUT.md](ROLLOUT.md#6-test-rejection-then-approve-the-first-complete-run).
+   [ROLLOUT.md](ROLLOUT.md#6-test-no-change-completion-and-apply-approval).
 
 Until this migration is complete, an old workflow on upstream `main` can still
 queue from PR checks, regardless of changes made only in the fork. Existing
@@ -275,9 +307,9 @@ This is proposed follow-up work, not a currently available workflow option.
   and preserves the restrictions on lock writes and plan publication. Wait for
   `Bootstrap complete` before proceeding.
 - **First run with no readiness record:** a missing `status/<workspace>.json`
-  means reconciliation is needed. CI should generate a plan and wait for apply
-  approval. The apply job creates the record and marks it ready only after
-  success. Do not create that file manually. Permission, authentication, network,
+  means reconciliation is needed. CI generates a plan; successful no-change
+  verification or approved apply creates the record. Do not create it manually.
+  Permission, authentication, network,
   and malformed-record errors still stop the workflow; readiness-read errors
   include the underlying `gcloud` message for diagnosis.
 - **PR checks fail:** fix formatting/configuration and push an updated commit.
@@ -286,9 +318,9 @@ This is proposed follow-up work, not a currently available workflow option.
 - **Apply rejected, failed, or interrupted:** no successful readiness record is
   published. A marker written just before mutation remains `applying` after
   failure, including failed forced applies of unchanged inputs. Rerun the entire
-  staging workflow on current `main` to generate a new plan and approval.
+  staging workflow on current `main` to generate a new plan. Approve it if changes remain.
 - **Saved plan stale or expired:** run the entire workflow again. Do not rerun
-  only the apply job: a new run attempt deliberately cannot reuse another
+  only the apply or no-change job: a new run attempt deliberately cannot reuse another
   attempt's approval artifact. Do not regenerate a plan inside an approved job.
 - **Application rollout failed after apply:** the infrastructure success remains
   recorded. A new staging run skips Terraform unless inputs or state changed.
@@ -357,7 +389,8 @@ gh workflow run deploy-k8s-staging.yml --repo "$OGRRE_REPO" --ref main \
   -f force_terraform_plan=true
 ```
 
-Review and approve the fresh plan. This also builds and deploys current `main`
+Review the fresh plan; approve apply only if it contains changes. A no-change
+plan restores readiness automatically. This also builds and deploys current `main`
 to staging. Local state writes change its GCS generation, so CI's old readiness
 record deliberately fails until reconciliation succeeds. Investigate any
 unexpected changes, especially uncommitted local overrides, rather than letting
@@ -382,8 +415,8 @@ is required in that mode.
 ## Local checks
 
 ```bash
-python -m pytest ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_checks.py ogrre/tests/test_terraform_setup.py ogrre/tests/test_deployment_resources.py -q
-python -m py_compile deployment/ci/*.py ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_checks.py ogrre/tests/test_terraform_setup.py ogrre/tests/test_deployment_resources.py
+python -m pytest ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_noop.py ogrre/tests/test_terraform_pr_checks.py ogrre/tests/test_terraform_setup.py ogrre/tests/test_deployment_resources.py -q
+python -m py_compile deployment/ci/*.py ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_noop.py ogrre/tests/test_terraform_pr_checks.py ogrre/tests/test_terraform_setup.py ogrre/tests/test_deployment_resources.py
 python deployment/ci/validate_manifest.py
 shellcheck deployment/ci/bootstrap_terraform_ci.sh
 actionlint .github/workflows/terraform-*.yml .github/workflows/deploy-k8s-*.yml
