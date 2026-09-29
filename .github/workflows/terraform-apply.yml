@@ -70,19 +70,15 @@ jobs:
       - id: plan
         if: steps.needed.outputs.value == 'true'
         run: python3 deployment/ci/terraform_ci.py plan
-      # Direct federation has main-plan-only object creation rights. The shared
-      # plan service account cannot publish an executable plan from a PR.
+      # Direct federation has main-plan-only object creation rights. The plan
+      # service account itself has no artifact publication permission.
       - if: steps.needed.outputs.value == 'true'
         uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.TF_WIF_PROVIDER }}
       - if: steps.needed.outputs.value == 'true'
         name: Store the saved plan privately
-        env:
-          PLAN_URI: ${{ steps.plan.outputs.plan_uri }}
-        run: |
-          gcloud storage cp --if-generation-match=0 "$RUNNER_TEMP/tfplan" "$PLAN_URI/tfplan"
-          gcloud storage cp --if-generation-match=0 "$RUNNER_TEMP/tfplan.json" "$PLAN_URI/tfplan.json"
+        run: python3 deployment/ci/terraform_ci.py upload
 
   apply:
     needs: plan

@@ -7,6 +7,10 @@ infrastructure for all environments; the staging coordinator does not limit
 the Terraform plan to staging. Use plans with no resource changes for the
 initial sequencing tests.
 
+If approved fork plans were already enabled, follow the
+[migration steps](README.md#migrating-from-approved-fork-plans) first. They disable
+the old workflow and revoke its WIF grant while preserving main plan/apply.
+
 Keep the shell open so the exported variables and rollout snapshot remain
 available. Confirm `ogrre` is the correct existing workspace and that the
 deployment-account email below matches the account in the existing GitHub key.
@@ -18,7 +22,7 @@ cd /Users/michaelpesce/Desktop/uow/OGRRE/orphaned-wells-ui-server
 export OGRRE_REPO=CATALOG-Historic-Records/orphaned-wells-ui-server
 export PROJECT_ID=tidy-outlet-412020
 export TF_WORKSPACE=ogrre
-export TF_CI_BUCKET=tidy-outlet-412020-ogrre-terraform-ci
+export TF_CI_BUCKET=ogrre-terraform-ci
 export DEPLOY_SERVICE_ACCOUNT=ogrre-deployment-ci@tidy-outlet-412020.iam.gserviceaccount.com
 
 gh auth status
@@ -49,17 +53,13 @@ If you choose to leave GKE deployment enabled, the merge deploys staging using
 the existing deployment key and `K8S_DEPLOY_TARGETS` fallback.
 
 Continue on the existing implementation branch/PR; no separate bootstrap PR is
-needed. The static checks no longer call `terraform-plan.yml@main`, so they can
-run on this initial fork PR before the implementation lands on `main`. Satisfy
-the existing approval and required-check rules before merging.
+needed. Credential-free checks run on `pull_request`, including forks, before
+the implementation lands on `main`. Satisfy normal reviews and required checks.
+Remove the retired `Terraform PR plan` status from requirements if configured.
 
-The upstream **Terraform PR plan** workflow uses `workflow_run`, so it becomes
-available after its file lands on upstream `main`. After setup, test it with a
-new Terraform change in a normal fork PR (step 7). A root README-only change
-does not trigger the deployment checks. The first main plan/apply test can be
-dispatched manually in step 6 without another code change. GitHub documents the
-default-branch requirement in
-[workflow_run](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+PRs run formatting and backend-free validation without a live plan or approval.
+A root README-only change does not trigger Deployment checks. The first main
+plan/apply test can be dispatched manually in step 6 without another code change.
 
 Commit and submit the frontend documentation through its own reviewed PR.
 Both the manual and automated Terraform guides should ship together.
@@ -82,7 +82,7 @@ Automatic application deployment is still paused while these PRs merge.
 ## 3. Prepare the local tools and confirm state
 
 Install Terraform at the version in `deployment/terraform/.terraform-version`
-(1.13.5 for this change), plus `gcloud`, `gh`, and `jq`. If the installed Terraform
+(1.13.5 for this change), plus `gcloud`, `gh`, `jq`, and Python 3. If the installed Terraform
 is older, this Apple Silicon macOS example places the pinned CLI in a temporary
 tools directory for this shell without replacing the system installation:
 
@@ -113,7 +113,7 @@ gcloud components install gke-gcloud-auth-plugin
 gcloud iam service-accounts describe "$DEPLOY_SERVICE_ACCOUNT" --format='value(email)'
 
 terraform -chdir=deployment/terraform init -input=false -lockfile=readonly
-terraform -chdir=deployment/terraform workspace select "$TF_WORKSPACE"
+env -u TF_WORKSPACE terraform -chdir=deployment/terraform workspace select "$TF_WORKSPACE"
 terraform -chdir=deployment/terraform workspace show
 terraform -chdir=deployment/terraform plan -input=false -lock-timeout=5m
 ```
@@ -137,31 +137,28 @@ account. It does not create JSON keys or apply the application Terraform stack.
 Use a dedicated CI bucket; the script configures expiration of its `plans/`
 objects. If the script fails, resolve the reported permission/configuration
 problem and rerun it before continuing. Allow several minutes for IAM propagation.
-If you already ran the earlier version of this script, rerun this updated version:
-the PR plan identity now requires an upstream `workflow_run` job approved through
-the `terraform-plan` Environment. The earlier fork restriction is no longer used.
+If you already ran the earlier version, rerun this updated script to deny PR and
+`workflow_run` federation and remove the former `pr-plan` impersonation grant.
 
-## 5. Create the approval Environments and repository variables
+## 5. Create the apply Environment and repository variables
 
 Open the backend repository's **Settings → Environments → New environment**.
-Create **two** Environments with the following settings:
+Create **terraform-apply** with the following settings:
 
-| Setting | `terraform-plan` | `terraform-apply` |
-| --- | --- | --- |
-| Required reviewers | Add yourself and/or the infrastructure maintainer team | Add the people/team authorized to approve infrastructure changes |
-| Prevent self-review | **Unchecked**: an authorized PR author can approve their own plan | Your independent apply policy; if checked, a second reviewer must approve a run you initiate |
-| Deployment branches and tags | Selected branches and tags → **Branch** `main` only | Selected branches and tags → **Branch** `main` only |
-| Allow administrators to bypass configured protection rules | **Unchecked** | **Unchecked** |
+| Setting | `terraform-apply` |
+| --- | --- |
+| Required reviewers | Add the people/team authorized to approve infrastructure changes |
+| Prevent self-review | Your apply policy; if checked, a second reviewer must approve a run you initiate |
+| Deployment branches and tags | Selected branches and tags → **Branch** `main` only |
+| Allow administrators to bypass configured protection rules | **Unchecked** |
 
-Click **Save protection rules** in each Environment. The PR plan runs in an
-upstream workflow on `main`, even though the reviewed configuration comes from
-a fork. Do not add fork branches or tags to the allowed deployment refs.
+Click **Save protection rules**. Do not add fork branches or tags to the allowed
+deployment refs. A `terraform-plan` Environment is no longer used.
 
 Normal code-review approvals remain separate. In **Settings → Rules → Rulesets**,
-retain the rule requiring PR approval before merging to `main`. Allowing plan
-self-review does not let a PR author approve their own PR for merging. Do not
-add `Terraform PR plan` as an unconditional required check: application-only PRs
-do not produce that status.
+retain the rule requiring PR approval before merging to `main`. Environment
+self-review does not let an author approve their own PR for merging. No PR
+produces the old `Terraform PR plan` status; remove it from required checks.
 
 Save the protection settings. The workflow checks that required reviewers exist;
 creating only the Environment name is insufficient. GitHub documents the settings
@@ -180,10 +177,8 @@ gh variable set TF_APPLY_SERVICE_ACCOUNT --repo "$OGRRE_REPO" \
 gh variable set TF_WORKSPACE --repo "$OGRRE_REPO" --body "$TF_WORKSPACE"
 gh variable set TF_CI_BUCKET --repo "$OGRRE_REPO" --body "$TF_CI_BUCKET"
 gh variable list --repo "$OGRRE_REPO"
-for environment in terraform-plan terraform-apply; do
-  gh api "repos/$OGRRE_REPO/environments/$environment" \
-    --jq '{name,protection_rules,deployment_branch_policy}'
-done
+gh api "repos/$OGRRE_REPO/environments/terraform-apply" \
+  --jq '{name,protection_rules,deployment_branch_policy}'
 ```
 
 Retain `DEPLOYMENT_SERVICE_KEY_JSON`, runtime secrets, Docker credentials, and
@@ -238,34 +233,28 @@ When inputs and state are unchanged, the status check runs but the Terraform
 plan/apply commands are skipped; deployment still reads live outputs.
 
 Create the test changes in your **normal fork**, and open PRs targeting upstream
-`main`. Use an authorized plan reviewer account (your own account is allowed).
+`main`.
 
 For the Terraform-comment test below:
 
 1. Wait for the PR's **Deployment checks** workflow to pass. GitHub may first
    require approval to run ordinary fork CI according to the repository's Actions
-   policy; that is separate from the Terraform Environment approval.
-2. Open the PR commit's **Terraform PR plan** status, which links to the upstream
-   Actions run. Its preparation summary and waiting job show the PR number and
-   exact head SHA. If the status is absent, inspect **Actions → Terraform PR plan**
-   for a setup error or check whether the source checks failed.
-3. Choose **Review deployments → terraform-plan → Approve and deploy**. GitHub
-   uses deployment terminology for this UI, but this job only runs a plan.
-   You may approve your own PR's plan if listed as a reviewer and self-review is
-   allowed. No PR number, SHA, CLI dispatch, or upstream branch is needed.
-4. Confirm WIF authentication and the plan succeed, the PR status is successful,
-   and the summary identifies the expected head commit. Review the full plan.
+   policy; this authorizes ordinary CI, without GCP credentials.
+2. Inspect the Terraform job: `init -backend=false`, formatting, and validation
+   should succeed. There must be no cloud authentication, remote workspace
+   selection, cloud plan, or Environment approval.
+3. Confirm completion does not trigger a **Terraform PR plan** workflow.
+4. Merge through normal review. The staging coordinator now produces the live
+   plan, and `terraform-apply` waits for approval before any apply/deployment.
 
-To retry a rejected or failed PR plan, open the PR's **Deployment checks** run and
-choose **Re-run all jobs**, or push a new commit to the fork branch. Its successful
-completion automatically queues another upstream plan and approval. After a base
-branch change, update the fork from `main` before retrying.
+To retry transient static-check failures, rerun **Deployment checks**. For code
+errors, push a corrected commit. Static checks cannot predict the live plan or
+verify cloud IAM; those are tested by the main workflow after merge.
 
 | Test | Expected result |
 | --- | --- |
-| Add only a comment to `deployment/terraform/main.tf` in your fork | Static checks pass; an upstream plan waits at `terraform-plan`; self-approval runs a speculative plan, with no apply. |
-| Reject the queued PR plan | No GCP authentication or Terraform execution in the plan job; PR plan status fails. Rerun Deployment checks to retry. |
-| Push another Terraform commit while the first PR plan waits | A new successful checks run queues approval for the new SHA. The old run is cancelled or rejects the changed revision before obtaining credentials. |
+| Add only a comment to `deployment/terraform/main.tf` in your fork | Formatting and backend-free validation pass without cloud credentials or an approval request. |
+| Push another Terraform commit while checks run | The older static-check run is cancelled and checks run for the new commit. No cloud-plan workflow starts. |
 | Add only a comment to `deployment/kubernetes/backend.yaml` in a separate PR | Manifest rendering/validation; no Terraform plan. |
 | Change only `deployment/terraform/README.md` | No cloud plan or plan approval. |
 | Change only the root README | No PR Terraform plan; after merge, current infrastructure skips plan/apply. |

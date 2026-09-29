@@ -8,6 +8,9 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+from urllib.error import HTTPError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -74,9 +77,17 @@ def read_marker(uri):
         marker = json.loads(run("gcloud", "storage", "cat", uri))
     except subprocess.CalledProcessError as error:
         # Only absence means first rollout; IAM/network errors must fail closed.
-        if "404" in error.stderr or "No URLs matched" in error.stderr:
+        stderr = error.stderr or ""
+        if (
+            re.search(r"\bHTTPError\s+404\b", stderr)
+            or "No URLs matched" in stderr
+            or "The following URLs matched no objects or files:" in stderr
+        ):
             return None
-        raise
+        raise ValueError(
+            f"Unable to read Terraform readiness record {uri}: "
+            f"{stderr.strip() or str(error)}"
+        ) from error
     if not isinstance(marker, dict):
         raise ValueError("Invalid Terraform readiness record")
     return marker
@@ -121,15 +132,15 @@ def assert_current():
         raise ValueError("Terraform inputs changed on main; run and approve a new plan")
 
 
-def approval(name="terraform-apply"):
-    endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/environments/{name}"
+def approval():
+    endpoint = f"repos/{os.environ['GITHUB_REPOSITORY']}/environments/terraform-apply"
     environment = json.loads(run("gh", "api", endpoint))
     if not any(
         rule.get("type") == "required_reviewers" and rule.get("reviewers")
         for rule in environment.get("protection_rules", [])
     ):
         raise ValueError(
-            f"Configure required reviewers on the {name} Environment before enabling CI"
+            "Configure required reviewers on the terraform-apply Environment before enabling CI"
         )
 
 
@@ -184,6 +195,42 @@ def plan():
         sha256=metadata["sha256"],
         revision=metadata["revision"],
     )
+
+
+def upload():
+    """Publish without destination reads, retaining create-only bucket access."""
+    workspace, bucket, _ = configuration()
+    run_id = f"{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"
+    token = run("gcloud", "auth", "print-access-token")
+    directory = Path(os.environ["RUNNER_TEMP"])
+    for name in ("tfplan", "tfplan.json"):
+        query = urlencode(
+            {
+                "uploadType": "media",
+                "name": f"plans/{workspace}/{run_id}/{name}",
+                "ifGenerationMatch": "0",
+            }
+        )
+        # gcloud storage cp probes the destination, requiring extra get/list
+        # permissions. The object-insert API only needs storage.objects.create.
+        request = Request(
+            f"https://storage.googleapis.com/upload/storage/v1/b/{quote(bucket[5:], safe='')}/o?{query}",
+            data=(directory / name).read_bytes(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/octet-stream",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=120):
+                pass
+        except HTTPError as error:
+            # Do not log response bodies, which could expose artifact contents.
+            raise ValueError(
+                f"Unable to upload {name}: HTTP {error.code}. "
+                "Check publisher permissions; if the object already exists, start a new full run."
+            ) from error
 
 
 def validate_plan(metadata, plan_bytes, expected):
@@ -259,7 +306,8 @@ def apply():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=("status", "ready", "plan", "apply", "current", "approval")
+        "command",
+        choices=("status", "ready", "plan", "upload", "apply", "current", "approval"),
     )
     args = parser.parse_args()
     if args.command in ("status", "ready"):
@@ -267,7 +315,9 @@ def main():
     elif args.command == "current":
         assert_current()
     else:
-        {"plan": plan, "apply": apply, "approval": approval}[args.command]()
+        {"plan": plan, "upload": upload, "apply": apply, "approval": approval}[
+            args.command
+        ]()
 
 
 if __name__ == "__main__":
