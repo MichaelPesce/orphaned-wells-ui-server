@@ -83,6 +83,8 @@ jobs:
           ref: ${{ needs.prepare.outputs.head_sha }}
           path: .terraform-pr
           persist-credentials: false
+          # The environment approval and revision check above authorize this SHA.
+          allow-unsafe-pr-checkout: true
       - uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ vars.TF_WIF_PROVIDER }}

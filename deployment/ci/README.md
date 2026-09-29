@@ -27,7 +27,10 @@ For the ordered first rollout and live test commands, use the
   read credentials; it does not approve merging or applying. After approval, the
   job rechecks that the PR is still open and its head/base commits are unchanged,
   then checks out that exact head SHA. Only then does it authenticate through WIF.
-  PR plans are informational and are never uploaded for apply.
+  That checkout explicitly sets `allow-unsafe-pr-checkout: true`; checkout's
+  fork protection does not automatically recognize Environment approval.
+  The opt-in is confined to this approved checkout. PR plans are informational
+  and are never uploaded for apply.
 - The PR commit's **Terraform PR plan** status links to the upstream run and its
   summary. A failed, rejected, cancelled, or outdated plan cannot report success.
   The plan uses the PR head configuration; update the fork branch from `main`
@@ -139,7 +142,8 @@ Rerun bootstrap if the previous same-repository-only WIF configuration was insta
 
 - **Plan account:** Compute, GKE, DNS, project-service and bucket-metadata reads;
   state object reads; creation/deletion of this workspace's `.tflock` object.
-  It cannot write state, change infrastructure, publish plans, or mark an apply successful.
+  Bootstrap grants no state or managed-infrastructure writes, executable-plan
+  publication, or readiness-record writes to this account.
 - **Apply account:** `container.admin`, `compute.networkAdmin`, `dns.admin`,
   `storage.admin`, and `serviceusage.serviceUsageAdmin`, matching the current GKE
   stack. Bootstrap grants no account-management or WIF-administration roles.
@@ -149,6 +153,9 @@ Rerun bootstrap if the previous same-repository-only WIF configuration was insta
   can create objects under `plans/` only. PR identities cannot publish executable
   plans. Existing objects cannot be overwritten. Apply checks the plan checksum,
   commit, workspace, state path, and run/attempt before use.
+  The upload helper uses the GCS object-insert API with `ifGenerationMatch=0`.
+  This supports the existing create-only grant without the destination get/list
+  permissions required by `gcloud storage cp`.
 - **Existing deploy account:** keeps its deployment key and workload permissions;
   bootstrap adds object reads on the state and CI buckets. No apply role is added.
 
@@ -158,6 +165,26 @@ private CI bucket; only Terraform's human-readable, sensitive-value-redacted
 plan output is published in GitHub summaries. Do not upload raw state or binary
 plans as public workflow artifacts.
 
+### What approving a PR plan authorizes
+
+`terraform plan` normally refreshes resource information and proposes changes;
+it does not apply those proposed changes. It also acquires/releases the state
+lock. Planning is not a sandbox: providers are executable programs, and data
+sources such as `external` can run programs during refresh. Those programs can
+access the job's credentials, files, network, and readable Terraform state.
+See HashiCorp's [plan behavior](https://developer.hashicorp.com/terraform/cli/commands/plan)
+and [external data source](https://registry.terraform.io/providers/hashicorp/external/latest/docs/data-sources/external).
+
+The plan account's IAM permissions restrict direct infrastructure mutations.
+The PR job cannot impersonate the separately approved apply account or publish
+an executable plan. However, malicious code could copy readable state or
+short-lived credentials, expose values through logs, or interfere with the state
+lock. Sensitive-value redaction in normal plan output does not prevent malicious
+code from printing secrets. Before approving, review the exact commit, including
+provider and module sources, lockfile/CLI changes, and any executable programs.
+Approval means trusting that revision with planning access; successful static
+checks alone do not establish that trust.
+
 Terraform uses `deployment/terraform/.terraform-version` (currently 1.13.5) and
 the checked-in provider lockfile. Follow
 [provider lockfile maintenance](../terraform/README.md#provider-lockfile-maintenance)
@@ -166,6 +193,13 @@ Local operators must also install
 `gke-gcloud-auth-plugin` (`gcloud components install gke-gcloud-auth-plugin`) and
 authenticate with ADC. The Kubernetes provider invokes the plugin separately
 for planning/applying instead of saving a short-lived token in the plan.
+The deployment output reader copies both `backend.tf` and the provider lockfile
+into its temporary directory. Terraform initialization discovers provider
+dependencies in existing state even without resource configuration, so output
+mode installs those pinned providers before reading outputs.
+Setup keeps `TF_WORKSPACE` for initialization and later commands, but unsets it
+for the explicit `workspace select` command, which rejects an environment override.
+Selection requires an existing workspace; it never uses `workspace new`.
 
 ## Enable and verify
 
@@ -200,6 +234,14 @@ The PR plan status is only produced for Terraform-related PRs. Do not make it an
 unconditional required check for all PRs; application-only PRs will not produce it.
 
 ## Retry and recovery
+
+For the fixes to fork checkout, saved-plan upload, and Terraform setup, merge
+the updated workflows/helpers into upstream `main` first. No IAM, bootstrap,
+or Environment changes are required for these fixes. Then rerun the
+PR's **Deployment checks** (all jobs) to queue the updated PR-plan workflow, or
+dispatch a new staging coordinator run on `main`. An old run still uses its
+original workflow revision. Existing collaborators must receive deployment
+workflow changes through their normal branch-promotion process.
 
 An optional manual staging deployment with unapplied Terraform changes is
 documented in the [manual staging override plan](MANUAL_STAGING_OVERRIDE_PLAN.md).
@@ -318,13 +360,25 @@ is required in that mode.
 ## Local checks
 
 ```bash
-python -m pytest ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_plan.py ogrre/tests/test_deployment_resources.py -q
-python -m py_compile deployment/ci/*.py ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_plan.py ogrre/tests/test_deployment_resources.py
+python -m pytest ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_plan.py ogrre/tests/test_terraform_setup.py ogrre/tests/test_deployment_resources.py -q
+python -m py_compile deployment/ci/*.py ogrre/tests/test_terraform_ci.py ogrre/tests/test_terraform_pr_plan.py ogrre/tests/test_terraform_setup.py ogrre/tests/test_deployment_resources.py
 python deployment/ci/validate_manifest.py
 shellcheck deployment/ci/bootstrap_terraform_ci.sh
 actionlint .github/workflows/terraform-*.yml .github/workflows/deploy-k8s-*.yml
 terraform -chdir=deployment/terraform fmt -check -recursive
 ```
+
+Put the pinned Terraform CLI on `PATH` to include the offline setup regression.
+It uses synthetic local state and a local provider fixture, exercises both remote
+and output setup modes, and verifies the state remains unchanged. Without the
+CLI, that regression is skipped; no cloud credentials or network are needed.
+
+Actionlint 1.7.12's built-in checkout metadata does not yet recognize
+`allow-unsafe-pr-checkout`, which is defined in
+[checkout v4](https://github.com/actions/checkout/blob/v4/action.yml). For that
+version, repeat the lint command with
+`-ignore '^input "allow-unsafe-pr-checkout" is not defined in action "actions/checkout@v4"\.'`
+to exclude only this catalog error; investigate all other diagnostics.
 
 Use a clean temporary copy and `terraform init -backend=false -lockfile=readonly`
 followed by `terraform validate` for provider-backed configuration validation

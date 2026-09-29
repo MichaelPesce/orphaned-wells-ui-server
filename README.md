@@ -8,6 +8,8 @@ Terraform changes in fork PRs automatically queue a cloud plan after static
 checks, with approval through `terraform-plan`. Authorized reviewers may approve
 their own plan runs; normal PR merge reviews and `terraform-apply` approval remain
 separate. Manual Terraform plan/apply remains supported in the deployment guide.
+Before approving a fork plan, review
+[what planning access permits](deployment/ci/README.md#what-approving-a-pr-plan-authorizes).
 
 ## Getting started (developer)
 

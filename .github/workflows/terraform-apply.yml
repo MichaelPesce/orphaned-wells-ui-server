@@ -78,11 +78,7 @@ jobs:
           workload_identity_provider: ${{ vars.TF_WIF_PROVIDER }}
       - if: steps.needed.outputs.value == 'true'
         name: Store the saved plan privately
-        env:
-          PLAN_URI: ${{ steps.plan.outputs.plan_uri }}
-        run: |
-          gcloud storage cp --if-generation-match=0 "$RUNNER_TEMP/tfplan" "$PLAN_URI/tfplan"
-          gcloud storage cp --if-generation-match=0 "$RUNNER_TEMP/tfplan.json" "$PLAN_URI/tfplan.json"
+        run: python3 deployment/ci/terraform_ci.py upload
 
   apply:
     needs: plan

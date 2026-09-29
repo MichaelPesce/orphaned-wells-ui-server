@@ -309,11 +309,15 @@ def test_cloud_credentials_and_candidate_execution_are_confined_to_approved_job(
             assert "cache" not in step.get("uses", "")
             assert "artifact" not in step.get("uses", "")
             assert ".terraform-pr/deployment/ci/" not in step.get("run", "")
+            if step.get("with", {}).get("allow-unsafe-pr-checkout"):
+                assert name == "plan"
+                assert step["with"]["ref"] == "${{ needs.prepare.outputs.head_sha }}"
     steps = workflow["jobs"]["plan"]["steps"]
     assert steps[0]["with"]["ref"] == "${{ github.sha }}"
     assert steps[1]["run"].endswith("terraform_pr_plan.py check")
     assert steps[2]["with"]["ref"] == "${{ needs.prepare.outputs.head_sha }}"
     assert steps[2]["with"]["persist-credentials"] is False
+    assert steps[2]["with"]["allow-unsafe-pr-checkout"] is True
     assert steps[3]["uses"].startswith("google-github-actions/auth@")
 
 

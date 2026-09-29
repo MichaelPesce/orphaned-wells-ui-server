@@ -5,6 +5,9 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+from contextlib import nullcontext
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 import yaml
@@ -195,6 +198,96 @@ def test_saved_plan_binds_content_and_metadata():
     for key in ("commit", "workspace", "run"):
         with pytest.raises(ValueError):
             ci.validate_plan({**metadata, key: "other"}, plan, metadata)
+
+
+@pytest.fixture
+def upload_files(monkeypatch, tmp_path):
+    monkeypatch.setattr(ci, "configuration", lambda: ("ogrre", "gs://ci", "gs://state"))
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+
+    def token(*args):
+        assert args == ("gcloud", "auth", "print-access-token")
+        return "test-token"
+
+    monkeypatch.setattr(ci, "run", token)
+    files = {"tfplan": b"private-plan-bytes", "tfplan.json": b'{"run":"123-2"}'}
+    for name, content in files.items():
+        (tmp_path / name).write_bytes(content)
+    return files
+
+
+def test_plan_upload_uses_create_only_requests_and_cannot_overwrite(
+    monkeypatch, upload_files, capsys
+):
+    objects = {}
+
+    def insert(request, timeout):
+        assert request.get_method() == "POST"  # No destination GET or LIST.
+        url = urlsplit(request.full_url)
+        assert (url.scheme, url.netloc, url.path) == (
+            "https",
+            "storage.googleapis.com",
+            "/upload/storage/v1/b/ci/o",
+        )
+        query = parse_qs(url.query)
+        assert query["uploadType"] == ["media"]
+        assert query["ifGenerationMatch"] == ["0"]
+        assert request.get_header("Authorization") == "Bearer test-token"
+        assert timeout == 120
+        name = query["name"][0]
+        if name in objects:
+            raise HTTPError(request.full_url, 412, "Precondition Failed", {}, None)
+        objects[name] = request.data
+        return nullcontext()
+
+    monkeypatch.setattr(ci, "urlopen", insert)
+    ci.upload()
+    expected = {
+        f"plans/ogrre/123-2/{name}": data for name, data in upload_files.items()
+    }
+    assert objects == expected
+    with pytest.raises(ValueError, match="HTTP 412.*new full run"):
+        ci.upload()
+    assert objects == expected
+    assert capsys.readouterr() == ("", "")
+
+
+def test_failed_plan_upload_stops_before_publishing_metadata(
+    monkeypatch, upload_files, capsys
+):
+    calls = []
+
+    def forbidden(request, **kwargs):
+        calls.append(request)
+        raise HTTPError(request.full_url, 403, "Forbidden", {}, None)
+
+    monkeypatch.setattr(ci, "urlopen", forbidden)
+    with pytest.raises(ValueError, match="Unable to upload tfplan: HTTP 403"):
+        ci.upload()
+    assert len(calls) == 1
+    assert capsys.readouterr() == ("", "")
+
+
+def test_only_main_publisher_uploads_with_direct_federation():
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/terraform-apply.yml").read_text()
+    )
+    steps = workflow["jobs"]["plan"]["steps"]
+    upload_index = next(
+        i
+        for i, step in enumerate(steps)
+        if step.get("run") == "python3 deployment/ci/terraform_ci.py upload"
+    )
+    publisher = steps[upload_index - 1]
+    assert publisher["uses"].startswith("google-github-actions/auth@")
+    assert "service_account" not in publisher["with"]
+    assert (
+        publisher["with"]["workload_identity_provider"] == "${{ vars.TF_WIF_PROVIDER }}"
+    )
+    pr_workflow = (ROOT / ".github/workflows/terraform-plan.yml").read_text()
+    assert "terraform_ci.py upload" not in pr_workflow
 
 
 @pytest.mark.parametrize(
