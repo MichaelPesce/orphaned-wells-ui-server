@@ -39,6 +39,27 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           python3 deployment/ci/changed_paths.py "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
+      - name: Summarize detected changes and required checks
+        env:
+          TERRAFORM_CHANGED: ${{ steps.changes.outputs.terraform }}
+          KUBERNETES_CHANGED: ${{ steps.changes.outputs.kubernetes }}
+        run: |
+          {
+            echo '### Deployment change detection'
+            echo
+            if [ "$TERRAFORM_CHANGED" = true ]; then
+              echo '- Terraform: relevant file changes detected; configuration validation will run.'
+            else
+              echo '- Terraform: no relevant file changes detected; configuration validation will be skipped.'
+            fi
+            if [ "$KUBERNETES_CHANGED" = true ]; then
+              echo '- Kubernetes: relevant file changes detected; manifest checks will run.'
+            else
+              echo '- Kubernetes: no relevant file changes detected; manifest checks will be skipped.'
+            fi
+            echo
+            echo 'This detects changed PR files, not changes to live infrastructure. Check the validation jobs for their results.'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   terraform:
     name: Validate Terraform configuration
