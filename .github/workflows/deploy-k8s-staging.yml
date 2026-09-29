@@ -80,6 +80,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   deploy_gke_staging:
+    name: Deploy to GKE (staging)
     if: >-
       always() && !cancelled() && needs.docker_build_and_push.result == 'success' &&
       (needs.infrastructure.result == 'success' ||

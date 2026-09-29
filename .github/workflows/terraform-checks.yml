@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   changes:
+    name: Detect deployment changes
     runs-on: ubuntu-latest
     outputs:
       terraform: ${{ steps.changes.outputs.terraform }}
@@ -40,6 +41,7 @@ jobs:
           python3 deployment/ci/changed_paths.py "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
   terraform:
+    name: Validate Terraform configuration
     needs: changes
     if: needs.changes.outputs.terraform == 'true'
     runs-on: ubuntu-latest
@@ -58,6 +60,7 @@ jobs:
           terraform -chdir=deployment/terraform validate
 
   kubernetes:
+    name: Check Kubernetes manifest
     needs: changes
     if: needs.changes.outputs.kubernetes == 'true'
     runs-on: ubuntu-latest
