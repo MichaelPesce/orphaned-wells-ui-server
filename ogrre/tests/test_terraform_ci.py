@@ -170,7 +170,9 @@ def test_first_rollout_requests_reconciliation_but_blocks_deployment(
 
     monkeypatch.setattr(ci, "run", run)
     if require_ready:
-        with pytest.raises(ValueError, match="Complete the gated staging workflow"):
+        with pytest.raises(
+            ValueError, match="Complete the staging infrastructure workflow"
+        ):
             ci.status(require_ready=True)
     else:
         ci.status()
@@ -326,6 +328,7 @@ def test_plan_exit_codes(monkeypatch, tmp_path, returncode, success):
     monkeypatch.setattr(ci, "configuration", lambda: ("ogrre", "gs://ci", "gs://state"))
     monkeypatch.setattr(ci, "revision", lambda: "revision")
     monkeypatch.setattr(ci, "run", lambda *args: "commit")
+    monkeypatch.setattr(ci, "state_generation", lambda state: "42")
     monkeypatch.setattr(
         ci.subprocess,
         "run",
@@ -344,7 +347,14 @@ def test_plan_exit_codes(monkeypatch, tmp_path, returncode, success):
     (tmp_path / "tfplan").write_bytes(b"plan")
     if success:
         ci.plan()
-        assert json.loads((tmp_path / "tfplan.json").read_text())["run"] == "123-1"
+        metadata = json.loads((tmp_path / "tfplan.json").read_text())
+        assert metadata["run"] == "123-1"
+        assert metadata["generation"] == "42"
+        assert metadata["has_changes"] is (returncode == 2)
+        assert (
+            f"has_changes={str(returncode == 2).lower()}\n"
+            in (tmp_path / "output").read_text()
+        )
     else:
         with pytest.raises(ValueError):
             ci.plan()
@@ -360,6 +370,8 @@ def test_failed_apply_invalidates_previous_readiness(monkeypatch, tmp_path):
         state="gs://state",
         sha256=hashlib.sha256(plan).hexdigest(),
         run="123-1",
+        generation="42",
+        has_changes=True,
     )
     (tmp_path / "tfplan").write_bytes(plan)
     (tmp_path / "tfplan.json").write_text(json.dumps(expected))
@@ -368,11 +380,13 @@ def test_failed_apply_invalidates_previous_readiness(monkeypatch, tmp_path):
         "GITHUB_RUN_ID": "123",
         "GITHUB_RUN_ATTEMPT": "1",
         "EXPECTED_PLAN_SHA256": expected["sha256"],
+        "EXPECTED_STATE_GENERATION": "42",
     }.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setattr(ci, "configuration", lambda: ("ogrre", "gs://ci", "gs://state"))
     monkeypatch.setattr(ci, "revision", lambda: "revision")
     monkeypatch.setattr(ci, "assert_current", lambda: None)
+    monkeypatch.setattr(ci, "state_generation", lambda state: "42")
     published = []
 
     def run(*args):
@@ -403,30 +417,46 @@ def test_manifest_rendering_detects_unbound_inputs_and_bad_selectors():
         )
 
 
-def test_apply_and_deploy_share_a_non_cancelling_lock_and_approval_is_on_apply():
+def test_completion_and_deploy_share_a_lock_and_only_changes_request_approval():
     apply = yaml.safe_load((ROOT / ".github/workflows/terraform-apply.yml").read_text())
     deploy = yaml.safe_load(
         (ROOT / ".github/workflows/deploy-k8s-dispatch.yml").read_text()
     )
     assert apply["jobs"]["apply"]["environment"] == "terraform-apply"
     assert "environment" not in apply["jobs"]["plan"]
-    for job in (apply["jobs"]["apply"], deploy["jobs"]["deploy"]):
+    assert "environment" not in apply["jobs"]["noop"]
+    assert "needs.plan.outputs.has_changes == 'true'" in apply["jobs"]["apply"]["if"]
+    assert "needs.plan.outputs.has_changes == 'false'" in apply["jobs"]["noop"]["if"]
+    for job in (
+        apply["jobs"]["apply"],
+        apply["jobs"]["noop"],
+        deploy["jobs"]["deploy"],
+    ):
         assert "ogrre-infrastructure-" in job["concurrency"]["group"]
         assert job["concurrency"]["cancel-in-progress"] is False
 
 
 @pytest.mark.parametrize(
-    "plan,needed,apply,success",
+    "plan,needed,changes,apply,noop,success",
     [
-        ("success", "false", "skipped", True),
-        ("success", "true", "success", True),
-        ("success", "true", "failure", False),
-        ("success", "true", "cancelled", False),
-        ("skipped", "", "skipped", False),
+        ("success", "false", "", "skipped", "skipped", True),
+        ("success", "true", "true", "success", "skipped", True),
+        ("success", "true", "false", "skipped", "success", True),
+        ("success", "true", "true", "failure", "skipped", False),
+        ("success", "true", "true", "cancelled", "skipped", False),
+        ("success", "true", "false", "skipped", "failure", False),
+        ("success", "true", "false", "skipped", "cancelled", False),
+        ("success", "true", "false", "skipped", "skipped", False),
+        ("success", "true", "", "skipped", "success", False),
+        ("success", "false", "true", "skipped", "skipped", False),
+        ("success", "true", "true", "skipped", "success", False),
+        ("success", "true", "false", "success", "success", False),
+        ("skipped", "", "", "skipped", "skipped", False),
+        ("failure", "true", "false", "skipped", "skipped", False),
     ],
 )
 def test_reconciliation_result_cannot_convert_failure_to_success(
-    plan, needed, apply, success
+    plan, needed, changes, apply, noop, success
 ):
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/terraform-apply.yml").read_text()
@@ -434,6 +464,12 @@ def test_reconciliation_result_cannot_convert_failure_to_success(
     script = workflow["jobs"]["ready"]["steps"][0]["run"]
     result = subprocess.run(
         ["bash", "-e", "-c", script],
-        env={"PLAN_RESULT": plan, "APPLY_NEEDED": needed, "APPLY_RESULT": apply},
+        env={
+            "PLAN_RESULT": plan,
+            "RECONCILIATION_NEEDED": needed,
+            "HAS_CHANGES": changes,
+            "APPLY_RESULT": apply,
+            "NOOP_RESULT": noop,
+        },
     )
     assert (result.returncode == 0) == success

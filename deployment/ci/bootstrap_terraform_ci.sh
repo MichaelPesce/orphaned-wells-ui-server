@@ -115,6 +115,11 @@ for account in "$PLAN_ACCOUNT" "$DEPLOY_SERVICE_ACCOUNT"; do
   gcloud storage buckets add-iam-policy-binding "gs://$TF_CI_BUCKET" \
     --member="serviceAccount:$account" --role=roles/storage.objectViewer --condition=None >/dev/null
 done
+# No-change completion may replace only this workspace's CI readiness record.
+# It gains no Terraform state writes, artifact writes, or infrastructure writes.
+gcloud storage buckets add-iam-policy-binding "gs://$TF_CI_BUCKET" \
+  --member="serviceAccount:$PLAN_ACCOUNT" --role=roles/storage.objectAdmin \
+  --condition="expression=resource.name == 'projects/_/buckets/$TF_CI_BUCKET/objects/status/$TF_WORKSPACE.json',title=terraform-readiness" >/dev/null
 # No PR identity can publish plans or readiness records. Object Creator cannot
 # overwrite another run's saved plan; apply additionally verifies its checksum.
 gcloud storage buckets add-iam-policy-binding "gs://$TF_CI_BUCKET" \

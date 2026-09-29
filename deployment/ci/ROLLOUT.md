@@ -10,6 +10,8 @@ initial sequencing tests.
 If approved fork plans were already enabled, follow the
 [migration steps](README.md#migrating-from-approved-fork-plans) first. They disable
 the old workflow and revoke its WIF grant while preserving main plan/apply.
+If credential-free PR checks are already in use, follow the shorter
+[no-change completion upgrade](README.md#enabling-automatic-no-change-completion-on-an-existing-installation).
 
 Keep the shell open so the exported variables and rollout snapshot remain
 available. Confirm `ogrre` is the correct existing workspace and that the
@@ -137,6 +139,9 @@ account. It does not create JSON keys or apply the application Terraform stack.
 Use a dedicated CI bucket; the script configures expiration of its `plans/`
 objects. If the script fails, resolve the reported permission/configuration
 problem and rerun it before continuing. Allow several minutes for IAM propagation.
+The updated script grants the plan account writes to only this workspace's CI
+readiness record so no-change plans can complete automatically. Existing
+installations must rerun bootstrap before merging the no-change workflow update.
 If you already ran the earlier version, rerun this updated script to deny PR and
 `workflow_run` federation and remove the former `pr-plan` impersonation grant.
 
@@ -184,7 +189,7 @@ gh api "repos/$OGRRE_REPO/environments/terraform-apply" \
 Retain `DEPLOYMENT_SERVICE_KEY_JSON`, runtime secrets, Docker credentials, and
 `K8S_DEPLOY_TARGETS` throughout initial testing.
 
-## 6. Test rejection, then approve the first complete run
+## 6. Test no-change completion and apply approval
 
 Enable the new flow and staging application deployment. Leave collaborator
 automatic deployment paused:
@@ -198,27 +203,44 @@ gh run list --repo "$OGRRE_REPO" --workflow deploy-k8s-staging.yml --branch main
 ```
 
 Open the new run in Actions. Inspect the complete Terraform plan in the summary
-or step log. Before approval, confirm the apply job is waiting and the staging
-deployment has not started. Reject this first request and verify apply and
-deployment do not execute. An image build/push can finish independently.
+or the **Generate Terraform plan** step in the **infrastructure / plan** job.
+For **No changes**, expect `infrastructure / noop` to verify the saved plan and
+record readiness automatically. `infrastructure / apply` should be skipped,
+with no Environment approval. Require readiness publication, live target reads,
+staging manifest application, and rollout/image verification to succeed.
 
-Dispatch a **new full run** with the same command. Review the new saved plan and
-approve `terraform-apply` through **Review deployments**. This time require all
-of the following to succeed: apply, readiness record publication, live output
-read, staging manifest application, and rollout/image verification.
+If the plan contains changes, inspect them before deciding whether to apply.
+To test rejection without changing cloud resources, submit a reviewed PR adding
+a temporary root output in `deployment/terraform/ci_rollout_check.tf`:
+
+```hcl
+output "ci_rollout_check" {
+  value = "approval-check"
+}
+```
+
+After merge, an otherwise unchanged workspace should plan only this output
+addition. Output-only changes require approval even with zero resource changes.
+Confirm apply is waiting and staging deployment has not started, then reject
+the request and confirm neither executes. An image build/push can finish
+independently. Dispatch a **new full run**, review the saved plan, and approve
+`terraform-apply` through **Review deployments**. Verify apply and deployment
+succeed. Remove the temporary output through another reviewed PR and approve
+its output-removal plan; do not leave rollout fixtures in the configuration.
 
 Inspect the non-secret readiness metadata and staging health:
 
 ```bash
 gcloud storage cat "gs://$TF_CI_BUCKET/status/$TF_WORKSPACE.json" \
-  | jq '{status,commit,workspace,generation}'
+  | jq '{status,has_changes,commit,workspace,generation}'
 OGRRE_STAGING_HOST="$(terraform -chdir=deployment/terraform output -json kubernetes_deploy_targets | jq -er '.staging.host')"
 curl --fail --silent --show-error "https://$OGRRE_STAGING_HOST/health"
 ```
 
-Expect `status: applied`, the intended `main` commit, workspace `ogrre`, and a
-successful health response. Do not run `gh run rerun --failed` for apply failures;
-run the full coordinator again so it generates a new plan and approval artifact.
+Expect `status: verified` and `has_changes: false` after no-change completion,
+or `status: applied` after apply, plus the intended commit, workspace `ogrre`,
+and a successful health response. Start a new full coordinator run after apply
+or no-change failures; do not reuse an old attempt's saved-plan metadata.
 
 ## 7. Verify change detection and pending-change sequencing
 
@@ -245,7 +267,8 @@ For the Terraform-comment test below:
    selection, cloud plan, or Environment approval.
 3. Confirm completion does not trigger a **Terraform PR plan** workflow.
 4. Merge through normal review. The staging coordinator now produces the live
-   plan, and `terraform-apply` waits for approval before any apply/deployment.
+   plan. A comment-only change should produce no changes and complete
+   automatically. Plans containing changes still wait for apply approval.
 
 To retry transient static-check failures, rerun **Deployment checks**. For code
 errors, push a corrected commit. Static checks cannot predict the live plan or
@@ -258,8 +281,10 @@ verify cloud IAM; those are tested by the main workflow after merge.
 | Add only a comment to `deployment/kubernetes/backend.yaml` in a separate PR | Manifest rendering/validation; no Terraform plan. |
 | Change only `deployment/terraform/README.md` | No cloud plan or plan approval. |
 | Change only the root README | No PR Terraform plan; after merge, current infrastructure skips plan/apply. |
-| Merge the Terraform-comment PR and leave approval waiting | Staging deployment waits, even though the plan has no resource changes. |
-| While that run waits, merge a README-only PR, then reject the earlier apply | The later run must still plan and wait for approval; it cannot treat the unapplied Terraform input revision as backend-only. Approve the latest reviewed no-op plan to finish. |
+| Merge the Terraform-comment PR | No-change verification succeeds, apply is skipped, and staging can deploy without approval. |
+| Sync the fork's `main` with upstream, even with fork CI variables enabled | Staging jobs are skipped; no failing `infrastructure / ready` job. |
+| Merge the temporary output PR and leave approval waiting | Staging waits; zero resource changes does not make an output change a no-op. |
+| While that run waits, merge a README-only PR, then reject the earlier apply | The later run still plans the pending output change and requires approval. Approve its latest reviewed plan to finish. |
 
 Avoid introducing intentional IAM failures or destructive infrastructure changes
 just to exercise failure handling. Cloud-free regression tests cover failed

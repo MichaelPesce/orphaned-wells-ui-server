@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       force_terraform_plan:
-        description: Reconcile Terraform even if inputs and state match the last successful apply
+        description: Reconcile Terraform even if inputs and state match the last successful reconciliation
         type: boolean
         default: false
 
@@ -26,6 +26,7 @@ env:
 
 jobs:
   check_ref:
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     runs-on: ubuntu-latest
     steps:
       - name: Require main for staging and Terraform reconciliation
@@ -35,7 +36,7 @@ jobs:
 
   infrastructure:
     needs: check_ref
-    if: vars.ENABLE_TERRAFORM_CI == 'true'
+    if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server' && vars.ENABLE_TERRAFORM_CI == 'true'
     permissions:
       contents: read
       actions: read

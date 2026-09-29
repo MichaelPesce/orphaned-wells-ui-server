@@ -26,11 +26,13 @@ jobs:
       terraform: ${{ steps.changes.outputs.terraform }}
       kubernetes: ${{ steps.changes.outputs.kubernetes }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out pull request and base history
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - id: changes
+      - name: Identify Terraform and Kubernetes changes
+        id: changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -42,13 +44,16 @@ jobs:
     if: needs.changes.outputs.terraform == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out pull request
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: ./.github/actions/setup-terraform
+      - name: Initialize Terraform without a backend
+        uses: ./.github/actions/setup-terraform
         with:
           mode: validate
-      - run: |
+      - name: Check Terraform formatting and validate configuration
+        run: |
           terraform -chdir=deployment/terraform fmt -check -recursive
           terraform -chdir=deployment/terraform validate
 
@@ -57,11 +62,15 @@ jobs:
     if: needs.changes.outputs.kubernetes == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out pull request
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install PyYAML==6.0.2
-      - run: python deployment/ci/validate_manifest.py
+      - name: Install manifest validation dependency
+        run: python -m pip install PyYAML==6.0.2
+      - name: Render and validate Kubernetes manifest
+        run: python deployment/ci/validate_manifest.py

@@ -168,11 +168,21 @@ def test_bootstrap_retires_pr_access_and_preserves_main_access(
     for call in grants:
         condition = next(arg for arg in call if arg.startswith("--condition="))
         if "--role=roles/storage.objectAdmin" in call:
-            assert condition == (
-                "--condition=expression=resource.name == 'projects/_/buckets/"
-                "tidy-outlet-412020-ogrre-terraform-state/objects/"
-                "orphaned-wells-ui-server/ogrre.tflock',title=terraform-plan-lock"
-            )
+            if "gs://example-terraform-ci" in call:
+                assert (
+                    "--member=serviceAccount:github-terraform-plan@example-project.iam.gserviceaccount.com"
+                    in call
+                )
+                assert condition == (
+                    "--condition=expression=resource.name == 'projects/_/buckets/"
+                    "example-terraform-ci/objects/status/ogrre.json',title=terraform-readiness"
+                )
+            else:
+                assert condition == (
+                    "--condition=expression=resource.name == 'projects/_/buckets/"
+                    "tidy-outlet-412020-ogrre-terraform-state/objects/"
+                    "orphaned-wells-ui-server/ogrre.tflock',title=terraform-plan-lock"
+                )
         elif "--role=roles/storage.objectCreator" in call:
             assert condition == (
                 "--condition=expression=resource.name.startsWith('projects/_/buckets/"
@@ -183,6 +193,7 @@ def test_bootstrap_retires_pr_access_and_preserves_main_access(
     assert json.loads(policy.read_text())["bindings"][0]["members"] == [
         f"{PRINCIPAL}/main-plan"
     ]
+    assert any("title=terraform-readiness" in arg for call in grants for arg in call)
     # A second bootstrap is safe after the legacy binding has been removed.
     result, calls = run()
     assert result.returncode == 0, result.stdout + result.stderr
