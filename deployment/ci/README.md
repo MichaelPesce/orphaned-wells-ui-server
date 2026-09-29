@@ -198,6 +198,10 @@ unconditional required check for all PRs; application-only PRs will not produce 
 
 ## Retry and recovery
 
+An optional manual staging deployment with unapplied Terraform changes is
+documented in the [manual staging override plan](MANUAL_STAGING_OVERRIDE_PLAN.md).
+This is proposed follow-up work, not a currently available workflow option.
+
 - **PR plan rejected, failed, stale, or cancelled:** rerun the PR's **Deployment
   checks** workflow (all jobs) to queue a new upstream plan and approval. No PR
   number or SHA needs to be entered. A new PR commit also runs checks and queues
