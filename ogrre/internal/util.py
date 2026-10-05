@@ -1605,4 +1605,3 @@ def reconstruct_records_by_original_filename(records: list) -> list:
 
     decorated.sort(key=lambda x: (x[0], x[1], x[2], x[3]))
     return [item[4] for item in decorated]
-
