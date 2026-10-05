@@ -5298,6 +5298,9 @@ class DataManager:
                 setsOfRecords[processor_name].append(record)
         return setsOfRecords
 
+    def reconstructRecordsByOriginalFilename(self, records):
+        return util.reconstruct_records_by_original_filename(records)
+
     ## miscellaneous functions
     def downloadRecords(
         self,
