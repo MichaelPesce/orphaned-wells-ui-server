@@ -2177,7 +2177,6 @@ async def download_records(
     filter_by = req.get("filter", {})
     sort_by = req.get("sort", ["dateCreated", 1])
     document_types = req.get("document_types", [])
-    reconstruct_original_doc = req.get("reconstruct_original_doc", False)
     export_raw_values = req.get("export_raw_values", False)
 
     json_fields_to_include = {

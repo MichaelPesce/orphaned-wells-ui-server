@@ -5501,16 +5501,14 @@ class DataManager:
                 writer.writerows(record_attributes)
         else:  ## export type is JSON
             def format_json_attribute(attr):
-                if not export_raw_values:
-                    return attr
-                attr_copy = copy.deepcopy(attr)
-                if attr_copy.get("raw_text") is not None:
-                    attr_copy["value"] = attr_copy.get("raw_text")
-                if attr_copy.get("subattributes"):
-                    attr_copy["subattributes"] = [
-                        format_json_attribute(sub) for sub in attr_copy["subattributes"]
+                res = {**attr}
+                if not export_raw_values and "raw_text" in res:
+                    del res["raw_text"]
+                if res.get("subattributes"):
+                    res["subattributes"] = [
+                        format_json_attribute(sub) for sub in res["subattributes"]
                     ]
-                return attr_copy
+                return res
 
             for document in records:
                 document_id = str(document["_id"])
