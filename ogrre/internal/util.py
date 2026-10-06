@@ -1576,7 +1576,7 @@ def parse_record_filename_order(filename: str):
         try:
             occ_num = int(occ_str)
         except ValueError:
-            occ_num = occ_str
+            occ_num = 9999
     else:
         file_type = rest_no_ext
         occ_num = 0
