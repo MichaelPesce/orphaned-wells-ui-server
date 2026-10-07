@@ -5313,6 +5313,7 @@ class DataManager:
         keep_all_columns=False,
         output_filename=None,
         request_origin="",
+        export_raw_values=False,
     ):
         schema_states = {}
         export_records = []
@@ -5348,6 +5349,11 @@ class DataManager:
         attributes = ["file"]
         subattributes = []
         record_attributes = []
+
+        def get_attr_export_value(attr):
+            if export_raw_values and attr.get("raw_text") is not None:
+                return attr.get("raw_text")
+            return attr.get("value")
 
         def add_subattributes_to_csv_row(
             record_attribute,
@@ -5388,8 +5394,8 @@ class DataManager:
                     document_subattribute.get("subattributes") or []
                 )
                 if not subattribute_contains_subattributes:
-                    record_attribute[subattribute_name] = document_subattribute.get(
-                        "value"
+                    record_attribute[subattribute_name] = get_attr_export_value(
+                        document_subattribute
                     )
                     if subattribute_name not in subattribute_columns:
                         subattribute_columns.append(subattribute_name)
@@ -5465,9 +5471,9 @@ class DataManager:
                                 current_attributes.add(attribute_name)
                                 if attribute_name not in attributes:
                                     attributes.append(attribute_name)
-                                record_attribute[attribute_name] = document_attribute[
-                                    "value"
-                                ]
+                                record_attribute[
+                                    attribute_name
+                                ] = get_attr_export_value(document_attribute)
 
                     record_attribute["file"] = document.get("filename", "")
                     if "record_notes" in selectedColumns or keep_all_columns:
