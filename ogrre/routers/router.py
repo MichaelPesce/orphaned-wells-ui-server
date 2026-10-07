@@ -2190,7 +2190,6 @@ async def download_records(
         "attributesList": [
             "key",
             "value",
-            "raw_text",
             "normalized_vertices",
             "subattributes",
             "page",
@@ -2201,7 +2200,6 @@ async def download_records(
         "subattributes": [
             "key",
             "value",
-            "raw_text",
             "normalized_vertices",
             "page",
             "subattributes",
@@ -2210,6 +2208,10 @@ async def download_records(
             "user_provided_coordinates",
         ],
     }
+
+    if export_raw_values:
+        json_fields_to_include["attributesList"].append("raw_text")
+        json_fields_to_include["subattributes"].append("raw_text")
 
     output_file_id = util.last4_before_decimal()
 
@@ -2367,13 +2369,16 @@ async def download_project_records_by_document_types(
         "attributesList": [
             "key",
             "value",
-            "raw_text",
             "normalized_vertices",
             "subattributes",
             "page",
         ],
-        "subattributes": ["key", "value", "raw_text", "normalized_vertices", "page"],
+        "subattributes": ["key", "value", "normalized_vertices", "page"],
     }
+
+    if export_raw_values:
+        json_fields_to_include["attributesList"].append("raw_text")
+        json_fields_to_include["subattributes"].append("raw_text")
 
     output_file_id = util.last4_before_decimal()
 

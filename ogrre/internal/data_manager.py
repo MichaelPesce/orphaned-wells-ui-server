@@ -5500,16 +5500,6 @@ class DataManager:
                 writer.writeheader()
                 writer.writerows(record_attributes)
         else:  ## export type is JSON
-            def format_json_attribute(attr):
-                res = {**attr}
-                if not export_raw_values and "raw_text" in res:
-                    del res["raw_text"]
-                if res.get("subattributes"):
-                    res["subattributes"] = [
-                        format_json_attribute(sub) for sub in res["subattributes"]
-                    ]
-                return res
-
             for document in records:
                 document_id = str(document["_id"])
                 try:
@@ -5517,9 +5507,7 @@ class DataManager:
                     for document_attribute in document.get("attributesList", []):
                         attribute_name = document_attribute["key"]
                         if attribute_name in selectedColumns or keep_all_columns:
-                            record_attribute[attribute_name] = format_json_attribute(
-                                document_attribute
-                            )
+                            record_attribute[attribute_name] = document_attribute
                     if "record_notes" in selectedColumns or keep_all_columns:
                         notes_list = document.get("record_notes") or []
                         active_notes = [
