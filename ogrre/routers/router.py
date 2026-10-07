@@ -2177,6 +2177,7 @@ async def download_records(
     filter_by = req.get("filter", {})
     sort_by = req.get("sort", ["dateCreated", 1])
     document_types = req.get("document_types", [])
+    export_raw_values = req.get("export_raw_values", False)
 
     json_fields_to_include = {
         "topLevelFields": [
@@ -2207,6 +2208,10 @@ async def download_records(
             "user_provided_coordinates",
         ],
     }
+
+    if export_raw_values:
+        json_fields_to_include["attributesList"].append("raw_text")
+        json_fields_to_include["subattributes"].append("raw_text")
 
     output_file_id = util.last4_before_decimal()
 
@@ -2282,6 +2287,7 @@ async def download_records(
                     keep_all_columns=keep_all_columns,
                     output_filename=f"{filename_prefix}_{output_file_id}",
                     request_origin=request_origin,
+                    export_raw_values=export_raw_values,
                 )
                 filepaths.append(csv_file)
         if export_json:
@@ -2294,6 +2300,7 @@ async def download_records(
                 selectedColumns=selectedColumns,
                 keep_all_columns=keep_all_columns,
                 output_filename=f"{output_name}_{output_file_id}",
+                export_raw_values=export_raw_values,
             )
             filepaths.append(json_file)
         if export_images:
@@ -2346,6 +2353,7 @@ async def download_project_records_by_document_types(
     request_origin = request.headers.get("origin")
     selectedColumns = req.get("columns", [])
     document_types = req.get("document_types", [])
+    export_raw_values = req.get("export_raw_values", False)
 
     filter_by = req.get("filter", {})
     sort_by = req.get("sort", ["dateCreated", 1])
@@ -2367,6 +2375,10 @@ async def download_project_records_by_document_types(
         ],
         "subattributes": ["key", "value", "normalized_vertices", "page"],
     }
+
+    if export_raw_values:
+        json_fields_to_include["attributesList"].append("raw_text")
+        json_fields_to_include["subattributes"].append("raw_text")
 
     output_file_id = util.last4_before_decimal()
 
@@ -2396,6 +2408,7 @@ async def download_project_records_by_document_types(
                 keep_all_columns=keep_all_columns,
                 output_filename=f"{output_name or 'records'}_{output_file_id}",
                 request_origin=request_origin,
+                export_raw_values=export_raw_values,
             )
             filepaths.append(csv_file)
         if export_json:
@@ -2408,6 +2421,7 @@ async def download_project_records_by_document_types(
                 selectedColumns=selectedColumns,
                 keep_all_columns=keep_all_columns,
                 output_filename=f"{output_name or 'records'}_{output_file_id}",
+                export_raw_values=export_raw_values,
             )
             filepaths.append(json_file)
         if export_images:
