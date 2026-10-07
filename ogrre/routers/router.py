@@ -122,6 +122,7 @@ def anonymous_user(
         ),
     }
 
+
 def require_authenticated_admin_route():
     if not REQUIRE_AUTH:
         raise HTTPException(
@@ -2178,7 +2179,9 @@ async def download_records(
     document_types = req.get("document_types", [])
     reconstruct_original_doc = req.get("reconstruct_original_doc", False)
     if reconstruct_original_doc:
-        user_collaborator = (data_manager.getCollaboratorForUser(user_info) or "").lower()
+        user_collaborator = (
+            data_manager.getCollaboratorForUser(user_info) or ""
+        ).lower()
         if user_collaborator != "rrc":
             reconstruct_original_doc = False
 
