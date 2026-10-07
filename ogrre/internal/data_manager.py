@@ -5468,9 +5468,9 @@ class DataManager:
                                 current_attributes.add(attribute_name)
                                 if attribute_name not in attributes:
                                     attributes.append(attribute_name)
-                                record_attribute[attribute_name] = get_attr_export_value(
-                                    document_attribute
-                                )
+                                record_attribute[
+                                    attribute_name
+                                ] = get_attr_export_value(document_attribute)
 
                     record_attribute["file"] = document.get("filename", "")
                     if "record_notes" in selectedColumns or keep_all_columns:
