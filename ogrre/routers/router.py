@@ -2177,6 +2177,13 @@ async def download_records(
     filter_by = req.get("filter", {})
     sort_by = req.get("sort", ["dateCreated", 1])
     document_types = req.get("document_types", [])
+    reconstruct_original_doc = req.get("reconstruct_original_doc", False)
+    if reconstruct_original_doc:
+        user_collaborator = (
+            data_manager.getCollaboratorForUser(user_info) or ""
+        ).lower()
+        if user_collaborator != "rrc":
+            reconstruct_original_doc = False
     export_raw_values = req.get("export_raw_values", False)
 
     json_fields_to_include = {
@@ -2228,7 +2235,11 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
-        setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
+        if reconstruct_original_doc:
+            records = data_manager.reconstructRecordsByOriginalFilename(records)
+            setsOfRecords[output_name] = records
+        else:
+            setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
     elif location == "record_group":
         records, _ = data_manager.fetchRecordsByRecordGroup(
             user_info,
@@ -2238,6 +2249,8 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
+        if reconstruct_original_doc:
+            records = data_manager.reconstructRecordsByOriginalFilename(records)
         setsOfRecords[output_name] = records
     elif location == "team":
         records, _ = data_manager.fetchRecordsByTeam(
@@ -2247,7 +2260,11 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
-        setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
+        if reconstruct_original_doc:
+            records = data_manager.reconstructRecordsByOriginalFilename(records)
+            setsOfRecords[output_name] = records
+        else:
+            setsOfRecords = data_manager.organizeRecordsByDocumentType(records)
     elif location == "documentType":
         records, _ = data_manager.fetchRecordsByProjectAndDocumentTypes(
             user_info,
@@ -2258,6 +2275,8 @@ async def download_records(
             include_attribute_fields=json_fields_to_include,
             forDownload=True,
         )
+        if reconstruct_original_doc:
+            records = data_manager.reconstructRecordsByOriginalFilename(records)
         setsOfRecords[output_name] = records
     else:
         raise HTTPException(
@@ -2268,7 +2287,7 @@ async def download_records(
         filepaths = []
         if export_csv:
             for set_identifier in setsOfRecords:
-                if location == "project":
+                if location == "project" and not reconstruct_original_doc:
                     project_name = util.sanitize_filename_component(output_name)
                     filename_prefix = (
                         f"{project_name}_{set_identifier}"
