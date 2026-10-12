@@ -41,6 +41,14 @@ def revision(ref="HEAD"):
             inputs.append(entry)
     if not inputs:
         raise ValueError("No tracked Terraform inputs found")
+
+    tfvars_path = TF_ROOT / "terraform.tfvars"
+    if tfvars_path.is_file():
+        content = tfvars_path.read_text(encoding="utf-8").strip()
+        if content:
+            tfvars_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            inputs.append(f"terraform.tfvars:{tfvars_hash}")
+
     return hashlib.sha256("\0".join(inputs).encode()).hexdigest()
 
 
