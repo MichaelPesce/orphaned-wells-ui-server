@@ -86,6 +86,11 @@ push_tfvars() {
     exit 1
   fi
 
+  if command -v terraform >/dev/null 2>&1; then
+    echo "Formatting ${TARGET_FILE} with terraform fmt..."
+    terraform fmt "${TARGET_FILE}" >/dev/null 2>&1 || true
+  fi
+
   require_gcloud
   echo "Uploading ${TARGET_FILE} to ${GCS_PATH}..."
   gcloud storage cp "${TARGET_FILE}" "${GCS_PATH}"
@@ -134,9 +139,23 @@ sync_secret() {
     exit 1
   }
 
-  echo "Streaming terraform.tfvars from ${GCS_PATH} to GitHub secret PROD_TERRAFORM_TFVARS in repo ${GH_REPO}..."
-  gcloud storage cat "${GCS_PATH}" | gh secret set PROD_TERRAFORM_TFVARS --repo "${GH_REPO}"
-  echo "Successfully updated GitHub secret PROD_TERRAFORM_TFVARS from GCS."
+  TMP_REMOTE="$(mktemp -t remote_terraform_tfvars.XXXXXX)"
+  trap 'rm -f "${TMP_REMOTE}"' EXIT
+
+  echo "Fetching terraform.tfvars from ${GCS_PATH}..."
+  if ! gcloud storage cp "${GCS_PATH}" "${TMP_REMOTE}"; then
+    echo "ERROR: Unable to download remote file ${GCS_PATH}." >&2
+    exit 1
+  fi
+
+  if command -v terraform >/dev/null 2>&1; then
+    echo "Ensuring canonical formatting with terraform fmt..."
+    terraform fmt "${TMP_REMOTE}" >/dev/null 2>&1 || true
+  fi
+
+  echo "Updating GitHub secret PROD_TERRAFORM_TFVARS in repo ${GH_REPO}..."
+  gh secret set PROD_TERRAFORM_TFVARS --repo "${GH_REPO}" < "${TMP_REMOTE}"
+  echo "Successfully updated GitHub secret PROD_TERRAFORM_TFVARS."
 }
 
 main() {
