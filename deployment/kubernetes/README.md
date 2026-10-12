@@ -2,7 +2,6 @@
 
 This directory contains the Kubernetes deployment template used to run each backend environment on GKE. Terraform owns the cloud infrastructure and long-lived Kubernetes identity/RBAC objects. GitHub Actions renders and applies the application-workload template for each backend environment.
 
-Legacy Compute Engine VM definitions remain in Terraform, but VMs are disabled unless explicitly listed in `enabled_legacy_backend_vms`. New GKE backends do not need a VM entry.
 
 ## Architecture
 
@@ -260,13 +259,17 @@ gh workflow run deploy-k8s-staging.yml \
   --ref main
 ```
 
-The environment-specific workflows default `IMAGE_TAG` to `auto`. On collaborator branch merge commits, `auto` resolves to the second parent commit, which is the main commit that staging built and tested. On fast-forward or non-merge commits, `auto` resolves to the current commit. Manually entering `latest` is allowed as an explicit override, but it is a mutable tag and can recreate mixed-image replicas after later pod replacement:
+Collaborator environments listed in `collaborators.json` are deployed automatically on push by `.github/workflows/deploy-k8s-collaborator.yml` (calling `deploy-k8s-dispatch.yml`).
+
+The deployment workflows default `IMAGE_TAG` to `auto`. On collaborator branch merge commits, `auto` resolves to the second parent commit, which is the main commit that staging built and tested. On fast-forward or non-merge commits, `auto` resolves to the current commit.
+
+To manually trigger a collaborator deployment via GitHub CLI:
 
 ```bash
-gh workflow run deploy-k8s-isgs.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref isgs
-gh workflow run deploy-k8s-newts.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref newts
-gh workflow run deploy-k8s-osage.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref osage
-gh workflow run deploy-k8s-rrc.yml --repo CATALOG-Historic-Records/orphaned-wells-ui-server --ref rrc
+gh workflow run deploy-k8s-dispatch.yml \
+  --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
+  --ref <collaborator-branch> \
+  -f DEPLOY_ENV=<collaborator>
 ```
 
 Automatic deploys are controlled by repository variables:
@@ -619,16 +622,19 @@ gh secret set K8S_DEPLOY_TARGETS \
   --body "$(terraform output -json kubernetes_deploy_targets | jq -c .)"
 ```
 
-4. Add a GitHub environment-file secret for the collaborator, for example `BOOTS_ENV`.
+4. Add a GitHub environment-file secret for the collaborator:
+   - In the shared repository: `<COLLABORATOR>_ENV` (e.g., `BOOTS_ENV`).
+   - In a standalone or single-collaborator fork: `RUNTIME_ENV` is supported out-of-the-box.
 
-5. Update `.github/workflows/deploy-k8s-dispatch.yml`:
+5. In the shared repository, update `.github/workflows/deploy-k8s-dispatch.yml` if adding a named `<COLLABORATOR>_ENV` secret:
+   - add the new environment to `workflow_dispatch.inputs.DEPLOY_ENV.options`
+   - add the new environment secret to `workflow_call.secrets`
+   - add the secret to the `Prepare runtime env file` env block
+   - add a case branch that maps the new `DEPLOY_ENV` to that secret
 
-- add the new environment to `workflow_dispatch.inputs.DEPLOY_ENV.options`
-- add the new environment secret to `workflow_call.secrets`
-- add the secret to the `Prepare runtime env file` env block
-- add a case branch that maps the new `DEPLOY_ENV` to that secret
-
-6. Optionally add a dedicated workflow like `.github/workflows/deploy-k8s-boots.yml`.
+6. Add the collaborator branch name to `collaborators.json`:
+   - `.github/workflows/deploy-k8s-collaborator.yml` automatically triggers deployments on push to that branch.
+   - `.github/workflows/sync-collaborators.yml` automatically includes the branch in collaborator sync PRs.
 
 7. Deploy the new backend and verify:
 
