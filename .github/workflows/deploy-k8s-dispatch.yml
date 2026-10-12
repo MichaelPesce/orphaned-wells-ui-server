@@ -45,6 +45,9 @@ on:
         required: true
       DOCKERHUB_USERNAME:
         required: true
+      PROD_TERRAFORM_TFVARS:
+        description: Production terraform.tfvars content to compute Terraform CI revision
+        required: false
       RUNTIME_ENV:
         description: Direct runtime environment variables content (optional override)
         required: false
@@ -149,6 +152,17 @@ jobs:
         with:
           ref: main
           path: .infra
+
+      - name: Hydrate production terraform.tfvars
+        if: vars.ENABLE_TERRAFORM_CI == 'true'
+        env:
+          PROD_TERRAFORM_TFVARS: ${{ secrets.PROD_TERRAFORM_TFVARS }}
+        run: |
+          if [ -n "$PROD_TERRAFORM_TFVARS" ]; then
+            printf '%s\n' "$PROD_TERRAFORM_TFVARS" | tr -d '\r' > .infra/deployment/terraform/terraform.tfvars
+          elif [ ! -f .infra/deployment/terraform/terraform.tfvars ]; then
+            echo "::warning::PROD_TERRAFORM_TFVARS secret is not set and .infra/deployment/terraform/terraform.tfvars was not found."
+          fi
 
       - name: Require applied infrastructure
         if: vars.ENABLE_TERRAFORM_CI == 'true'
