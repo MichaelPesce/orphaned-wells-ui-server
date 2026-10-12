@@ -19,6 +19,7 @@ the secret-update commands below apply only to the disabled rollout fallback.
 - `terraform.tfvars.example` documents the required project-level variables (`project_id`, `dns_managed_zone`, `backend_dns_domain`) and collaborator backend definitions (`gke_backends`).
 - `backend.tf` configures the shared GCS backend for Terraform state.
 - `scripts/bootstrap_terraform_state_bucket.sh` creates or updates the GCS state bucket.
+- `scripts/sync_tfvars.sh` syncs the shared `terraform.tfvars` file between local developer environments, Google Cloud Storage, and GitHub Secrets.
 - `scripts/import_existing_infrastructure.sh` imports existing managed resources into a workspace from the current Terraform configuration.
 
 ## Prerequisites
@@ -165,6 +166,39 @@ Local `terraform.tfvars` files are loaded automatically. In CI,
 `terraform-apply.yml` hydrates `deployment/terraform/terraform.tfvars` directly
 from the `PROD_TERRAFORM_TFVARS` GitHub Secret, ensuring production infrastructure
 inventory is managed securely without being checked into Git.
+
+### Sharing and Syncing `terraform.tfvars` via GCS
+
+Because `terraform.tfvars` contains production inventory and is excluded from Git (`.gitignore`), the shared source of truth is stored in Google Cloud Storage:
+
+```text
+gs://<TF_STATE_BUCKET>/config/terraform.tfvars
+```
+
+Use `scripts/sync_tfvars.sh` to manage your local copy:
+
+- **Download the latest shared configuration:**
+  ```bash
+  ./deployment/terraform/scripts/sync_tfvars.sh pull
+  ```
+  *(Creates a `.bak` backup of your local `terraform.tfvars` if one already exists)*
+
+- **Inspect local modifications vs. GCS:**
+  ```bash
+  ./deployment/terraform/scripts/sync_tfvars.sh diff
+  ```
+
+- **Upload local changes to GCS:**
+  ```bash
+  ./deployment/terraform/scripts/sync_tfvars.sh push
+  ```
+
+- **Upload to GCS and update the CI secret (`PROD_TERRAFORM_TFVARS`) at once:**
+  ```bash
+  ./deployment/terraform/scripts/sync_tfvars.sh push --secret
+  ```
+
+*(Manual fallback: `gcloud storage cp gs://tidy-outlet-412020-ogrre-terraform-state/config/terraform.tfvars deployment/terraform/terraform.tfvars`)*
 
 ### Manual apply
 
@@ -548,6 +582,11 @@ Adding a collaborator involves three coordinated steps across infrastructure, de
 
 ### 1. Configure Infrastructure (`terraform.tfvars`)
 
+First, ensure your local configuration is up to date:
+```bash
+./deployment/terraform/scripts/sync_tfvars.sh pull
+```
+
 Collaborator backend definitions live in `gke_backends` inside `terraform.tfvars` (see `terraform.tfvars.example` for reference).
 
 Add the collaborator backend configuration:
@@ -576,8 +615,12 @@ terraform plan
 terraform apply
 ```
 
-For production CI:
-Update the `PROD_TERRAFORM_TFVARS` GitHub Secret with the updated `terraform.tfvars` content. When merged to `main`, CI will automatically hydrate the secret, plan, and prompt for apply approval.
+For production CI and sharing with teammates:
+Upload the updated configuration to GCS and update the GitHub secret in one step:
+```bash
+./deployment/terraform/scripts/sync_tfvars.sh push --secret
+```
+When merged to `main`, CI will automatically hydrate the secret, plan, and prompt for apply approval.
 
 ### 2. Register Branch (`collaborators.json`)
 
