@@ -9,7 +9,6 @@ on:
         type: choice
         options:
           - staging
-          - ca
           - isgs
           - newts
           - osage
@@ -46,9 +45,10 @@ on:
         required: true
       DOCKERHUB_USERNAME:
         required: true
-      STAGING_ENV:
+      RUNTIME_ENV:
+        description: Direct runtime environment variables content (optional override)
         required: false
-      CA_ENV:
+      STAGING_ENV:
         required: false
       ISGS_ENV:
         required: false
@@ -324,25 +324,27 @@ jobs:
           PROCESSING_JOB_ACTIVE_DEADLINE_SECONDS: ${{ steps.target.outputs.processing_job_active_deadline_seconds }}
           PROCESSING_JOB_TTL_SECONDS_AFTER_FINISHED: ${{ steps.target.outputs.processing_job_ttl_seconds_after_finished }}
           PROCESSING_JOB_MAX_ACTIVE: ${{ steps.target.outputs.processing_job_max_active }}
+          RUNTIME_ENV_CONTENT: ${{ secrets.RUNTIME_ENV }}
           STAGING_ENV_CONTENT: ${{ secrets.STAGING_ENV }}
-          CA_ENV_CONTENT: ${{ secrets.CA_ENV }}
           ISGS_ENV_CONTENT: ${{ secrets.ISGS_ENV }}
           NEWTS_ENV_CONTENT: ${{ secrets.NEWTS_ENV }}
           OSAGE_ENV_CONTENT: ${{ secrets.OSAGE_ENV }}
           RRC_ENV_CONTENT: ${{ secrets.RRC_ENV }}
         run: |
-          case "$DEPLOY_ENV" in
-            staging) runtime_env="$STAGING_ENV_CONTENT" ;;
-            ca) runtime_env="$CA_ENV_CONTENT" ;;
-            isgs) runtime_env="$ISGS_ENV_CONTENT" ;;
-            newts) runtime_env="$NEWTS_ENV_CONTENT" ;;
-            osage) runtime_env="$OSAGE_ENV_CONTENT" ;;
-            rrc) runtime_env="$RRC_ENV_CONTENT" ;;
-            *)
-              echo "::error::Unsupported DEPLOY_ENV: ${DEPLOY_ENV}"
-              exit 1
-              ;;
-          esac
+          runtime_env="${RUNTIME_ENV_CONTENT:-}"
+          if [ -z "$runtime_env" ]; then
+            case "$DEPLOY_ENV" in
+              staging) runtime_env="$STAGING_ENV_CONTENT" ;;
+              isgs) runtime_env="$ISGS_ENV_CONTENT" ;;
+              newts) runtime_env="$NEWTS_ENV_CONTENT" ;;
+              osage) runtime_env="$OSAGE_ENV_CONTENT" ;;
+              rrc) runtime_env="$RRC_ENV_CONTENT" ;;
+              *)
+                echo "::error::Unsupported DEPLOY_ENV: ${DEPLOY_ENV}. Provide RUNTIME_ENV secret or configure ${DEPLOY_ENV^^}_ENV."
+                exit 1
+                ;;
+            esac
+          fi
 
           if [ -z "$runtime_env" ]; then
             echo "::error::Missing GitHub secret for ${DEPLOY_ENV^^}_ENV"

@@ -44,6 +44,7 @@ jobs:
     uses: ./.github/workflows/terraform-apply.yml
     with:
       force_plan: ${{ inputs.force_terraform_plan || false }}
+    secrets: inherit
 
   docker_build_and_push:
     needs: check_ref
