@@ -16,11 +16,12 @@ if [ -z "${BUCKET}" ] && [ -f "${BACKEND_TF}" ]; then
 fi
 BUCKET="${BUCKET:-tidy-outlet-412020-ogrre-terraform-state}"
 GCS_PATH="gs://${BUCKET}/config/terraform.tfvars"
+GH_REPO="${GH_REPO:-CATALOG-Historic-Records/orphaned-wells-ui-server}"
 
 usage() {
   local exit_code="${1:-1}"
   cat <<EOF
-Usage: $(basename "$0") <pull|push|diff> [options]
+Usage: $(basename "$0") <pull|push|diff|sync-secret> [options]
 
 Manage and sync the shared terraform.tfvars file stored in Google Cloud Storage.
 
@@ -28,6 +29,7 @@ Commands:
   pull           Download terraform.tfvars from GCS (${GCS_PATH}) to local directory.
   push [options] Upload local terraform.tfvars to GCS (${GCS_PATH}).
   diff           Compare local terraform.tfvars with remote GCS version.
+  sync-secret    Stream GCS terraform.tfvars directly into the GitHub Secret PROD_TERRAFORM_TFVARS.
 
 Options for push:
   --secret, -s   Also update the PROD_TERRAFORM_TFVARS secret in GitHub via gh CLI.
@@ -37,6 +39,7 @@ General Options:
 
 Environment Overrides:
   BUCKET         Override GCS bucket name (defaults to bucket declared in backend.tf: ${BUCKET})
+  GH_REPO        Override GitHub repository (defaults to CATALOG-Historic-Records/orphaned-wells-ui-server)
 EOF
   exit "$exit_code"
 }
@@ -95,7 +98,7 @@ push_tfvars() {
     }
     echo "Updating GitHub secret PROD_TERRAFORM_TFVARS..."
     gh secret set PROD_TERRAFORM_TFVARS \
-      --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
+      --repo "${GH_REPO}" \
       --body "$(<"${TARGET_FILE}")"
     echo "Successfully updated GitHub secret PROD_TERRAFORM_TFVARS"
   fi
@@ -124,6 +127,18 @@ diff_tfvars() {
   fi
 }
 
+sync_secret() {
+  require_gcloud
+  command -v gh >/dev/null 2>&1 || {
+    echo "ERROR: gh CLI is required to update GitHub Secrets." >&2
+    exit 1
+  }
+
+  echo "Streaming terraform.tfvars from ${GCS_PATH} to GitHub secret PROD_TERRAFORM_TFVARS in repo ${GH_REPO}..."
+  gcloud storage cat "${GCS_PATH}" | gh secret set PROD_TERRAFORM_TFVARS --repo "${GH_REPO}"
+  echo "Successfully updated GitHub secret PROD_TERRAFORM_TFVARS from GCS."
+}
+
 main() {
   if [ $# -eq 0 ]; then
     usage
@@ -139,6 +154,9 @@ main() {
       ;;
     diff)
       diff_tfvars
+      ;;
+    sync-secret)
+      sync_secret
       ;;
     -h|--help|help)
       usage 0

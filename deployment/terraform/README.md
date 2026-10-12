@@ -198,6 +198,16 @@ Use `scripts/sync_tfvars.sh` to manage your local copy:
   ./deployment/terraform/scripts/sync_tfvars.sh push --secret
   ```
 
+- **Sync the GCS configuration directly into the GitHub Secret (`PROD_TERRAFORM_TFVARS`):**
+  ```bash
+  ./deployment/terraform/scripts/sync_tfvars.sh sync-secret
+  ```
+  *(Or stream directly from GCS into `gh` via pipe:)*
+  ```bash
+  gcloud storage cat gs://tidy-outlet-412020-ogrre-terraform-state/config/terraform.tfvars | \
+    gh secret set PROD_TERRAFORM_TFVARS --repo CATALOG-Historic-Records/orphaned-wells-ui-server
+  ```
+
 *(Manual fallback: `gcloud storage cp gs://tidy-outlet-412020-ogrre-terraform-state/config/terraform.tfvars deployment/terraform/terraform.tfvars`)*
 
 ### Manual apply
