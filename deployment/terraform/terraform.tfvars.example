@@ -1,8 +1,8 @@
 # Defaults for the shared OGRRE project live in variables.tf.
-# Copy this file to terraform.tfvars only when you need local overrides.
+# OGRRE Infrastructure Configuration Template
 
 # Staging already allows http://localhost:3000 (development) and :3001 (E2E).
-# Add alternate hosts/ports by replacing the bucket's complete origin list.
+ # Collaborator definitions follow below.
 # Retain its frontend domain and any local origins still in use.
 # upload_bucket_cors_origins = {
 #   uploaded_documents_v0 = [
@@ -65,3 +65,31 @@
 #     create_test_dns_record = false
 #   }
 # }
+#
+# Copy this file to terraform.tfvars and fill in the required values
+# to deploy the OGRRE backend infrastructure.
+
+# Required Project Identity
+project_id         = "your-gcp-project-id"
+dns_managed_zone    = "your-dns-zone"
+backend_dns_domain  = "your-domain.org"
+
+# Required Project Identity
+project_id         = "your-gcp-project-id"
+dns_managed_zone    = "your-dns-zone"
+backend_dns_domain  = "your-domain.org"
+
+# Define the environments/collaborators to deploy.
+gke_backends = {
+  staging = {
+    upload_bucket_name = "staging-uploads"
+    replicas           = 1
+  }
+}
+
+# Use this for per-backend overrides.
+gke_backend_overrides = {
+  production = {
+    memory_request = "8Gi"
+  }
+}
