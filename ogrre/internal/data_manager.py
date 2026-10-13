@@ -52,8 +52,7 @@ DEFAULT_PROCESSORS = [
 ]
 
 USE_DB_SCHEMAS = (
-    os.getenv("USE_DB_SCHEMAS")
-    or os.getenv("USE_DB_PROCESSORS", "false")
+    os.getenv("USE_DB_SCHEMAS") or os.getenv("USE_DB_PROCESSORS", "false")
 ).lower() in (
     "1",
     "true",
@@ -793,7 +792,7 @@ class DataManager:
         }:
             raise schema_rules.SchemaError("Invalid schema import request.")
         self.requireSchemaPermission(
-            user_info, destructive=request.get("mode") == "replace"
+            user_info, destructive=request.get("mode") in ("replace", "refresh")
         )
         package = self._installedSchemaPackage(user_info)
         with self._schemaCatalogWrite():
