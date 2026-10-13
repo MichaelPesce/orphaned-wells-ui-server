@@ -51,11 +51,15 @@ DEFAULT_PROCESSORS = [
     },
 ]
 
-USE_DB_PROCESSORS = os.getenv("USE_DB_PROCESSORS", "false").lower() in (
+USE_DB_SCHEMAS = (
+    os.getenv("USE_DB_SCHEMAS")
+    or os.getenv("USE_DB_PROCESSORS", "false")
+).lower() in (
     "1",
     "true",
     "yes",
 )
+USE_DB_PROCESSORS = USE_DB_SCHEMAS
 
 
 class DataManager:
@@ -379,7 +383,7 @@ class DataManager:
 
     def _resolveRecordGroupSchema(self, group, user=None):
         """Resolve one active source. An explicit null binding never uses legacy fallback."""
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             if "schema_id" in group:
                 return (
                     self._schemaDocument(group["schema_id"])
@@ -441,12 +445,12 @@ class DataManager:
 
     def _recordGroupSchemaInfo(self, group, user=None):
         result = dict(group)
-        result["schema_source"] = "database" if USE_DB_PROCESSORS else "repo"
+        result["schema_source"] = "database" if USE_DB_SCHEMAS else "repo"
         try:
             schema = self.resolveRecordGroupSchema(group, user, strict=True)
             result.update(
                 has_schema=schema is not None
-                and (USE_DB_PROCESSORS or "attributes" in schema),
+                and (USE_DB_SCHEMAS or "attributes" in schema),
                 can_process=bool(
                     schema and schema.get("processorId") and schema.get("modelId")
                 ),
@@ -502,7 +506,7 @@ class DataManager:
         return self._normalizeCollaborator(self.collaborator)
 
     def getProcessorById(self, google_id=None, user=None):
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             processor = self.getMongoProcessorByID(google_id=google_id)
         else:
             collaborator = self.getCollaboratorForUser(user)
@@ -519,7 +523,7 @@ class DataManager:
         return processor
 
     def getProcessorsByIds(self, google_ids=None, user=None):
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             processors = [
                 self.getMongoProcessorByID(google_id) for google_id in google_ids or []
             ]
@@ -535,7 +539,7 @@ class DataManager:
         return [self._serializeSchema(schema) for schema in self.db.processors.find({})]
 
     def createProcessorsList(self, user=None):
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             _log.info(f"creating processor list using db")
             processor_list = self.createProcessorsListFromDB()
         else:
@@ -543,7 +547,7 @@ class DataManager:
             _log.info(f"creating processor list using processor_api for {collaborator}")
             processor_list = processor_api.get_processor_list(collaborator)
 
-        if not processor_list and not USE_DB_PROCESSORS:
+        if not processor_list and not USE_DB_SCHEMAS:
             _log.info(f"no processors found, using default extractor")
             processor_list = DEFAULT_PROCESSORS
         return processor_list
@@ -613,7 +617,7 @@ class DataManager:
             return False
 
     def requireSchemaPermission(self, user_info, destructive=False, require_db=True):
-        if require_db and not USE_DB_PROCESSORS:
+        if require_db and not USE_DB_SCHEMAS:
             raise schema_rules.SchemaError(
                 "Repo schemas are read-only. Enable DB schema mode to manage schemas.",
                 409,
@@ -638,7 +642,7 @@ class DataManager:
         a process crash, operators stop writers before clearing the owner (README).
         A partial import retains pending_import until its saved steps finish.
         """
-        if not USE_DB_PROCESSORS or _catalog_writer.get() is self:
+        if not USE_DB_SCHEMAS or _catalog_writer.get() is self:
             yield
             return
         guards = self.db.schema_catalog_guard
@@ -1527,7 +1531,7 @@ class DataManager:
     @time_it
     def getSchema(self, user_info):
         self.requireSchemaPermission(user_info, require_db=False)
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             processors = [
                 self._serializeSchema(schema) for schema in self.db.processors.find({})
             ]
@@ -1566,8 +1570,8 @@ class DataManager:
             )
         return {
             "processors": processors,
-            "source": "database" if USE_DB_PROCESSORS else "repo",
-            "read_only": not USE_DB_PROCESSORS,
+            "source": "database" if USE_DB_SCHEMAS else "repo",
+            "read_only": not USE_DB_SCHEMAS,
         }
 
     @schema_import.catalog_write
@@ -2452,10 +2456,10 @@ class DataManager:
     def _schemaState(self, processor):
         schema = (
             processor
-            if processor and (USE_DB_PROCESSORS or "attributes" in processor)
+            if processor and (USE_DB_SCHEMAS or "attributes" in processor)
             else None
         )
-        keep_unknown = USE_DB_PROCESSORS or schema is None
+        keep_unknown = USE_DB_SCHEMAS or schema is None
         if schema is not None:
             schema = {
                 "attributes": schema_rules.normalize_fields(
@@ -2590,6 +2594,7 @@ class DataManager:
     def fetchProcessors(self, user):
         processor_list = self.createProcessorsList(user)
         return {
+            "USE_DB_SCHEMAS": USE_DB_SCHEMAS,
             "USE_DB_PROCESSORS": USE_DB_PROCESSORS,
             "collaborator": self.getCollaboratorForUser(user),
             "processor_list": processor_list,
@@ -3570,7 +3575,7 @@ class DataManager:
             return False
 
         group_id = ObjectId()
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             if "schema_id" in rg_info:
                 if rg_info.get("attributes") or rg_info.get("processorId"):
                     raise schema_rules.SchemaError(
@@ -4546,7 +4551,7 @@ class DataManager:
         binding_change = bool(set(new_data) & {"schema_id", "processorId"})
         if binding_change or "documentType" in new_data:
             self.requireSchemaPermission(user_info, destructive=True, require_db=False)
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             if "schema_id" in new_data and "processorId" in new_data:
                 raise schema_rules.SchemaError(
                     "Use schema_id to select a database schema."
@@ -4616,7 +4621,7 @@ class DataManager:
         self, rg_id, processor_id, user_info, schema_id=None
     ):
         self.requireSchemaPermission(user_info, destructive=True, require_db=False)
-        if USE_DB_PROCESSORS:
+        if USE_DB_SCHEMAS:
             if schema_id is not None:
                 schema = self._schemaDocument(schema_id)
             else:

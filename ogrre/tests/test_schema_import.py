@@ -369,6 +369,7 @@ def test_repo_mode_rejects_import_and_requests_are_validated(
         ).status_code
         == 400
     )
+    monkeypatch.setattr(data_manager, "USE_DB_SCHEMAS", False)
     monkeypatch.setattr(data_manager, "USE_DB_PROCESSORS", False)
     assert client.get("/get_repo_schema_import").status_code == 409
     assert (
