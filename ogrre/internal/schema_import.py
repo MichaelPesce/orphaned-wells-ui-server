@@ -476,9 +476,7 @@ def build_plan(package, catalog, groups, request, creator, now):
                 detaching.append(group_label(group))
 
     detaching_group_ids = {
-        str(op["before"]["_id"])
-        for op in bindings
-        if op["after"]["schema_id"] is None
+        str(op["before"]["_id"]) for op in bindings if op["after"]["schema_id"] is None
     }
     pre_reconcile = [
         {"kind": "reconcile", "group_id": key}

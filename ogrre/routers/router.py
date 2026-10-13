@@ -2646,9 +2646,7 @@ def get_repo_schema_import(
     source_options = None
     if source_type:
         source_options = {"type": source_type, "ref": ref, "repo": repo}
-    return schema_operation(
-        data_manager.getRepoSchemaImport, user_info, source_options
-    )
+    return schema_operation(data_manager.getRepoSchemaImport, user_info, source_options)
 
 
 @router.post("/record_groups/{rg_id}/schema/preview")

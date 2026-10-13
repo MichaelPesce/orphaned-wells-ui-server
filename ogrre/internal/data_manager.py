@@ -839,8 +839,7 @@ class DataManager:
                     canonical["attributes"], util.CLEANING_FUNCTIONS
                 )
                 normalized = {
-                    key: canonical.get(key)
-                    for key in ("name", *schema_import.METADATA)
+                    key: canonical.get(key) for key in ("name", *schema_import.METADATA)
                 }
                 self._checkProcessorMetadata(normalized)
                 result.update(
