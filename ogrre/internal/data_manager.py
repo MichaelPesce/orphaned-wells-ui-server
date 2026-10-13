@@ -55,7 +55,7 @@ DEFAULT_PROCESSORS = [
 ]
 
 USE_DB_SCHEMAS = (
-    os.getenv("USE_DB_SCHEMAS") or os.getenv("USE_DB_PROCESSORS", "false")
+    os.getenv("USE_DB_SCHEMAS") or os.getenv("USE_DB_PROCESSORS", "true")
 ).lower() in (
     "1",
     "true",
