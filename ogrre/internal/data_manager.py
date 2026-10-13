@@ -13,6 +13,9 @@ from contextvars import ContextVar
 from importlib.metadata import version, PackageNotFoundError
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+import urllib.request
+import urllib.error
+import urllib.parse
 
 from bson import BSON, ObjectId
 from pymongo import ASCENDING, DESCENDING, InsertOne, UpdateOne, ReturnDocument
@@ -725,12 +728,153 @@ class DataManager:
             schemas.append(result)
         return {
             "source": {
+                "type": "installed",
                 "package": "ogrre_data_cleaning",
                 "version": package_version,
                 "collaborator": collaborator,
             },
             "schemas": schemas,
         }
+
+    def _remoteGithubSchemaPackage(
+        self,
+        collaborator,
+        repo="CATALOG-Historic-Records/OGRRE_data_cleaning",
+        ref="main",
+    ):
+        if not repo or not isinstance(repo, str):
+            repo = "CATALOG-Historic-Records/OGRRE_data_cleaning"
+        repo = repo.strip()
+        if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+            raise schema_rules.SchemaError(
+                "Invalid GitHub repository format. Expected 'owner/repo'."
+            )
+        if not ref or not isinstance(ref, str):
+            ref = "main"
+        ref = ref.strip()
+        if ".." in ref or not re.match(r"^[A-Za-z0-9_./-]+$", ref):
+            raise schema_rules.SchemaError("Invalid branch, tag, or commit reference.")
+
+        def _fetch_github_json(url):
+            headers = {
+                "User-Agent": "OGRRE-Backend",
+                "Accept": "application/json",
+            }
+            token = os.environ.get("GITHUB_TOKEN")
+            if token:
+                headers["Authorization"] = f"Bearer {token.strip()}"
+            req = urllib.request.Request(url, headers=headers)
+            try:
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as err:
+                if err.code == 404:
+                    return None
+                if err.code in (403, 429):
+                    raise schema_rules.SchemaError(
+                        "GitHub request rate limit exceeded or access forbidden.", 403
+                    )
+                raise schema_rules.SchemaError(
+                    f"GitHub returned HTTP error {err.code}."
+                )
+            except urllib.error.URLError as err:
+                raise schema_rules.SchemaError(
+                    f"Failed to connect to GitHub: {err.reason}."
+                )
+            except json.JSONDecodeError:
+                raise schema_rules.SchemaError("GitHub returned invalid JSON.")
+
+        candidate_bases = [
+            f"src/ogrre_data_cleaning/processor_schemas/{collaborator}_extractors",
+            f"ogrre_data_cleaning/processor_schemas/{collaborator}_extractors",
+        ]
+        metadata = None
+        active_base = None
+        for base in candidate_bases:
+            catalog_url = f"https://raw.githubusercontent.com/{repo}/{ref}/{base}/Extractor%20Processors.json"
+            metadata = _fetch_github_json(catalog_url)
+            if metadata is not None:
+                active_base = base
+                break
+
+        if metadata is None:
+            raise schema_rules.SchemaError(
+                f"No schema catalog found on GitHub repository '{repo}' at ref '{ref}' for collaborator '{collaborator}'.",
+                404,
+            )
+        if not isinstance(metadata, list) or len(metadata) > 250:
+            raise schema_rules.SchemaError(
+                "The remote GitHub schema catalog is invalid or exceeds 250 schemas."
+            )
+
+        seen = set()
+        for item in metadata:
+            name = item.get("Processor Name") if isinstance(item, dict) else None
+            if not isinstance(name, str) or not name or name in seen:
+                raise schema_rules.SchemaError(
+                    "The remote GitHub package contains missing or duplicate schema names."
+                )
+            seen.add(name)
+
+        def fetch_schema_definition(item):
+            name = item["Processor Name"]
+            attr_url = f"https://raw.githubusercontent.com/{repo}/{ref}/{active_base}/{urllib.parse.quote(name)}.json"
+            attrs = _fetch_github_json(attr_url)
+            return name, item, attrs
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            fetched_definitions = list(pool.map(fetch_schema_definition, metadata))
+
+        schemas = []
+        for name, item, attrs in fetched_definitions:
+            result = {"source_id": name, "name": item.get("displayName") or name}
+            try:
+                if attrs is None or not isinstance(attrs, list):
+                    raise schema_rules.SchemaError(
+                        "The remote schema file was not found on GitHub; it cannot be imported as an empty schema."
+                    )
+                definition = {**item, "attributes": attrs}
+                canonical = self._canonicalRepoProcessor(definition)
+                fields = schema_rules.validate_fields(
+                    canonical["attributes"], util.CLEANING_FUNCTIONS
+                )
+                normalized = {
+                    key: canonical.get(key)
+                    for key in ("name", *schema_import.METADATA)
+                }
+                self._checkProcessorMetadata(normalized)
+                result.update(
+                    definition={**normalized, "attributes": fields},
+                    field_count=len(fields),
+                )
+            except schema_rules.SchemaError as error:
+                result["error"] = str(error)
+            schemas.append(result)
+
+        return {
+            "source": {
+                "type": "github",
+                "package": "ogrre_data_cleaning",
+                "version": ref,
+                "collaborator": collaborator,
+                "repo": repo,
+                "ref": ref,
+            },
+            "schemas": schemas,
+        }
+
+    def _loadSchemaPackage(self, source_options, user_info):
+        if not source_options or source_options.get("type") in (None, "installed"):
+            return self._installedSchemaPackage(user_info)
+        if source_options.get("type") == "github":
+            collaborator = self.getCollaboratorForUser(user_info)
+            repo = (
+                source_options.get("repo")
+                or "CATALOG-Historic-Records/OGRRE_data_cleaning"
+            )
+            ref = source_options.get("ref") or "main"
+            return self._remoteGithubSchemaPackage(collaborator, repo=repo, ref=ref)
+        raise schema_rules.SchemaError("Unsupported schema source type.")
 
     def _schemaImportState(self):
         return {
@@ -759,7 +903,7 @@ class DataManager:
             }
         }
 
-    def getRepoSchemaImport(self, user_info):
+    def getRepoSchemaImport(self, user_info, source_options=None):
         self.requireSchemaPermission(user_info)
         guard = self.db.schema_catalog_guard.find_one({"_id": "catalog"}) or {}
         pending = (
@@ -767,9 +911,12 @@ class DataManager:
             if guard.get("pending_import")
             else None
         )
-        # A saved import can be resumed even if the installed package changes.
+        # A saved import can be resumed even if the source package changes.
         try:
-            package = self._installedSchemaPackage(user_info)
+            package = self._loadSchemaPackage(
+                source_options or (pending.get("source") if pending else None),
+                user_info,
+            )
         except schema_rules.SchemaError as error:
             if not pending:
                 raise
@@ -789,12 +936,13 @@ class DataManager:
             "mode",
             "selected",
             "decisions",
+            "source",
         }:
             raise schema_rules.SchemaError("Invalid schema import request.")
         self.requireSchemaPermission(
             user_info, destructive=request.get("mode") in ("replace", "refresh")
         )
-        package = self._installedSchemaPackage(user_info)
+        package = self._loadSchemaPackage(request.get("source"), user_info)
         with self._schemaCatalogWrite():
             state = self._schemaImportState()
             now = time.time()
@@ -921,10 +1069,12 @@ class DataManager:
                     or job["snapshot"]
                     != self._attributeDigest(self._schemaImportState())
                     or job["package_digest"]
-                    != self._attributeDigest(self._installedSchemaPackage(user_info))
+                    != self._attributeDigest(
+                        self._loadSchemaPackage(job.get("source"), user_info)
+                    )
                 ):
                     raise schema_rules.SchemaError(
-                        "The catalog, groups, or installed package changed, or the preview expired. Review a new preview.",
+                        "The catalog, groups, or source package changed, or the preview expired. Review a new preview.",
                         409,
                     )
                 now = time.time()
