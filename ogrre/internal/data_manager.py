@@ -950,8 +950,26 @@ class DataManager:
                 },
             )
             try:
-                for index in range(job["next_step"], len(job["operations"])):
+                total_ops = len(job["operations"])
+                for index in range(job["next_step"], total_ops):
                     operation = job["operations"][index]
+                    op_kind = operation["kind"]
+                    target_info = (
+                        operation.get("group_id")
+                        or (operation.get("after") or {}).get("displayName")
+                        or (operation.get("after") or {}).get("name")
+                        or (operation.get("before") or {}).get("displayName")
+                        or (operation.get("before") or {}).get("name")
+                        or ""
+                    )
+                    _log.info(
+                        "Schema import %s: step %d/%d (%s%s)",
+                        import_id,
+                        index + 1,
+                        total_ops,
+                        op_kind,
+                        f" - {target_info}" if target_info else "",
+                    )
                     self._applySchemaImportStep(operation, job, user_info)
                     self.db.history.update_one(
                         {"_id": f"schema-import:{import_id}:{index}"},
@@ -2545,8 +2563,17 @@ class DataManager:
             records = self.db.records.find(query).batch_size(100)
             if limit is not None:
                 records = records.limit(limit)
+            reconciled_count = 0
             for record in records:
                 self._reconcileRecord(record, target_state, user)
+                reconciled_count += 1
+            if reconciled_count:
+                _log.info(
+                    "Reconciled %d records for record group %s (%s)",
+                    reconciled_count,
+                    group["_id"],
+                    group.get("name", ""),
+                )
             current_group = self.db.record_groups.find_one({"_id": group["_id"]})
             if (
                 current_group is None

@@ -475,9 +475,14 @@ def build_plan(package, catalog, groups, request, creator, now):
             if target_id is None:
                 detaching.append(group_label(group))
 
-    reconcile = [
+    detaching_group_ids = {
+        str(op["before"]["_id"])
+        for op in bindings
+        if op["after"]["schema_id"] is None
+    }
+    pre_reconcile = [
         {"kind": "reconcile", "group_id": key}
-        for key in affected
+        for key in detaching_group_ids
         if next(
             (
                 group.get("schema_id") or (legacy.get(key) or [None])[0]
@@ -494,13 +499,18 @@ def build_plan(package, catalog, groups, request, creator, now):
         if op["after"]["schema_id"] is None or op["after"]["schema_id"] in by_id
     ]
     late_bindings = [op for op in bindings if op not in early_bindings]
+    post_reconcile = [
+        {"kind": "reconcile", "group_id": key}
+        for key in affected
+        if key not in detaching_group_ids
+    ]
     operations = (
-        reconcile
+        pre_reconcile
         + early_bindings
         + changes
         + late_bindings
         + [{"kind": "remove", "before": schema} for schema in removed]
-        + [{"kind": "reconcile", "group_id": key} for key in affected]
+        + post_reconcile
     )
     return {
         "source": package["source"],
