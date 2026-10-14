@@ -49,17 +49,7 @@ on:
         description: Production terraform.tfvars content to compute Terraform CI revision
         required: false
       RUNTIME_ENV:
-        description: Direct runtime environment variables content (optional override)
-        required: false
-      STAGING_ENV:
-        required: false
-      ISGS_ENV:
-        required: false
-      NEWTS_ENV:
-        required: false
-      OSAGE_ENV:
-        required: false
-      RRC_ENV:
+        description: Direct runtime environment variables content (from GitHub environment or repository secret)
         required: false
 
 defaults:
@@ -74,6 +64,7 @@ jobs:
   deploy:
     if: github.repository == 'CATALOG-Historic-Records/orphaned-wells-ui-server'
     name: Deploy ${{ inputs.DEPLOY_ENV }} to GKE
+    environment: ${{ inputs.DEPLOY_ENV }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -339,29 +330,10 @@ jobs:
           PROCESSING_JOB_TTL_SECONDS_AFTER_FINISHED: ${{ steps.target.outputs.processing_job_ttl_seconds_after_finished }}
           PROCESSING_JOB_MAX_ACTIVE: ${{ steps.target.outputs.processing_job_max_active }}
           RUNTIME_ENV_CONTENT: ${{ secrets.RUNTIME_ENV }}
-          STAGING_ENV_CONTENT: ${{ secrets.STAGING_ENV }}
-          ISGS_ENV_CONTENT: ${{ secrets.ISGS_ENV }}
-          NEWTS_ENV_CONTENT: ${{ secrets.NEWTS_ENV }}
-          OSAGE_ENV_CONTENT: ${{ secrets.OSAGE_ENV }}
-          RRC_ENV_CONTENT: ${{ secrets.RRC_ENV }}
         run: |
           runtime_env="${RUNTIME_ENV_CONTENT:-}"
           if [ -z "$runtime_env" ]; then
-            case "$DEPLOY_ENV" in
-              staging) runtime_env="$STAGING_ENV_CONTENT" ;;
-              isgs) runtime_env="$ISGS_ENV_CONTENT" ;;
-              newts) runtime_env="$NEWTS_ENV_CONTENT" ;;
-              osage) runtime_env="$OSAGE_ENV_CONTENT" ;;
-              rrc) runtime_env="$RRC_ENV_CONTENT" ;;
-              *)
-                echo "::error::Unsupported DEPLOY_ENV: ${DEPLOY_ENV}. Provide RUNTIME_ENV secret or configure ${DEPLOY_ENV^^}_ENV."
-                exit 1
-                ;;
-            esac
-          fi
-
-          if [ -z "$runtime_env" ]; then
-            echo "::error::Missing GitHub secret for ${DEPLOY_ENV^^}_ENV"
+            echo "::error::Missing RUNTIME_ENV secret for environment '${DEPLOY_ENV}'. Ensure RUNTIME_ENV is configured in the '${DEPLOY_ENV}' GitHub environment or as a repository secret."
             exit 1
           fi
 
@@ -436,7 +408,7 @@ jobs:
           done
 
           if [ "${#missing_keys[@]}" -gt 0 ]; then
-            echo "::error::${DEPLOY_ENV^^}_ENV did not provide required runtime key(s): ${missing_keys[*]}"
+            echo "::error::RUNTIME_ENV for '${DEPLOY_ENV}' did not provide required runtime key(s): ${missing_keys[*]}"
             exit 1
           fi
 

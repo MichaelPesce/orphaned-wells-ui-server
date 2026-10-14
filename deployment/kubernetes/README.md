@@ -226,13 +226,7 @@ Keep the existing deployment secrets:
 - `DOCUMENT_AI_SERVICE_KEY_JSON`
 - `K8S_DEPLOY_TARGETS` (only for the disabled Terraform CI rollout fallback)
 
-Each backend environment also needs an environment-file secret:
-
-- `STAGING_ENV`
-- `ISGS_ENV`
-- `NEWTS_ENV`
-- `OSAGE_ENV`
-- `RRC_ENV`
+Each backend environment needs its environment-file variables stored in a `RUNTIME_ENV` secret inside its corresponding GitHub Environment (`staging`, `isgs`, `newts`, `osage`, `rrc`), or as a repository-level secret for single-environment deployments.
 
 The environment-file secret should contain the same key/value pairs used by the VM `.env` file. The workflow overrides these Kubernetes-owned values:
 
@@ -247,7 +241,7 @@ The environment-file secret should contain the same key/value pairs used by the 
 
 Keep `COLLABORATOR` in the environment secret when the backend needs it.
 
-Use `ogrre/.env.example` as the source of truth for environment-file contents. Omit local file paths and local-only settings that the workflow owns, and store real values in the environment-specific GitHub secret such as `STAGING_ENV` or `ISGS_ENV`.
+Use `ogrre/.env.example` as the source of truth for environment-file contents. Omit local file paths and local-only settings that the workflow owns, and store real values in the `RUNTIME_ENV` secret for each target environment.
 
 ## GitHub Actions deployment
 
@@ -272,19 +266,12 @@ gh workflow run deploy-k8s-dispatch.yml \
   -f DEPLOY_ENV=<collaborator>
 ```
 
-Automatic deploys are controlled by repository variables:
+Automatic deployments on push are enabled by default for `staging` and for any branch listed in `collaborators.json`.
+
+To pause automatic deployments across all environments, set the repository variable:
 
 ```text
-ENABLE_GKE_DEPLOYMENTS=true
-```
-
-Or one environment at a time:
-
-```text
-ENABLE_GKE_STAGING_DEPLOY=true
-ENABLE_GKE_ISGS_DEPLOY=true
-ENABLE_GKE_NEWTS_DEPLOY=true
-ENABLE_GKE_OSAGE_DEPLOY=true
+ENABLE_GKE_DEPLOYMENTS=false
 ```
 
 When Kubernetes deployment behavior changes, update the operator-facing frontend docs in `../orphaned-wells-ui/docs/docs/deploy-gcp` as part of the same work so the two repos stay aligned.
@@ -622,21 +609,19 @@ gh secret set K8S_DEPLOY_TARGETS \
   --body "$(terraform output -json kubernetes_deploy_targets | jq -c .)"
 ```
 
-4. Add a GitHub environment-file secret for the collaborator:
-   - In the shared repository: `<COLLABORATOR>_ENV` (e.g., `BOOTS_ENV`).
-   - In a standalone or single-collaborator fork: `RUNTIME_ENV` is supported out-of-the-box.
+4. Add the `RUNTIME_ENV` secret for the collaborator environment:
+   ```bash
+   gh secret set RUNTIME_ENV \
+     --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
+     --env <COLLABORATOR> < path/to/.env
+   ```
+   (In a standalone or single-collaborator fork, setting `RUNTIME_ENV` as a repository secret also works via automatic fallback without creating environments.)
 
-5. In the shared repository, update `.github/workflows/deploy-k8s-dispatch.yml` if adding a named `<COLLABORATOR>_ENV` secret:
-   - add the new environment to `workflow_dispatch.inputs.DEPLOY_ENV.options`
-   - add the new environment secret to `workflow_call.secrets`
-   - add the secret to the `Prepare runtime env file` env block
-   - add a case branch that maps the new `DEPLOY_ENV` to that secret
-
-6. Add the collaborator branch name to `collaborators.json`:
+5. Add the collaborator branch name to `collaborators.json`:
    - `.github/workflows/deploy-k8s-collaborator.yml` automatically triggers deployments on push to that branch.
    - `.github/workflows/sync-collaborators.yml` automatically includes the branch in collaborator sync PRs.
 
-7. Deploy the new backend and verify:
+6. Deploy the new backend and verify:
 
 ```bash
 kubectl -n uow-boots get deployment backend
