@@ -25,22 +25,16 @@ jobs:
         env:
           IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
           ENABLE_GKE_DEPLOYMENTS: ${{ vars.ENABLE_GKE_DEPLOYMENTS }}
-          ENABLE_GKE_ISGS_DEPLOY: ${{ vars.ENABLE_GKE_ISGS_DEPLOY }}
-          ENABLE_GKE_NEWTS_DEPLOY: ${{ vars.ENABLE_GKE_NEWTS_DEPLOY }}
-          ENABLE_GKE_OSAGE_DEPLOY: ${{ vars.ENABLE_GKE_OSAGE_DEPLOY }}
-          ENABLE_GKE_RRC_DEPLOY: ${{ vars.ENABLE_GKE_RRC_DEPLOY }}
         run: |
           BRANCH="${GITHUB_REF_NAME}"
           if [ -f collaborators.json ] && jq -e --arg b "$BRANCH" 'index($b) != null' collaborators.json > /dev/null; then
             echo "env=$BRANCH" >> "$GITHUB_OUTPUT"
-            env_upper="$(tr '[:lower:]' '[:upper:]' <<< "$BRANCH")"
-            env_var="ENABLE_GKE_${env_upper}_DEPLOY"
-            if [ "$IS_DISPATCH" = "true" ] || [ "$ENABLE_GKE_DEPLOYMENTS" = "true" ] || [ "${!env_var}" = "true" ]; then
+            if [ "$IS_DISPATCH" = "true" ] || [ "$ENABLE_GKE_DEPLOYMENTS" != "false" ]; then
               echo "should_deploy=true" >> "$GITHUB_OUTPUT"
               echo "Deploying to collaborator environment: $BRANCH"
             else
               echo "should_deploy=false" >> "$GITHUB_OUTPUT"
-              echo "Branch '$BRANCH' is a recognized collaborator, but deployments are not enabled (set ENABLE_GKE_DEPLOYMENTS or $env_var to true, or use manual dispatch)."
+              echo "Branch '$BRANCH' is a recognized collaborator, but deployments are paused (ENABLE_GKE_DEPLOYMENTS is set to 'false')."
             fi
           else
             echo "should_deploy=false" >> "$GITHUB_OUTPUT"

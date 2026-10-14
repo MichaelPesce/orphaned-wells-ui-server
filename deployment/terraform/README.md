@@ -654,8 +654,8 @@ This single file drives:
 
 1. Create and push the collaborator branch (e.g. `boots`).
 2. Add the runtime secret in GitHub:
-   - For standard multi-tenant setups: `<COLLABORATOR>_ENV` (e.g., `BOOTS_ENV`).
-   - For standalone or single-collaborator forks: `RUNTIME_ENV` can be used directly without modifying workflows.
+   - For standard multi-environment setups: create the environment first (`gh api --method PUT repos/CATALOG-Historic-Records/orphaned-wells-ui-server/environments/boots`), then configure `RUNTIME_ENV` inside it (`gh secret set RUNTIME_ENV -R CATALOG-Historic-Records/orphaned-wells-ui-server --env boots < boots.env`).
+   - For standalone or single-collaborator forks: `RUNTIME_ENV` can be set as a repository secret and will be picked up directly via fallback.
 3. Pushes to the branch will trigger `deploy-k8s-collaborator.yml` and deploy the backend to GKE.
 
 ## Notes
