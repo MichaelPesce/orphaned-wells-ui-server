@@ -228,6 +228,18 @@ Keep the existing deployment secrets:
 
 Each backend environment needs its environment-file variables stored in a `RUNTIME_ENV` secret inside its corresponding GitHub Environment (`staging`, `isgs`, `newts`, `osage`, `rrc`), or as a repository-level secret for single-environment deployments.
 
+To set an environment secret via the GitHub CLI, create the environment first (GitHub's secrets API requires the environment to exist before fetching its public key), then set `RUNTIME_ENV`:
+
+```bash
+# Create the environment (e.g. staging, isgs, etc.)
+gh api --method PUT repos/CATALOG-Historic-Records/orphaned-wells-ui-server/environments/<ENV>
+
+# Set the RUNTIME_ENV secret
+gh secret set RUNTIME_ENV \
+  -R CATALOG-Historic-Records/orphaned-wells-ui-server \
+  --env <ENV> < path/to/.env
+```
+
 The environment-file secret should contain the same key/value pairs used by the VM `.env` file. The workflow overrides these Kubernetes-owned values:
 
 - `ENVIRONMENT`
@@ -611,6 +623,10 @@ gh secret set K8S_DEPLOY_TARGETS \
 
 4. Add the `RUNTIME_ENV` secret for the collaborator environment:
    ```bash
+   # Create the GitHub environment (required before setting environment secrets via CLI)
+   gh api --method PUT repos/CATALOG-Historic-Records/orphaned-wells-ui-server/environments/<COLLABORATOR>
+
+   # Set the secret
    gh secret set RUNTIME_ENV \
      --repo CATALOG-Historic-Records/orphaned-wells-ui-server \
      --env <COLLABORATOR> < path/to/.env
