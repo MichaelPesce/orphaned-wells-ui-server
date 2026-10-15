@@ -949,7 +949,7 @@ class DataManager:
         }:
             raise schema_rules.SchemaError("Invalid schema import request.")
         self.requireSchemaPermission(
-            user_info, destructive=request.get("mode") in ("replace", "refresh")
+            user_info, destructive=request.get("mode") == "replace"
         )
         package = self._loadSchemaPackage(request.get("source"), user_info)
         with self._schemaCatalogWrite():

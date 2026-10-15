@@ -354,12 +354,6 @@ def build_plan(package, catalog, groups, request, creator, now):
 
     if mode == "replace":
         removed = [schema for schema in catalog if str(schema["_id"]) not in retained]
-    elif mode == "refresh":
-        removed = [
-            schema
-            for schema in catalog
-            if str(schema["_id"]) not in retained and not users(str(schema["_id"]))
-        ]
     else:
         removed = []
     removed_ids = {str(schema["_id"]) for schema in removed}
@@ -540,8 +534,13 @@ def build_plan(package, catalog, groups, request, creator, now):
             "removed": len(removed),
             "detached": len(detaching),
         },
-        "destructive": mode in ("replace", "refresh")
-        or any(entry["action"] == "updated" for entry in entries)
-        or bool(late_bindings),
+        "destructive": mode == "replace"
+        or (
+            mode != "refresh"
+            and (
+                any(entry["action"] == "updated" for entry in entries)
+                or bool(late_bindings)
+            )
+        ),
         "operations": operations,
     }
