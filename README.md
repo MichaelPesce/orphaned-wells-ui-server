@@ -448,9 +448,9 @@ Any other answer, end of input, or Ctrl+C cancels without writing. If the previe
 changes while awaiting confirmation, the migration stops and requires a new
 preview. When no changes are needed, it exits without prompting.
 
-The migration grants `manage_schema` to all system roles, removes `manage_schema`
-from `team_lead`, grants `manage_schema_destructive` only to `sys_admin`, and removes
-that permission from other roles. Other permissions are preserved. It is idempotent, records
+The migration grants `manage_schema` and `view_schema` to all system roles, removes
+`manage_schema` and `view_schema` from `team_lead`, grants `manage_schema_destructive`
+only to `sys_admin`, and removes that permission from other roles. Other permissions are preserved. It is idempotent, records
 applied changes in history, and rejects concurrent role changes; preview and
 retry after resolving a conflict. Have users refresh their permission state
 after rollout. Neither API startup nor changing schema mode runs the migration.

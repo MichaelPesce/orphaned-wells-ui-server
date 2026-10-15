@@ -103,6 +103,12 @@ def test_apply_waits_for_approval_then_records_each_original_role(
     for role in before:
         history = cli_db.history.find_one({"query.role_id": role["id"]})
         assert history["previous_state"]["permissions"] == role["permissions"]
+    sys_admin = cli_db.roles.find_one({"id": "sys_admin"})
+    assert "view_schema" in sys_admin["permissions"]
+    assert "manage_schema" in sys_admin["permissions"]
+    team_lead = cli_db.roles.find_one({"id": "team_lead"})
+    assert "view_schema" not in team_lead["permissions"]
+    assert "manage_schema" not in team_lead["permissions"]
 
 
 @pytest.mark.parametrize("answer", ["", "n", "yes", EOFError(), KeyboardInterrupt()])
