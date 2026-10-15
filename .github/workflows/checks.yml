@@ -13,12 +13,14 @@ on:
         description: Frontend branch, tag, or commit to test against.
         type: string
         required: false
-        default: main
+        # TODO: revert this back to main after passing tests are verified.
+        default: db-schemas
       frontend_repository:
         description: Frontend repository (owner/name); override to test a fork.
         type: string
         required: false
-        default: CATALOG-Historic-Records/orphaned-wells-ui
+        # TODO: revert this back to CATALOG-Historic-Records/orphaned-wells-ui after passing tests are verified.
+        default: MichaelPesce/orphaned-wells-ui
 
 defaults:
   run:
@@ -89,8 +91,8 @@ jobs:
     permissions:
       contents: read
     with:
-      checkout_repository: ${{ inputs.frontend_repository || 'CATALOG-Historic-Records/orphaned-wells-ui' }}
-      checkout_ref: ${{ inputs.frontend_ref || 'main' }}
+      checkout_repository: ${{ inputs.frontend_repository || 'MichaelPesce/orphaned-wells-ui' }}
+      checkout_ref: ${{ inputs.frontend_ref || 'db-schemas' }}
       backend_mode: source
       backend_repository: ${{ github.repository }}
       backend_ref: ${{ github.sha }}
