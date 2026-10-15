@@ -473,3 +473,26 @@ def test_standalone_mongo_import_guard_and_resumption(
     assert manager.db.record_groups.find_one()["schema_id"] is None
     assert manager.db.processors.count_documents({}) == 1
     assert manager.db.deleted_processors.count_documents({}) == 1
+
+
+def test_refresh_mode_preserves_unused_schemas_and_allows_safe_managers(admin, package):
+    unrelated_id = ObjectId()
+    admin.db.processors.insert_one(
+        {
+            "_id": unrelated_id,
+            "name": "IL_WellCompletion_F",
+            "displayName": "IL Well Completion F",
+            "documentType": "Well",
+            "attributes": [copy.deepcopy(FIELD)],
+        }
+    )
+    admin.hasPermission.side_effect = (
+        lambda email, permission: permission != "manage_schema_destructive"
+    )
+    plan = preview(admin, mode="refresh", selected=["Package well"])
+    assert plan["can_apply"]
+    assert not plan["destructive"]
+    assert plan["removed"] == []
+    assert plan["counts"]["removed"] == 0
+    assert apply(admin, plan)["status"] == "complete"
+    assert admin.db.processors.find_one({"_id": unrelated_id}) is not None

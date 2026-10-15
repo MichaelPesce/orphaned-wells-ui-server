@@ -55,7 +55,7 @@ DEFAULT_PROCESSORS = [
 ]
 
 USE_DB_SCHEMAS = (
-    os.getenv("USE_DB_SCHEMAS") or os.getenv("USE_DB_PROCESSORS", "true")
+    os.getenv("USE_DB_SCHEMAS") or os.getenv("USE_DB_PROCESSORS", "false")
 ).lower() in (
     "1",
     "true",
@@ -618,13 +618,22 @@ class DataManager:
             _log.error(f"error trying to lock record: {e}")
             return False
 
-    def requireSchemaPermission(self, user_info, destructive=False, require_db=True):
+    def requireSchemaPermission(
+        self, user_info, destructive=False, require_db=True, read_only=False
+    ):
         if require_db and not USE_DB_SCHEMAS:
             raise schema_rules.SchemaError(
                 "Repo schemas are read-only. Enable DB schema mode to manage schemas.",
                 409,
             )
         email = (user_info or {}).get("email")
+        if read_only:
+            if not (
+                self.hasPermission(email, "view_schema")
+                or self.hasPermission(email, "manage_schema")
+            ):
+                raise PermissionError("You are not authorized to view schemas.")
+            return
         if not self.hasPermission(email, "manage_schema"):
             raise PermissionError("You are not authorized to manage schemas.")
         if destructive and (
@@ -936,10 +945,11 @@ class DataManager:
             "selected",
             "decisions",
             "source",
+            "reconcile_records",
         }:
             raise schema_rules.SchemaError("Invalid schema import request.")
         self.requireSchemaPermission(
-            user_info, destructive=request.get("mode") in ("replace", "refresh")
+            user_info, destructive=request.get("mode") == "replace"
         )
         package = self._loadSchemaPackage(request.get("source"), user_info)
         with self._schemaCatalogWrite():
@@ -1696,7 +1706,7 @@ class DataManager:
 
     @time_it
     def getSchema(self, user_info):
-        self.requireSchemaPermission(user_info, require_db=False)
+        self.requireSchemaPermission(user_info, require_db=False, read_only=True)
         if USE_DB_SCHEMAS:
             processors = [
                 self._serializeSchema(schema) for schema in self.db.processors.find({})

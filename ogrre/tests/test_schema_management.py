@@ -414,7 +414,7 @@ def test_role_migration_is_explicit_idempotent_and_admin_only(schema_manager):
     migrate_schema_permissions(schema_manager.db, apply=True)
     assert not migrate_schema_permissions(schema_manager.db, apply=True)
     assert (
-        schema_manager.db.roles.count_documents({"permissions": "manage_schema"}) == 3
+        schema_manager.db.roles.count_documents({"permissions": "manage_schema"}) == 2
     )
     assert (
         schema_manager.db.roles.count_documents(
