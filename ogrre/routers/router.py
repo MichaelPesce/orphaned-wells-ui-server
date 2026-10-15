@@ -306,7 +306,7 @@ def _is_csrf_exempt_path(path: str) -> bool:
     }
 
 
-async def csrf_protect(request: Request):
+def csrf_protect(request: Request):
     if not REQUIRE_AUTH:
         return
     if request.method in {"GET", "HEAD", "OPTIONS"}:
@@ -335,7 +335,7 @@ router = APIRouter(
 
 
 @router.post("/token")
-async def authenticate(request: Request, token: str = Depends(oauth2_scheme)):
+def authenticate(request: Request, token: str = Depends(oauth2_scheme)):
     """Authenticate API calls; required as a dependency for other API calls.
 
     Args:
@@ -434,7 +434,7 @@ async def auth_login(request: Request):
 
 
 @router.post("/auth_refresh")
-async def auth_refresh(request: Request):
+def auth_refresh(request: Request):
     """Refresh user tokens.
 
     Args:
@@ -491,7 +491,7 @@ async def auth_refresh(request: Request):
 
 
 @router.post("/check_auth")
-async def check_authorization(
+def check_authorization(
     request: Request, user_info: dict = Depends(authenticate)
 ):
     """Ensure user is authorized.
@@ -526,7 +526,7 @@ async def check_authorization(
 
 
 @router.post("/logout")
-async def logout(request: Request):
+def logout(request: Request):
     """Log user out, revoke refresh token.
 
     Args:
@@ -550,7 +550,7 @@ async def logout(request: Request):
 
 
 @router.get("/get_projects", response_model=list)
-async def get_projects(user_info: dict = Depends(authenticate)):
+def get_projects(user_info: dict = Depends(authenticate)):
     """Fetch all projects that a user has access to.
 
     Returns:
@@ -562,7 +562,7 @@ async def get_projects(user_info: dict = Depends(authenticate)):
 
 
 @router.get("/get_record_groups/{project_id}", response_model=dict)
-async def get_record_groups(project_id: str, user_info: dict = Depends(authenticate)):
+def get_record_groups(project_id: str, user_info: dict = Depends(authenticate)):
     """Fetch all record groups are in a project.
 
     Returns:
@@ -649,7 +649,7 @@ async def get_records(
 
 
 @router.get("/get_processors", response_model=dict)
-async def get_processors(user_info: dict = Depends(authenticate)):
+def get_processors(user_info: dict = Depends(authenticate)):
     """Fetch all processors for a given state/organization.
 
     Returns:
@@ -660,7 +660,7 @@ async def get_processors(user_info: dict = Depends(authenticate)):
 
 
 @router.get("/get_record_group/{rg_id}")
-async def get_record_group_data(
+def get_record_group_data(
     rg_id: str,
     user_info: dict = Depends(authenticate),
 ):
@@ -768,7 +768,7 @@ async def get_record_data(
 
 
 @router.get("/get_record_notes/{record_id}")
-async def get_record_notes(record_id: str, user_info: dict = Depends(authenticate)):
+def get_record_notes(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch record notes.
 
     Args:
@@ -783,7 +783,7 @@ async def get_record_notes(record_id: str, user_info: dict = Depends(authenticat
 
 
 @router.get("/get_record_history/{record_id}")
-async def get_record_history(record_id: str, user_info: dict = Depends(authenticate)):
+def get_record_history(record_id: str, user_info: dict = Depends(authenticate)):
     """Fetch record history.
 
     Args:
@@ -802,7 +802,7 @@ async def get_record_history(record_id: str, user_info: dict = Depends(authentic
 
 
 @router.get("/get_processor_data/{google_id}", response_model=dict)
-async def get_processor_data(google_id: str, user_info: dict = Depends(authenticate)):
+def get_processor_data(google_id: str, user_info: dict = Depends(authenticate)):
     """Fetch processor data for provided id.
 
     Returns:
@@ -813,7 +813,7 @@ async def get_processor_data(google_id: str, user_info: dict = Depends(authentic
 
 
 @router.get("/get_column_data/{location}/{_id}", response_model=Optional[dict])
-async def get_column_data(
+def get_column_data(
     location: str,
     _id: str,
     selected_record_groups: list[str] = Query(None),
@@ -831,7 +831,7 @@ async def get_column_data(
 
 
 @router.get("/get_team_info")
-async def get_team_info(user_info: dict = Depends(authenticate)):
+def get_team_info(user_info: dict = Depends(authenticate)):
     """Get user's team information
 
     Returns:
@@ -1724,7 +1724,7 @@ async def get_batch_process_documents_status(
 
 
 @router.post("/deploy_processor/{rg_id}")
-async def deploy_processor(
+def deploy_processor(
     rg_id: str,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
@@ -1757,7 +1757,7 @@ async def deploy_processor(
 
 
 @router.post("/undeploy_processor/{rg_id}")
-async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)):
+def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)):
     """Undeploy processor model.
 
     Args:
@@ -1784,7 +1784,7 @@ async def undeploy_processor(rg_id: str, user_info: dict = Depends(authenticate)
 
 
 @router.get("/check_processor_status/{rg_id}")
-async def check_processor_status(rg_id: str, user_info: dict = Depends(authenticate)):
+def check_processor_status(rg_id: str, user_info: dict = Depends(authenticate)):
     """Check status of processor model.
 
     Args:
@@ -1891,7 +1891,7 @@ async def update_record(
 
 
 @router.post("/delete_processor/{processor_name}")
-async def delete_processor(
+def delete_processor(
     processor_name: str, schema_id: str = None, user_info: dict = Depends(authenticate)
 ):
     return schema_operation(
@@ -1903,7 +1903,7 @@ async def delete_processor(
 
 
 @router.post("/delete_project/{project_id}")
-async def delete_project(
+def delete_project(
     project_id: str,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
@@ -1927,7 +1927,7 @@ async def delete_project(
 
 
 @router.post("/delete_record_group/{rg_id}")
-async def delete_record_group(
+def delete_record_group(
     rg_id: str,
     background_tasks: BackgroundTasks,
     user_info: dict = Depends(authenticate),
@@ -1991,7 +1991,7 @@ async def delete_record_group_records(
 
 
 @router.post("/delete_record/{record_id}")
-async def delete_record(record_id: str, user_info: dict = Depends(authenticate)):
+def delete_record(record_id: str, user_info: dict = Depends(authenticate)):
     """Delete record.
 
     Args:
@@ -2471,7 +2471,7 @@ async def download_project_records_by_document_types(
 
 
 @router.get("/get_users")
-async def get_users(user_info: dict = Depends(authenticate)):
+def get_users(user_info: dict = Depends(authenticate)):
     """Fetch all users from DB for a given user's team.
 
     Returns:
@@ -2488,7 +2488,7 @@ async def get_users(user_info: dict = Depends(authenticate)):
 
 
 @router.post("/run_cleaning_functions/{location}/{_id}")
-async def run_cleaning_functions(
+def run_cleaning_functions(
     location: str, _id: str, user_info: dict = Depends(authenticate)
 ):
     """Run cleaning functions on project (not supported yet), record group, or recorde.
@@ -2609,7 +2609,7 @@ async def update_user_roles(request: Request, user_info: dict = Depends(authenti
 
 
 @router.get("/get_schema")
-async def get_schema(user_info: dict = Depends(authenticate)):
+def get_schema(user_info: dict = Depends(authenticate)):
     """Get schema
 
     Args:
@@ -2629,7 +2629,7 @@ async def get_schema(user_info: dict = Depends(authenticate)):
 
 
 @router.get("/get_cleaning_functions")
-async def get_cleaning_functions(user_info: dict = Depends(authenticate)):
+def get_cleaning_functions(user_info: dict = Depends(authenticate)):
     """Get available cleaning function names."""
     if not (
         data_manager.hasPermission(user_info["email"], "manage_schema")
@@ -2700,7 +2700,7 @@ async def apply_repo_schema_import(
 
 
 @router.get("/get_ogrre_version")
-async def get_ogrre_version(user_info: dict = Depends(authenticate)):
+def get_ogrre_version(user_info: dict = Depends(authenticate)):
     """Get backend package and OGRRE dependency version metadata."""
     if not (
         data_manager.hasPermission(user_info.get("email"), "manage_schema")
@@ -2786,7 +2786,7 @@ async def upload_sample_image(
 
 
 @router.get("/get_image_url/{processor_name}")
-async def get_image_url(processor_name: str, user_info: dict = Depends(authenticate)):
+def get_image_url(processor_name: str, user_info: dict = Depends(authenticate)):
     url = util.generate_file_url(path=f"sample_images/{processor_name}")
     return {"url": url}
 
@@ -3026,7 +3026,7 @@ async def update_role_permissions(
 
 
 @router.get("/fetch_teams", response_model=list)
-async def fetch_teams(user_info: dict = Depends(authenticate)):
+def fetch_teams(user_info: dict = Depends(authenticate)):
     """Fetch all available teams.
 
     Returns:
@@ -3116,7 +3116,7 @@ async def rotate_record_images(
 
 
 @router.post("/delete_user/{email}")
-async def delete_user(email: str, user_info: dict = Depends(authenticate)):
+def delete_user(email: str, user_info: dict = Depends(authenticate)):
     """Delete user from application database
 
     Args:
