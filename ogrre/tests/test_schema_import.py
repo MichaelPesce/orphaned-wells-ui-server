@@ -496,4 +496,3 @@ def test_refresh_mode_preserves_unused_schemas_and_allows_safe_managers(admin, p
     assert plan["counts"]["removed"] == 0
     assert apply(admin, plan)["status"] == "complete"
     assert admin.db.processors.find_one({"_id": unrelated_id}) is not None
-
