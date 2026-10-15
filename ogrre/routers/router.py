@@ -491,9 +491,7 @@ def auth_refresh(request: Request):
 
 
 @router.post("/check_auth")
-def check_authorization(
-    request: Request, user_info: dict = Depends(authenticate)
-):
+def check_authorization(request: Request, user_info: dict = Depends(authenticate)):
     """Ensure user is authorized.
 
     Args:
