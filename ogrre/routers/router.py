@@ -2617,10 +2617,13 @@ async def get_schema(user_info: dict = Depends(authenticate)):
     Returns:
         schema: dict
     """
-    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+    if not (
+        data_manager.hasPermission(user_info["email"], "manage_schema")
+        or data_manager.hasPermission(user_info["email"], "view_schema")
+    ):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to view schema. Please contact a team lead or project manager.",
         )
     return schema_operation(data_manager.getSchema, user_info)
 
@@ -2628,10 +2631,13 @@ async def get_schema(user_info: dict = Depends(authenticate)):
 @router.get("/get_cleaning_functions")
 async def get_cleaning_functions(user_info: dict = Depends(authenticate)):
     """Get available cleaning function names."""
-    if not data_manager.hasPermission(user_info["email"], "manage_schema"):
+    if not (
+        data_manager.hasPermission(user_info["email"], "manage_schema")
+        or data_manager.hasPermission(user_info["email"], "view_schema")
+    ):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to view schema. Please contact a team lead or project manager.",
         )
     return {"cleaning_functions": list(util.CLEANING_FUNCTIONS.keys())}
 
@@ -2696,10 +2702,13 @@ async def apply_repo_schema_import(
 @router.get("/get_ogrre_version")
 async def get_ogrre_version(user_info: dict = Depends(authenticate)):
     """Get backend package and OGRRE dependency version metadata."""
-    if not data_manager.hasPermission(user_info.get("email"), "manage_schema"):
+    if not (
+        data_manager.hasPermission(user_info.get("email"), "manage_schema")
+        or data_manager.hasPermission(user_info.get("email"), "view_schema")
+    ):
         raise HTTPException(
             403,
-            detail=f"You are not authorized to manage schema. Please contact a team lead or project manager.",
+            detail=f"You are not authorized to view schema. Please contact a team lead or project manager.",
         )
     return util.build_ogrre_version_info()
 

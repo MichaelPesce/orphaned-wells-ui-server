@@ -478,30 +478,35 @@ def build_plan(package, catalog, groups, request, creator, now):
     detaching_group_ids = {
         str(op["before"]["_id"]) for op in bindings if op["after"]["schema_id"] is None
     }
-    pre_reconcile = [
-        {"kind": "reconcile", "group_id": key}
-        for key in detaching_group_ids
-        if next(
-            (
-                group.get("schema_id") or (legacy.get(key) or [None])[0]
-                for group in groups
-                if str(group["_id"]) == key
-            ),
-            None,
-        )
-        in by_id
-    ]
+    reconcile_records = bool(request.get("reconcile_records", False))
+    if reconcile_records:
+        pre_reconcile = [
+            {"kind": "reconcile", "group_id": key}
+            for key in detaching_group_ids
+            if next(
+                (
+                    group.get("schema_id") or (legacy.get(key) or [None])[0]
+                    for group in groups
+                    if str(group["_id"]) == key
+                ),
+                None,
+            )
+            in by_id
+        ]
+        post_reconcile = [
+            {"kind": "reconcile", "group_id": key}
+            for key in affected
+            if key not in detaching_group_ids
+        ]
+    else:
+        pre_reconcile = []
+        post_reconcile = []
     early_bindings = [
         op
         for op in bindings
         if op["after"]["schema_id"] is None or op["after"]["schema_id"] in by_id
     ]
     late_bindings = [op for op in bindings if op not in early_bindings]
-    post_reconcile = [
-        {"kind": "reconcile", "group_id": key}
-        for key in affected
-        if key not in detaching_group_ids
-    ]
     operations = (
         pre_reconcile
         + early_bindings

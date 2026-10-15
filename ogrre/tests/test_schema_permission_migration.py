@@ -21,7 +21,11 @@ def cli_db(monkeypatch):
     db.roles.insert_many(
         [
             {"id": "sys_admin", "category": "system", "permissions": ["manage_system"]},
-            {"id": "team_lead", "category": "team", "permissions": ["review_record"]},
+            {
+                "id": "team_lead",
+                "category": "team",
+                "permissions": ["review_record", "manage_schema"],
+            },
         ]
     )
     monkeypatch.setattr(dotenv, "load_dotenv", lambda: False)
@@ -134,7 +138,8 @@ def test_apply_rejects_changes_during_confirmation(
     monkeypatch.setattr("builtins.input", approve)
     assert migration.main(["--apply"]) == 1
     assert "differ from the approved preview" in capsys.readouterr().out
-    assert cli_db.roles.count_documents({"permissions": "manage_schema"}) == 0
+    assert cli_db.roles.count_documents({"permissions": "manage_schema_destructive"}) == 0
+    assert cli_db.roles.count_documents({"permissions": "manage_schema"}) == 1
     assert cli_db.history.count_documents({}) == 0
 
 
@@ -165,7 +170,7 @@ from ogrre.migrate_schema_permissions import main
 
 client = mongomock.MongoClient()
 db = client.selected_database
-db.roles.insert_one({'id': 'team_lead', 'category': 'team', 'permissions': []})
+db.roles.insert_one({'id': 'team_lead', 'category': 'team', 'permissions': ['manage_schema']})
 with patch('pymongo.mongo_client.MongoClient', return_value=client) as connect, patch('builtins.input', return_value='y') as prompt:
     assert main(sys.argv[1:]) == 0
     assert connect.call_args.args[0] == 'mongodb://selected-user:selected-password@selected-host:27017'
