@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from starlette.concurrency import run_in_threadpool
 from typing import Optional
+from urllib.parse import urlsplit
 
 from ogrre.internal.data_manager import DEFAULT_UNAUTHENTICATED_TEAM, data_manager
 from ogrre.internal.schema_validation import SchemaError
@@ -2138,6 +2139,21 @@ async def get_download_size(
         raise HTTPException(status_code=500, detail=f"Server error: {e}")
 
 
+def _get_request_origin(request: Request) -> str:
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/")
+    referer = request.headers.get("referer")
+    if referer:
+        parsed = urlsplit(referer)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}"
+    allowed_origins = auth.parse_allowed_origins()
+    if allowed_origins:
+        return allowed_origins[0].rstrip("/")
+    return ""
+
+
 @router.post("/download_records/{location}/{_id}", response_class=StreamingResponse)
 async def download_records(
     location: str,
@@ -2168,7 +2184,7 @@ async def download_records(
     """
     req = await request.json()
 
-    request_origin = request.headers.get("origin")
+    request_origin = _get_request_origin(request)
     # _log.info(req)
     selectedColumns = req.get("columns", [])
 
@@ -2367,7 +2383,7 @@ async def download_project_records_by_document_types(
 ):
     req = await request.json()
 
-    request_origin = request.headers.get("origin")
+    request_origin = _get_request_origin(request)
     selectedColumns = req.get("columns", [])
     document_types = req.get("document_types", [])
     export_raw_values = req.get("export_raw_values", False)
