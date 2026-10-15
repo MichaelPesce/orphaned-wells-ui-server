@@ -138,7 +138,9 @@ def test_apply_rejects_changes_during_confirmation(
     monkeypatch.setattr("builtins.input", approve)
     assert migration.main(["--apply"]) == 1
     assert "differ from the approved preview" in capsys.readouterr().out
-    assert cli_db.roles.count_documents({"permissions": "manage_schema_destructive"}) == 0
+    assert (
+        cli_db.roles.count_documents({"permissions": "manage_schema_destructive"}) == 0
+    )
     assert cli_db.roles.count_documents({"permissions": "manage_schema"}) == 1
     assert cli_db.history.count_documents({}) == 0
 
