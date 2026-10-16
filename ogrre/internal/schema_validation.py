@@ -164,9 +164,7 @@ def collect_field_warnings(fields):
     by_name = {
         field["name"]: field
         for field in fields
-        if isinstance(field, dict)
-        and field.get("name")
-        and not field.get("deleted")
+        if isinstance(field, dict) and field.get("name") and not field.get("deleted")
     }
     for name, field in by_name.items():
         data_type = field.get("data_type")
@@ -175,9 +173,7 @@ def collect_field_warnings(fields):
             data_type not in TYPE_OPTIONS
             or database_type not in TYPE_OPTIONS[data_type]
         ):
-            warnings.append(
-                f"Unsupported data type combination for '{name}'."
-            )
+            warnings.append(f"Unsupported data type combination for '{name}'.")
         if "::" in name:
             parent = by_name.get(name.rsplit("::", 1)[0])
             if not parent or parent.get("data_type") != "Parent":
@@ -202,15 +198,12 @@ def validate_fields(
             cleaning_functions,
             require_types=not allow_warnings
             and (
-                require_types
-                or (data_type is not None and database_type is not None)
+                require_types or (data_type is not None and database_type is not None)
             ),
         )
         if not allow_warnings:
             if data_type is not None and data_type not in TYPE_OPTIONS:
-                raise SchemaError(
-                    f"Unsupported data type for '{field.get('name')}'."
-                )
+                raise SchemaError(f"Unsupported data type for '{field.get('name')}'.")
             if database_type is not None and database_type not in set().union(
                 *TYPE_OPTIONS.values()
             ):
