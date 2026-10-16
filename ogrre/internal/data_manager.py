@@ -1720,7 +1720,14 @@ class DataManager:
         self.requireSchemaPermission(user_info, require_db=False, read_only=True)
         if USE_DB_SCHEMAS:
             processors = [
-                self._serializeSchema(schema) for schema in self.db.processors.find({})
+                {
+                    **self._serializeSchema(schema),
+                    "record_groups": [
+                        schema_import.group_label(group)
+                        for group in self._groupsUsingSchema(schema)
+                    ],
+                }
+                for schema in self.db.processors.find({})
             ]
         else:
             collaborator = self.getCollaboratorForUser(user_info)
@@ -1803,11 +1810,6 @@ class DataManager:
     def deleteProcessorSchema(self, processorName, user_info, schema_id=None):
         self.requireSchemaPermission(user_info, destructive=True)
         processor = self._schemaDocument(schema_id, processorName)
-        if self._groupsUsingSchema(processor):
-            raise schema_rules.SchemaError(
-                "This schema is in use. Detach its record groups before deleting it.",
-                409,
-            )
         archived = {
             **processor,
             "deleted_by": user_info.get("email"),
