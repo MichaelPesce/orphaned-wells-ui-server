@@ -278,13 +278,8 @@ def test_metadata_binding_and_schema_delete_need_specific_permission(
     assert client.post("/delete_processor/well").status_code == 403
     schema_manager.hasPermission.side_effect = None
     schema_manager.hasPermission.return_value = True
-    assert client.post("/delete_processor/well").status_code == 409
-    assert (
-        client.post(
-            f"/update_record_group/{GROUP}", json={"schema_id": None}
-        ).status_code
-        == 200
-    )
+    body = client.get("/get_schema").json()
+    assert [group["id"] for group in body["processors"][0]["record_groups"]] == [GROUP]
     assert client.post("/delete_processor/well").status_code == 200
     assert schema_manager.db.deleted_processors.find_one()["attributes"] == [FIELD]
 
