@@ -566,3 +566,51 @@ def test_safe_edit_can_clear_optional_order(client, schema_manager):
         "page_order_sort"
         not in schema_manager.db.processors.find_one()["attributes"][0]
     )
+
+
+def test_preexisting_field_warnings_do_not_block_adding_or_editing_fields(
+    client, schema_manager
+):
+    broken_orphan = {
+        "name": "sample::test_parameter::limits",
+        "data_type": "Plain text",
+        "database_data_type": "str",
+    }
+    broken_combo = {
+        "name": "analysis::parameter_test",
+        "data_type": "Parent",
+        "database_data_type": "bool",
+    }
+    schema_manager.db.processors.update_one(
+        {"name": "well"},
+        {"$set": {"attributes": [FIELD, broken_orphan, broken_combo]}},
+    )
+    add_res = edit(
+        client,
+        operation="add",
+        field="new_field",
+        updates={
+            "name": "new_field",
+            "data_type": "Plain text",
+            "database_data_type": "str",
+        },
+    )
+    assert add_res.status_code == 200
+    update_res = edit(
+        client,
+        operation="update",
+        field="analysis::parameter_test",
+        updates={"alias": "Parameter Test"},
+    )
+    assert update_res.status_code == 200
+    add_missing_parent = edit(
+        client,
+        operation="add",
+        field="missing_parent::child",
+        updates={
+            "name": "missing_parent::child",
+            "data_type": "Plain text",
+            "database_data_type": "str",
+        },
+    )
+    assert add_missing_parent.status_code == 400

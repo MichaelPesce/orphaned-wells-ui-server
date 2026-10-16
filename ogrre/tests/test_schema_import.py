@@ -496,3 +496,41 @@ def test_refresh_mode_preserves_unused_schemas_and_allows_safe_managers(admin, p
     assert plan["counts"]["removed"] == 0
     assert apply(admin, plan)["status"] == "complete"
     assert admin.db.processors.find_one({"_id": unrelated_id}) is not None
+
+
+def test_repo_schema_import_surfaces_field_warnings_without_blocking(admin, package):
+    package["Package well"]["attributes"] = [
+        {
+            "name": "sample::test_parameter::limits",
+            "google_data_type": "Plain text",
+            "database_data_type": "str",
+        },
+        {
+            "name": "analysis::parameter_test",
+            "google_data_type": "Parent",
+            "database_data_type": "bool",
+        },
+        {
+            "name": "sample::parameter_test::mda",
+            "google_data_type": "Plain text",
+            "database_data_type": "Table",
+        },
+    ]
+    source_info = admin.getRepoSchemaImport(USER)
+    package_well = next(
+        s for s in source_info["schemas"] if s["source_id"] == "Package well"
+    )
+    assert "error" not in package_well
+    assert package_well["field_count"] == 3
+    assert package_well["warnings"] == [
+        "Field 'sample::test_parameter::limits' requires a Parent field at its parent path.",
+        "Unsupported data type combination for 'analysis::parameter_test'.",
+        "Field 'analysis::parameter_test' requires a Parent field at its parent path.",
+        "Unsupported data type combination for 'sample::parameter_test::mda'.",
+        "Field 'sample::parameter_test::mda' requires a Parent field at its parent path.",
+    ]
+    plan = preview(admin, mode="add", selected=["Package well"])
+    assert plan["can_apply"]
+    assert apply(admin, plan)["status"] == "complete"
+    imported = admin.db.processors.find_one({"name": "Package well"})
+    assert len(imported["attributes"]) == 3
