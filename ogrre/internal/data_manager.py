@@ -722,8 +722,11 @@ class DataManager:
                     )
                 canonical = self._canonicalRepoProcessor(definition)
                 fields = schema_rules.validate_fields(
-                    canonical["attributes"], util.CLEANING_FUNCTIONS
+                    canonical["attributes"],
+                    util.CLEANING_FUNCTIONS,
+                    allow_warnings=True,
                 )
+                warnings = schema_rules.collect_field_warnings(fields)
                 normalized = {
                     key: canonical.get(key) for key in ("name", *schema_import.METADATA)
                 }
@@ -732,6 +735,8 @@ class DataManager:
                     definition={**normalized, "attributes": fields},
                     field_count=len(fields),
                 )
+                if warnings:
+                    result["warnings"] = warnings
             except schema_rules.SchemaError as error:
                 result["error"] = str(error)
             schemas.append(result)
@@ -845,8 +850,11 @@ class DataManager:
                 definition = {**item, "attributes": attrs}
                 canonical = self._canonicalRepoProcessor(definition)
                 fields = schema_rules.validate_fields(
-                    canonical["attributes"], util.CLEANING_FUNCTIONS
+                    canonical["attributes"],
+                    util.CLEANING_FUNCTIONS,
+                    allow_warnings=True,
                 )
+                warnings = schema_rules.collect_field_warnings(fields)
                 normalized = {
                     key: canonical.get(key) for key in ("name", *schema_import.METADATA)
                 }
@@ -855,6 +863,8 @@ class DataManager:
                     definition={**normalized, "attributes": fields},
                     field_count=len(fields),
                 )
+                if warnings:
+                    result["warnings"] = warnings
             except schema_rules.SchemaError as error:
                 result["error"] = str(error)
             schemas.append(result)
@@ -1500,7 +1510,8 @@ class DataManager:
                         )
                         if not field.get("deleted")
                     ]
-                    + fields
+                    + fields,
+                    parent_check_names={field["name"] for field in fields},
                 )
                 after = {
                     **current_schema,
@@ -1898,6 +1909,7 @@ class DataManager:
             new_field = schema_rules.normalize_fields([new_field])[0]
             schema_rules.validate_field(new_field, util.CLEANING_FUNCTIONS)
             attributes.append(new_field)
+            parent_check_names = {new_field["name"]}
         else:
             schema_rules.field_name(field_name)
             if target is None:
@@ -1910,6 +1922,7 @@ class DataManager:
                     if field["name"] != field_name
                     and not field["name"].startswith(field_name + "::")
                 ]
+                parent_check_names = set()
             else:
                 if not updates:
                     raise schema_rules.SchemaError("Provide at least one field update.")
@@ -1924,7 +1937,20 @@ class DataManager:
                     updated, util.CLEANING_FUNCTIONS, require_types=type_changes
                 )
                 attributes[attributes.index(target)] = updated
-        schema_rules.validate_structure(attributes)
+                parent_check_names = (
+                    {
+                        field["name"]
+                        for field in attributes
+                        if "::" in field["name"]
+                        and field["name"].rsplit("::", 1)[0] == field_name
+                    }
+                    if target.get("data_type") == "Parent"
+                    and updated.get("data_type") != "Parent"
+                    else set()
+                )
+        schema_rules.validate_structure(
+            attributes, parent_check_names=parent_check_names
+        )
         self._saveProcessorChanges(
             processor, {"attributes": attributes}, user_info, "updateProcessorAttribute"
         )
