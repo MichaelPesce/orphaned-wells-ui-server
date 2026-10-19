@@ -176,8 +176,8 @@ After deploying a new repo package, or for retirement definitions left unapplied
 by an older release, operators can apply a schema explicitly in bounded batches:
 
 ```sh
-python -m ogrre.reconcile_schema_records RECORD_GROUP_ID
-python -m ogrre.reconcile_schema_records RECORD_GROUP_ID --batch-size 100 --apply
+python -m ogrre.scripts.reconcile_schema_records RECORD_GROUP_ID
+python -m ogrre.scripts.reconcile_schema_records RECORD_GROUP_ID --batch-size 100 --apply
 ```
 
 The command uses the configured database and collaborator, displays the target
@@ -249,7 +249,7 @@ history. With `USE_DB_SCHEMAS=true` and the intended database configured,
 preview without writing:
 
 ```sh
-python -m ogrre.migrate_schema_bindings
+python -m ogrre.scripts.migrate_schema_bindings
 ```
 
 Use `--env=.env.isgs` to select a dotenv file explicitly (relative to the
@@ -270,7 +270,7 @@ EOF, or Ctrl+C cancels. If groups or schemas change while you review the preview
 the apply stops and requires a fresh preview. For example:
 
 ```sh
-python -m ogrre.migrate_schema_bindings --env=.env.isgs --apply
+python -m ogrre.scripts.migrate_schema_bindings --env=.env.isgs --apply
 ```
 
 To resolve conflicts, pass
@@ -415,14 +415,14 @@ back up its current role assignments before applying changes. This command
 previews changes without writing:
 
 ```sh
-python -m ogrre.migrate_schema_permissions
+python -m ogrre.scripts.migrate_schema_permissions
 ```
 
 To select a different dotenv file, use `--env` on both preview and apply:
 
 ```sh
-python -m ogrre.migrate_schema_permissions --env=.env.isgs
-python -m ogrre.migrate_schema_permissions --env=.env.isgs --apply
+python -m ogrre.scripts.migrate_schema_permissions --env=.env.isgs
+python -m ogrre.scripts.migrate_schema_permissions --env=.env.isgs --apply
 ```
 
 Relative paths are resolved from your current directory; for files inside the
@@ -440,7 +440,7 @@ database, and `DB_NAME` selects the database even when the URI includes another 
 To apply, run:
 
 ```sh
-python -m ogrre.migrate_schema_permissions --apply
+python -m ogrre.scripts.migrate_schema_permissions --apply
 ```
 
 This shows the target and preview again, then waits for `y` at the `[y/N]` prompt.
@@ -465,9 +465,9 @@ the automatically discovered dotenv file; an explicit `--env` file overrides
 matching variables. Do not paste credentials into shell history.
 
 ```sh
-python -m ogrre.migrate_schema_permissions
-python -m ogrre.migrate_schema_permissions --apply
-python -m ogrre.migrate_schema_permissions
+python -m ogrre.scripts.migrate_schema_permissions
+python -m ogrre.scripts.migrate_schema_permissions --apply
+python -m ogrre.scripts.migrate_schema_permissions
 ```
 
 The first command previews; run the second after reviewing it and backing up
