@@ -378,4 +378,3 @@ def test_cilogon_idp_options_default_and_env_override(monkeypatch):
     ]
 
     assert parse_cilogon_idp_options("") == DEFAULT_CILOGON_IDP_OPTIONS
-
