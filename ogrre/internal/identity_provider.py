@@ -26,30 +26,42 @@ GOOGLE_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 
 DEFAULT_CILOGON_IDP_OPTIONS = [
     {
-        "label": "Lawrence Berkeley National Laboratory (LBL)",
+        "label": "Lawrence Berkeley National Laboratory",
         "entityId": "urn:mace:incommon:lbl.gov",
+        "logo": "/img/idp/lbl.svg",
     },
     {
-        "label": "Pacific Northwest National Laboratory (PNNL)",
+        "label": "Pacific Northwest National Laboratory",
         "entityId": "https://sso.pnnl.gov/idp",
+        "logo": "/img/idp/pnnl.svg",
     },
     {
-        "label": "Lawrence Livermore National Laboratory (LLNL)",
+        "label": "Lawrence Livermore National Laboratory",
         "entityId": "https://eidp.llnl.gov",
+        "logo": "/img/idp/llnl.svg",
     },
     {
-        "label": "Oak Ridge National Laboratory (ORNL)",
+        "label": "Oak Ridge National Laboratory",
         "entityId": "https://idp.ornl.gov/idp",
+        "logo": "/img/idp/ornl.svg",
     },
     {
-        "label": "Argonne National Laboratory (ANL)",
+        "label": "Argonne National Laboratory",
         "entityId": "https://identityprovider.anl.gov/idp/shibboleth",
+        "logo": "/img/idp/anl.svg",
     },
     {
         "label": "ORCID",
         "entityId": "http://orcid.org/oauth/authorize",
+        "logo": "/img/idp/orcid.svg",
     },
 ]
+
+DEFAULT_IDP_LOGOS_BY_ENTITY_ID = {
+    item["entityId"]: item["logo"]
+    for item in DEFAULT_CILOGON_IDP_OPTIONS
+    if item.get("logo")
+}
 
 CILOGON_IDP_PRESETS = {
     "lbl": DEFAULT_CILOGON_IDP_OPTIONS[0],
@@ -91,7 +103,7 @@ CILOGON_IDP_PRESETS = {
 
 
 def parse_cilogon_idp_options(raw_value: Optional[str] = None) -> list[Dict[str, str]]:
-    """Parse optional CILOGON_IDP_OPTIONS env string into [{label, entityId}] options."""
+    """Parse optional CILOGON_IDP_OPTIONS env string into [{label, entityId, logo?}] options."""
     if not raw_value or not raw_value.strip():
         return [dict(item) for item in DEFAULT_CILOGON_IDP_OPTIONS]
 
@@ -103,9 +115,18 @@ def parse_cilogon_idp_options(raw_value: Optional[str] = None) -> list[Dict[str,
                 continue
             label = str(item.get("label") or "").strip()
             entity_id = str(item.get("entityId") or item.get("entity_id") or "").strip()
+            raw_logo = item.get("logo") if "logo" in item else item.get("logo_url")
+            logo = (
+                str(raw_logo).strip()
+                if raw_logo is not None
+                else DEFAULT_IDP_LOGOS_BY_ENTITY_ID.get(entity_id, "")
+            )
             if label and entity_id and entity_id not in seen:
                 seen.add(entity_id)
-                result.append({"label": label, "entityId": entity_id})
+                entry: Dict[str, str] = {"label": label, "entityId": entity_id}
+                if logo:
+                    entry["logo"] = logo
+                result.append(entry)
         return (
             result if result else [dict(item) for item in DEFAULT_CILOGON_IDP_OPTIONS]
         )
@@ -124,11 +145,15 @@ def parse_cilogon_idp_options(raw_value: Optional[str] = None) -> list[Dict[str,
     parsed_options: list[Dict[str, str]] = []
     for token in tokens:
         if "|" in token:
-            label, entity_id = token.split("|", 1)
-            label = label.strip()
-            entity_id = entity_id.strip()
+            parts = token.split("|", 2)
+            label = parts[0].strip()
+            entity_id = parts[1].strip() if len(parts) > 1 else ""
+            logo = parts[2].strip() if len(parts) > 2 else ""
             if label and entity_id:
-                parsed_options.append({"label": label, "entityId": entity_id})
+                entry: Dict[str, str] = {"label": label, "entityId": entity_id}
+                if logo:
+                    entry["logo"] = logo
+                parsed_options.append(entry)
             continue
         preset = CILOGON_IDP_PRESETS.get(token.lower())
         if preset:

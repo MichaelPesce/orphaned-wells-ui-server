@@ -352,17 +352,30 @@ def test_cilogon_idp_options_default_and_env_override(monkeypatch):
     monkeypatch.delenv("cilogon_idp_options", raising=False)
     provider = CilogonIdentityProvider()
     assert provider.get_idp_options() == DEFAULT_CILOGON_IDP_OPTIONS
+    assert all(opt.get("logo") for opt in DEFAULT_CILOGON_IDP_OPTIONS)
 
     monkeypatch.setenv(
-        "CILOGON_IDP_OPTIONS", "orcid,lbl,Custom Lab|https://idp.custom.org"
+        "CILOGON_IDP_OPTIONS",
+        "orcid,lbl,Custom Lab|https://idp.custom.org,Branded Lab|https://idp.branded.org|/img/custom.svg",
     )
     assert provider.get_idp_options() == [
-        {"label": "ORCID", "entityId": "http://orcid.org/oauth/authorize"},
         {
-            "label": "Lawrence Berkeley National Laboratory (LBL)",
+            "label": "ORCID",
+            "entityId": "http://orcid.org/oauth/authorize",
+            "logo": "/img/idp/orcid.svg",
+        },
+        {
+            "label": "Lawrence Berkeley National Laboratory",
             "entityId": "urn:mace:incommon:lbl.gov",
+            "logo": "/img/idp/lbl.svg",
         },
         {"label": "Custom Lab", "entityId": "https://idp.custom.org"},
+        {
+            "label": "Branded Lab",
+            "entityId": "https://idp.branded.org",
+            "logo": "/img/custom.svg",
+        },
     ]
 
     assert parse_cilogon_idp_options("") == DEFAULT_CILOGON_IDP_OPTIONS
+
