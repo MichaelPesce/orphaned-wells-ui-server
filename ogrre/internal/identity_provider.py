@@ -72,7 +72,7 @@ CILOGON_IDP_PRESETS = {
     "anl": DEFAULT_CILOGON_IDP_OPTIONS[4],
     "orcid": DEFAULT_CILOGON_IDP_OPTIONS[5],
     "uiuc": {
-        "label": "University of Illinois Urbana-Champaign (UIUC)",
+        "label": "University of Illinois Urbana-Champaign",
         "entityId": "urn:mace:incommon:uiuc.edu",
     },
     "berkeley": {
@@ -84,11 +84,11 @@ CILOGON_IDP_PRESETS = {
         "entityId": "urn:mace:incommon:berkeley.edu",
     },
     "bnl": {
-        "label": "Brookhaven National Laboratory (BNL)",
+        "label": "Brookhaven National Laboratory",
         "entityId": "https://federation.bnl.gov/adfs/services/trust",
     },
     "fnal": {
-        "label": "Fermi National Accelerator Laboratory (Fermilab)",
+        "label": "Fermi National Accelerator Laboratory",
         "entityId": "https://idp.fnal.gov/idp/shibboleth",
     },
     "ames": {
@@ -96,7 +96,7 @@ CILOGON_IDP_PRESETS = {
         "entityId": "https://federation.ameslab.gov/adfs/services/trust",
     },
     "jlab": {
-        "label": "Thomas Jefferson National Accelerator Facility (JLab)",
+        "label": "Thomas Jefferson National Accelerator Facility",
         "entityId": "https://misportal.jlab.org/idp/shibboleth",
     },
 }
