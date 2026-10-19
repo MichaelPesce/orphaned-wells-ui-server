@@ -24,6 +24,117 @@ CILOGON_DEFAULT_SCOPE = "openid email profile org.cilogon.userinfo"
 GOOGLE_ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
 GOOGLE_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 
+DEFAULT_CILOGON_IDP_OPTIONS = [
+    {
+        "label": "Lawrence Berkeley National Laboratory (LBL)",
+        "entityId": "urn:mace:incommon:lbl.gov",
+    },
+    {
+        "label": "Pacific Northwest National Laboratory (PNNL)",
+        "entityId": "https://sso.pnnl.gov/idp",
+    },
+    {
+        "label": "Lawrence Livermore National Laboratory (LLNL)",
+        "entityId": "https://eidp.llnl.gov",
+    },
+    {
+        "label": "Oak Ridge National Laboratory (ORNL)",
+        "entityId": "https://idp.ornl.gov/idp",
+    },
+    {
+        "label": "Argonne National Laboratory (ANL)",
+        "entityId": "https://identityprovider.anl.gov/idp/shibboleth",
+    },
+    {
+        "label": "ORCID",
+        "entityId": "http://orcid.org/oauth/authorize",
+    },
+]
+
+CILOGON_IDP_PRESETS = {
+    "lbl": DEFAULT_CILOGON_IDP_OPTIONS[0],
+    "lbnl": DEFAULT_CILOGON_IDP_OPTIONS[0],
+    "pnnl": DEFAULT_CILOGON_IDP_OPTIONS[1],
+    "llnl": DEFAULT_CILOGON_IDP_OPTIONS[2],
+    "ornl": DEFAULT_CILOGON_IDP_OPTIONS[3],
+    "anl": DEFAULT_CILOGON_IDP_OPTIONS[4],
+    "orcid": DEFAULT_CILOGON_IDP_OPTIONS[5],
+    "uiuc": {
+        "label": "University of Illinois Urbana-Champaign (UIUC)",
+        "entityId": "urn:mace:incommon:uiuc.edu",
+    },
+    "berkeley": {
+        "label": "University of California, Berkeley",
+        "entityId": "urn:mace:incommon:berkeley.edu",
+    },
+    "ucb": {
+        "label": "University of California, Berkeley",
+        "entityId": "urn:mace:incommon:berkeley.edu",
+    },
+    "bnl": {
+        "label": "Brookhaven National Laboratory (BNL)",
+        "entityId": "https://federation.bnl.gov/adfs/services/trust",
+    },
+    "fnal": {
+        "label": "Fermi National Accelerator Laboratory (Fermilab)",
+        "entityId": "https://idp.fnal.gov/idp/shibboleth",
+    },
+    "ames": {
+        "label": "Ames National Laboratory",
+        "entityId": "https://federation.ameslab.gov/adfs/services/trust",
+    },
+    "jlab": {
+        "label": "Thomas Jefferson National Accelerator Facility (JLab)",
+        "entityId": "https://misportal.jlab.org/idp/shibboleth",
+    },
+}
+
+
+def parse_cilogon_idp_options(raw_value: Optional[str] = None) -> list[Dict[str, str]]:
+    """Parse optional CILOGON_IDP_OPTIONS env string into [{label, entityId}] options."""
+    if not raw_value or not raw_value.strip():
+        return [dict(item) for item in DEFAULT_CILOGON_IDP_OPTIONS]
+
+    def _dedupe(items: list[Dict]) -> list[Dict[str, str]]:
+        seen = set()
+        result: list[Dict[str, str]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or "").strip()
+            entity_id = str(item.get("entityId") or item.get("entity_id") or "").strip()
+            if label and entity_id and entity_id not in seen:
+                seen.add(entity_id)
+                result.append({"label": label, "entityId": entity_id})
+        return result if result else [dict(item) for item in DEFAULT_CILOGON_IDP_OPTIONS]
+
+    trimmed = raw_value.strip()
+    if trimmed.startswith("["):
+        try:
+            parsed = json.loads(trimmed)
+            if isinstance(parsed, list):
+                return _dedupe(parsed)
+        except Exception:
+            pass
+
+    delimiter = ";" if ";" in trimmed else ","
+    tokens = [token.strip() for token in trimmed.split(delimiter) if token.strip()]
+    parsed_options: list[Dict[str, str]] = []
+    for token in tokens:
+        if "|" in token:
+            label, entity_id = token.split("|", 1)
+            label = label.strip()
+            entity_id = entity_id.strip()
+            if label and entity_id:
+                parsed_options.append({"label": label, "entityId": entity_id})
+            continue
+        preset = CILOGON_IDP_PRESETS.get(token.lower())
+        if preset:
+            parsed_options.append(dict(preset))
+
+    return _dedupe(parsed_options)
+
+
 # Instantiate once and reuse; PyJWKClient caches keys internally.
 jwks_client = PyJWKClient(CILOGON_JWKS_URI)
 
@@ -407,6 +518,14 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             provider=self.name,
         )
 
+    def get_idp_options(self) -> list[Dict[str, str]]:
+        raw_options = (
+            os.getenv("CILOGON_IDP_OPTIONS")
+            or os.getenv("cilogon_idp_options")
+            or os.getenv("REACT_APP_CILOGON_IDP_OPTIONS")
+        )
+        return parse_cilogon_idp_options(raw_options)
+
 
 class MultiIdentityProvider(BaseIdentityProvider):
     """
@@ -490,6 +609,7 @@ class MultiIdentityProvider(BaseIdentityProvider):
                 "client_id": self.cilogon.client_id or "",
                 "authorize_uri": self.cilogon.authorize_uri,
                 "scope": CILOGON_DEFAULT_SCOPE,
+                "idp_options": self.cilogon.get_idp_options(),
             },
         }
 

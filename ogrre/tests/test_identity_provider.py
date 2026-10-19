@@ -10,9 +10,11 @@ from fastapi import HTTPException
 from ogrre.internal.identity_provider import (
     AuthResult,
     CilogonIdentityProvider,
+    DEFAULT_CILOGON_IDP_OPTIONS,
     GoogleIdentityProvider,
     IdentityProviderError,
     MultiIdentityProvider,
+    parse_cilogon_idp_options,
 )
 
 
@@ -314,4 +316,23 @@ def test_router_auth_endpoints_support_google_and_cilogon(manager, monkeypatch):
         token=None,
     )
     assert auth_user["email"] == "researcher@lbl.gov"
+
+
+def test_cilogon_idp_options_default_and_env_override(monkeypatch):
+    monkeypatch.delenv("CILOGON_IDP_OPTIONS", raising=False)
+    monkeypatch.delenv("cilogon_idp_options", raising=False)
+    provider = CilogonIdentityProvider()
+    assert provider.get_idp_options() == DEFAULT_CILOGON_IDP_OPTIONS
+
+    monkeypatch.setenv("CILOGON_IDP_OPTIONS", "orcid,lbl,Custom Lab|https://idp.custom.org")
+    assert provider.get_idp_options() == [
+        {"label": "ORCID", "entityId": "http://orcid.org/oauth/authorize"},
+        {
+            "label": "Lawrence Berkeley National Laboratory (LBL)",
+            "entityId": "urn:mace:incommon:lbl.gov",
+        },
+        {"label": "Custom Lab", "entityId": "https://idp.custom.org"},
+    ]
+
+    assert parse_cilogon_idp_options("") == DEFAULT_CILOGON_IDP_OPTIONS
 
