@@ -19,7 +19,11 @@ from ogrre.internal.identity_provider import (
 
 
 def _make_fake_jwt(payload: dict) -> str:
-    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).rstrip(b"=").decode()
+    header = (
+        base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode())
+        .rstrip(b"=")
+        .decode()
+    )
     body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
     return f"{header}.{body}.signature"
 
@@ -40,7 +44,11 @@ def test_cilogon_verify_id_token_uses_instance_client_id(monkeypatch):
     def fake_decode(token, key, algorithms, audience, issuer):
         captured["audience"] = audience
         captured["issuer"] = issuer
-        return {"sub": "http://cilogon.org/serverA/users/123", "iss": issuer, "aud": audience}
+        return {
+            "sub": "http://cilogon.org/serverA/users/123",
+            "iss": issuer,
+            "aud": audience,
+        }
 
     monkeypatch.setattr("ogrre.internal.identity_provider.jwt.decode", fake_decode)
 
@@ -69,13 +77,20 @@ def test_cilogon_verify_id_token_wraps_errors(monkeypatch):
 def test_cilogon_exchange_code_merges_userinfo_and_passes_redirect_uri(monkeypatch):
     monkeypatch.setattr(
         "ogrre.internal.identity_provider.auth.get_cilogon_credentials",
-        lambda: ("https://cilogon.org/oauth2/token", "cilogon-client-123", "secret-xyz"),
+        lambda: (
+            "https://cilogon.org/oauth2/token",
+            "cilogon-client-123",
+            "secret-xyz",
+        ),
     )
     provider = CilogonIdentityProvider()
     monkeypatch.setattr(
         provider,
         "verify_id_token",
-        lambda token: {"sub": "http://cilogon.org/serverA/users/123", "iss": "https://cilogon.org"},
+        lambda token: {
+            "sub": "http://cilogon.org/serverA/users/123",
+            "iss": "https://cilogon.org",
+        },
     )
 
     post_calls = []
@@ -125,8 +140,14 @@ def test_multi_identity_provider_routes_by_issuer_and_provider():
     cilogon.client_id = "cilogon-client-id"
     cilogon.authorize_uri = "https://cilogon.org/authorize"
 
-    google.verify_id_token.return_value = {"email": "user@gmail.com", "iss": "https://accounts.google.com"}
-    cilogon.verify_id_token.return_value = {"sub": "cilogon-sub-1", "iss": "https://cilogon.org"}
+    google.verify_id_token.return_value = {
+        "email": "user@gmail.com",
+        "iss": "https://accounts.google.com",
+    }
+    cilogon.verify_id_token.return_value = {
+        "sub": "cilogon-sub-1",
+        "iss": "https://cilogon.org",
+    }
 
     multi = MultiIdentityProvider(
         default_provider="google",
@@ -140,7 +161,9 @@ def test_multi_identity_provider_routes_by_issuer_and_provider():
     assert enabled["cilogon"]["client_id"] == "cilogon-client-id"
 
     cilogon_jwt = _make_fake_jwt({"iss": "https://cilogon.org", "sub": "cilogon-sub-1"})
-    google_jwt = _make_fake_jwt({"iss": "https://accounts.google.com", "sub": "google-sub-1"})
+    google_jwt = _make_fake_jwt(
+        {"iss": "https://accounts.google.com", "sub": "google-sub-1"}
+    )
 
     assert multi.verify_id_token(cilogon_jwt)["sub"] == "cilogon-sub-1"
     cilogon.verify_id_token.assert_called_once_with(cilogon_jwt)
@@ -148,7 +171,9 @@ def test_multi_identity_provider_routes_by_issuer_and_provider():
     assert multi.verify_id_token(google_jwt)["email"] == "user@gmail.com"
     google.verify_id_token.assert_called_once_with(google_jwt)
 
-    multi.exchange_authorization_code("code-1", redirect_uri="http://localhost:3000/login", provider="cilogon")
+    multi.exchange_authorization_code(
+        "code-1", redirect_uri="http://localhost:3000/login", provider="cilogon"
+    )
     cilogon.exchange_authorization_code.assert_called_once_with(
         "code-1", redirect_uri="http://localhost:3000/login"
     )
@@ -202,7 +227,11 @@ def test_router_auth_endpoints_support_google_and_cilogon(manager, monkeypatch):
     fake_idp = MagicMock()
     fake_idp.get_enabled_providers.return_value = {
         "google": {"enabled": True, "client_id": "g-id"},
-        "cilogon": {"enabled": True, "client_id": "c-id", "authorize_uri": "https://cilogon.org/authorize"},
+        "cilogon": {
+            "enabled": True,
+            "client_id": "c-id",
+            "authorize_uri": "https://cilogon.org/authorize",
+        },
     }
 
     def fake_exchange(code, redirect_uri=None, provider=None):
@@ -324,7 +353,9 @@ def test_cilogon_idp_options_default_and_env_override(monkeypatch):
     provider = CilogonIdentityProvider()
     assert provider.get_idp_options() == DEFAULT_CILOGON_IDP_OPTIONS
 
-    monkeypatch.setenv("CILOGON_IDP_OPTIONS", "orcid,lbl,Custom Lab|https://idp.custom.org")
+    monkeypatch.setenv(
+        "CILOGON_IDP_OPTIONS", "orcid,lbl,Custom Lab|https://idp.custom.org"
+    )
     assert provider.get_idp_options() == [
         {"label": "ORCID", "entityId": "http://orcid.org/oauth/authorize"},
         {
@@ -335,4 +366,3 @@ def test_cilogon_idp_options_default_and_env_override(monkeypatch):
     ]
 
     assert parse_cilogon_idp_options("") == DEFAULT_CILOGON_IDP_OPTIONS
-

@@ -106,7 +106,9 @@ def parse_cilogon_idp_options(raw_value: Optional[str] = None) -> list[Dict[str,
             if label and entity_id and entity_id not in seen:
                 seen.add(entity_id)
                 result.append({"label": label, "entityId": entity_id})
-        return result if result else [dict(item) for item in DEFAULT_CILOGON_IDP_OPTIONS]
+        return (
+            result if result else [dict(item) for item in DEFAULT_CILOGON_IDP_OPTIONS]
+        )
 
     trimmed = raw_value.strip()
     if trimmed.startswith("["):
@@ -336,12 +338,8 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             self.client_id,
             self.client_secret,
         ) = auth.get_cilogon_credentials()
-        self.userinfo_uri = (
-            os.getenv("cilogon_userinfo_uri") or CILOGON_USERINFO_URI
-        )
-        self.authorize_uri = (
-            os.getenv("cilogon_authorize_uri") or CILOGON_AUTHORIZE_URI
-        )
+        self.userinfo_uri = os.getenv("cilogon_userinfo_uri") or CILOGON_USERINFO_URI
+        self.authorize_uri = os.getenv("cilogon_authorize_uri") or CILOGON_AUTHORIZE_URI
         self.redirect_uri = os.getenv("cilogon_redirect_uri")
 
     def _refresh_credentials_from_env(self) -> None:
@@ -423,7 +421,9 @@ class CilogonIdentityProvider(BaseIdentityProvider):
         if not extra_claims:
             return user_info
 
-        email = (extra_claims.get("email") or user_info.get("email") or "").strip().lower()
+        email = (
+            (extra_claims.get("email") or user_info.get("email") or "").strip().lower()
+        )
         if email:
             user_info["email"] = email
 
@@ -435,7 +435,14 @@ class CilogonIdentityProvider(BaseIdentityProvider):
         if name:
             user_info["name"] = name
 
-        for claim_key in ("given_name", "family_name", "eppn", "idp", "idp_name", "subject_id"):
+        for claim_key in (
+            "given_name",
+            "family_name",
+            "eppn",
+            "idp",
+            "idp_name",
+            "subject_id",
+        ):
             val = extra_claims.get(claim_key)
             if val and not user_info.get(claim_key):
                 user_info[claim_key] = val
@@ -539,25 +546,35 @@ class MultiIdentityProvider(BaseIdentityProvider):
         google_provider: Optional[GoogleIdentityProvider] = None,
         cilogon_provider: Optional[CilogonIdentityProvider] = None,
     ) -> None:
-        self.default_provider = default_provider if default_provider in {"google", "cilogon"} else "google"
+        self.default_provider = (
+            default_provider if default_provider in {"google", "cilogon"} else "google"
+        )
         self.name = self.default_provider
         self.google = google_provider or GoogleIdentityProvider()
         self.cilogon = cilogon_provider or CilogonIdentityProvider()
 
     def get_provider(self, provider_name: Optional[str] = None) -> BaseIdentityProvider:
-        normalized = (provider_name or self.default_provider or "google").strip().lower()
+        normalized = (
+            (provider_name or self.default_provider or "google").strip().lower()
+        )
         if normalized == "google":
             return self.google
         if normalized == "cilogon":
             return self.cilogon
-        raise IdentityProviderError(f"unsupported auth provider: {normalized}", status_code=400)
+        raise IdentityProviderError(
+            f"unsupported auth provider: {normalized}", status_code=400
+        )
 
-    def _detect_provider_from_token(self, raw_id_token: str) -> Optional[BaseIdentityProvider]:
+    def _detect_provider_from_token(
+        self, raw_id_token: str
+    ) -> Optional[BaseIdentityProvider]:
         try:
             parts = (raw_id_token or "").split(".")
             if len(parts) >= 2:
                 padded = parts[1] + "=" * (-len(parts[1]) % 4)
-                unverified = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+                unverified = json.loads(
+                    base64.urlsafe_b64decode(padded).decode("utf-8")
+                )
                 issuer = (unverified.get("iss") or "").strip()
                 if issuer == CILOGON_ISSUER or issuer.endswith(".cilogon.org"):
                     return self.cilogon
@@ -592,9 +609,7 @@ class MultiIdentityProvider(BaseIdentityProvider):
         target = self.get_provider(provider)
         return target.refresh_session(refresh_token)
 
-    def revoke_token(
-        self, refresh_token: str, provider: Optional[str] = None
-    ) -> int:
+    def revoke_token(self, refresh_token: str, provider: Optional[str] = None) -> int:
         target = self.get_provider(provider)
         return target.revoke_token(refresh_token)
 
