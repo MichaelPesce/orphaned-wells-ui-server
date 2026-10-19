@@ -67,6 +67,7 @@ COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "true").lower() in (
 COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
 ACCESS_COOKIE = "ogrre_session"
 REFRESH_COOKIE = "ogrre_refresh_session"
+PROVIDER_COOKIE = "ogrre_auth_provider"
 CSRF_COOKIE = "ogrre_csrf"
 CSRF_HEADER = "X-CSRF-Token"
 ANONYMOUS_TEAM_COOKIE = "ogrre_anonymous_team"
@@ -233,7 +234,10 @@ def _set_anonymous_collaborator_cookie(response: JSONResponse, collaborator: str
 
 
 def _set_auth_cookies(
-    response: JSONResponse, id_token_value: str, refresh_token_value: Optional[str]
+    response: JSONResponse,
+    id_token_value: str,
+    refresh_token_value: Optional[str],
+    provider: Optional[str] = None,
 ):
     response.set_cookie(
         key=ACCESS_COOKIE,
@@ -249,6 +253,17 @@ def _set_auth_cookies(
         response.set_cookie(
             key=REFRESH_COOKIE,
             value=refresh_token_value,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite=COOKIE_SAMESITE,
+            max_age=REFRESH_COOKIE_MAX_AGE_SECONDS,
+            domain=COOKIE_DOMAIN,
+            path="/",
+        )
+    if provider:
+        response.set_cookie(
+            key=PROVIDER_COOKIE,
+            value=provider,
             httponly=True,
             secure=COOKIE_SECURE,
             samesite=COOKIE_SAMESITE,
@@ -279,7 +294,7 @@ def _cookie_delete_domains(request: Optional[Request] = None) -> list[str]:
 
 def _clear_auth_cookies(response: JSONResponse, request: Optional[Request] = None):
     # Clear host-only cookies and the domain cookies we may have used during rollout.
-    for cookie_name in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE):
+    for cookie_name in (ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PROVIDER_COOKIE):
         response.delete_cookie(
             cookie_name,
             path="/",
@@ -300,11 +315,26 @@ def _is_csrf_exempt_path(path: str) -> bool:
     normalized_path = path.rstrip("/") or "/"
     return normalized_path in {
         "/token",
+        "/auth_providers",
         "/auth_login",
         "/auth_refresh",
         "/check_auth",
         "/logout",
     }
+
+
+def _resolve_user_email(user_info: dict) -> str:
+    email = (user_info.get("email") or "").strip().lower()
+    if not email and user_info.get("sub"):
+        linked_user = data_manager.getUserBySub(user_info["sub"])
+        if linked_user and linked_user.get("email"):
+            email = (linked_user.get("email") or "").strip().lower()
+    if not email and user_info.get("eppn"):
+        eppn = (user_info.get("eppn") or "").strip().lower()
+        if "@" in eppn and data_manager.getUser(eppn) is not None:
+            email = eppn
+    user_info["email"] = email
+    return email
 
 
 def csrf_protect(request: Request):
@@ -335,6 +365,17 @@ router = APIRouter(
 )
 
 
+@router.get("/auth_providers")
+def get_auth_providers():
+    """Return enabled authentication providers and public OIDC client config."""
+    if hasattr(identity_provider, "get_enabled_providers"):
+        return identity_provider.get_enabled_providers()
+    return {
+        "google": {"enabled": True, "client_id": ""},
+        "cilogon": {"enabled": False, "client_id": ""},
+    }
+
+
 @router.post("/token")
 def authenticate(request: Request, token: str = Depends(oauth2_scheme)):
     """Authenticate API calls; required as a dependency for other API calls.
@@ -352,6 +393,7 @@ def authenticate(request: Request, token: str = Depends(oauth2_scheme)):
         raise HTTPException(status_code=401, detail="missing authentication token")
     try:
         user_info = identity_provider.verify_id_token(token_to_verify)
+        _resolve_user_email(user_info)
         return user_info
     except Exception as e:
         _log.info(f"unable to authenticate: {e}")
@@ -363,10 +405,10 @@ async def auth_login(request: Request):
     """Authorize OGRRE account.
 
     Args:
-        code: code provided by react google sign in
+        code: authorization code string or {"code": str, "provider": str, "redirect_uri": str}
 
     Returns:
-        user tokens (id_token, access_token, refresh_token)
+        login status, provider, and normalized email
     """
     if not REQUIRE_AUTH:
         response = JSONResponse(
@@ -378,18 +420,42 @@ async def auth_login(request: Request):
         )
         _set_auth_cookies(response, "anonymous", "")
         return response
-    code = await request.json()
+
+    payload = await request.json()
+    provider = None
+    redirect_uri = None
+    if isinstance(payload, str):
+        code = payload
+    elif isinstance(payload, dict):
+        code = payload.get("code")
+        provider = payload.get("provider")
+        redirect_uri = payload.get("redirect_uri")
+    else:
+        raise HTTPException(status_code=400, detail="authorization code is required")
+
+    if not code or not isinstance(code, str):
+        raise HTTPException(status_code=400, detail="authorization code is required")
+
     try:
-        auth_result = identity_provider.exchange_authorization_code(code)
+        try:
+            auth_result = identity_provider.exchange_authorization_code(
+                code, redirect_uri=redirect_uri, provider=provider
+            )
+        except TypeError:
+            auth_result = identity_provider.exchange_authorization_code(code)
         user_info = auth_result.user_info
     except IdentityProviderError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
-    email = user_info["email"]
+    email = _resolve_user_email(user_info)
 
-    if email is None or email == "":
-        _log.info(f"User account does not provide email")
-        data_manager.recordHistory("login", user=user, notes="denied access")
+    if not email:
+        _log.info("User account does not provide email")
+        data_manager.recordHistory(
+            "login",
+            user=user_info.get("sub") or "unknown",
+            notes="denied access",
+        )
         raise HTTPException(
             status_code=403,
             detail=_build_auth_failure(
@@ -412,7 +478,7 @@ async def auth_login(request: Request):
 
     authorized = util.validateUser(user)
     if not authorized:
-        _log.info(f"user is not authorized")
+        _log.info("user is not authorized")
         data_manager.recordHistory("login", email, notes="denied access")
         raise HTTPException(
             status_code=403,
@@ -430,7 +496,12 @@ async def auth_login(request: Request):
             "email": email,
         }
     )
-    _set_auth_cookies(response, auth_result.id_token, auth_result.refresh_token)
+    _set_auth_cookies(
+        response,
+        auth_result.id_token,
+        auth_result.refresh_token,
+        provider=auth_result.provider,
+    )
     return response
 
 
@@ -442,7 +513,7 @@ def auth_refresh(request: Request):
         refresh_token: refresh token provided upon signin
 
     Returns:
-        user tokens (id_token, access_token, refresh_token)
+        refresh status and provider
     """
     if not REQUIRE_AUTH:
         response = JSONResponse(
@@ -457,16 +528,22 @@ def auth_refresh(request: Request):
     refresh_token = request.cookies.get(REFRESH_COOKIE)
     if not refresh_token:
         raise HTTPException(status_code=401, detail="missing refresh token")
+    provider = request.cookies.get(PROVIDER_COOKIE)
     try:
-        auth_result = identity_provider.refresh_session(refresh_token)
+        try:
+            auth_result = identity_provider.refresh_session(
+                refresh_token, provider=provider
+            )
+        except TypeError:
+            auth_result = identity_provider.refresh_session(refresh_token)
         user_info = auth_result.user_info
     except IdentityProviderError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
-    email = user_info["email"]
-    user = data_manager.getUser(email)
+    email = _resolve_user_email(user_info)
+    user = data_manager.getUser(email) if email else None
     if user is None:
         _log.info(f"user {email} is not found in database")
-        data_manager.recordHistory("refresh", email, notes="denied access")
+        data_manager.recordHistory("refresh", email or "unknown", notes="denied access")
         raise HTTPException(
             status_code=403,
             detail=_build_auth_failure(
@@ -476,7 +553,7 @@ def auth_refresh(request: Request):
         )
     authorized = util.validateUser(user)
     if not authorized:
-        _log.info(f"user is not authorized")
+        _log.info("user is not authorized")
         data_manager.recordHistory("refresh", email, notes="denied access")
         raise HTTPException(
             status_code=403,
@@ -487,7 +564,12 @@ def auth_refresh(request: Request):
         )
     data_manager.recordHistory("refresh", email)
     response = JSONResponse({"status": "ok", "provider": auth_result.provider})
-    _set_auth_cookies(response, auth_result.id_token, auth_result.refresh_token)
+    _set_auth_cookies(
+        response,
+        auth_result.id_token,
+        auth_result.refresh_token,
+        provider=auth_result.provider,
+    )
     return response
 
 
@@ -535,14 +617,21 @@ def logout(request: Request):
         response code
     """
     refresh_token = request.cookies.get(REFRESH_COOKIE)
+    provider = request.cookies.get(PROVIDER_COOKIE)
     logout_status = 200
     if refresh_token:
-        response = requests.post(
-            "https://oauth2.googleapis.com/revoke",
-            params={"token": refresh_token},
-            headers={"content-type": "application/x-www-form-urlencoded"},
-        )
-        logout_status = response.status_code
+        if hasattr(identity_provider, "revoke_token"):
+            logout_status = identity_provider.revoke_token(
+                refresh_token, provider=provider
+            )
+        else:
+            response = requests.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": refresh_token},
+                headers={"content-type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+            logout_status = response.status_code
     json_response = JSONResponse({"logout_status": logout_status})
     _clear_auth_cookies(json_response, request)
     return json_response

@@ -1,14 +1,16 @@
+import base64
+import json
 import logging
 import os
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+import jwt
+from jwt import PyJWKClient
 import requests
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
-import jwt
-from jwt import PyJWKClient
 
 from ogrre.internal import auth
 
@@ -16,8 +18,13 @@ _log = logging.getLogger(__name__)
 
 CILOGON_JWKS_URI = "https://cilogon.org/oauth2/certs"
 CILOGON_ISSUER = "https://cilogon.org"
+CILOGON_AUTHORIZE_URI = "https://cilogon.org/authorize"
+CILOGON_USERINFO_URI = "https://cilogon.org/oauth2/userinfo"
+CILOGON_DEFAULT_SCOPE = "openid email profile org.cilogon.userinfo"
+GOOGLE_ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
+GOOGLE_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 
-# Ideally instantiate this once and reuse it — it caches keys internally
+# Instantiate once and reuse; PyJWKClient caches keys internally.
 jwks_client = PyJWKClient(CILOGON_JWKS_URI)
 
 
@@ -44,7 +51,12 @@ class IdentityProviderError(Exception):
 class BaseIdentityProvider:
     name = "base"
 
-    def exchange_authorization_code(self, code: str) -> AuthResult:
+    def is_configured(self) -> bool:
+        return False
+
+    def exchange_authorization_code(
+        self, code: str, redirect_uri: Optional[str] = None
+    ) -> AuthResult:
         raise NotImplementedError()
 
     def refresh_session(self, refresh_token: str) -> AuthResult:
@@ -53,16 +65,13 @@ class BaseIdentityProvider:
     def verify_id_token(self, raw_id_token: str) -> Dict:
         raise NotImplementedError()
 
+    def revoke_token(self, refresh_token: str) -> int:
+        return 200
+
 
 class GoogleIdentityProvider(BaseIdentityProvider):
     """
     Google OIDC provider implementation.
-
-    FUTURE EXTENSION (CILogon):
-    - Add `CilogonIdentityProvider(BaseIdentityProvider)`.
-    - Implement token exchange against CILogon token endpoint.
-    - Verify token issuer/audience according to CILogon OIDC metadata.
-    - Keep `user_info["email"]` normalization plus subject (`sub`) mapping.
     """
 
     name = "google"
@@ -74,7 +83,23 @@ class GoogleIdentityProvider(BaseIdentityProvider):
             self.client_secret,
         ) = auth.get_google_credentials()
 
+    def _refresh_credentials_from_env(self) -> None:
+        if not (self.token_uri and self.client_id and self.client_secret):
+            (
+                env_token_uri,
+                env_client_id,
+                env_client_secret,
+            ) = auth.get_google_credentials()
+            self.token_uri = self.token_uri or env_token_uri
+            self.client_id = self.client_id or env_client_id
+            self.client_secret = self.client_secret or env_client_secret
+
+    def is_configured(self) -> bool:
+        self._refresh_credentials_from_env()
+        return bool(self.token_uri and self.client_id and self.client_secret)
+
     def _validate_configuration(self):
+        self._refresh_credentials_from_env()
         missing = []
         if not self.token_uri:
             missing.append("token_uri")
@@ -89,27 +114,31 @@ class GoogleIdentityProvider(BaseIdentityProvider):
             )
 
     def verify_id_token(self, raw_id_token: str) -> Dict:
+        self._refresh_credentials_from_env()
         try:
             user_info = id_token.verify_oauth2_token(
                 raw_id_token, google_requests.Request(), self.client_id
             )
-            user_info["email"] = user_info.get("email", "").lower()
+            user_info["email"] = (user_info.get("email") or "").strip().lower()
+            user_info["provider"] = self.name
             return user_info
         except Exception as e:
             raise IdentityProviderError(f"unable to authenticate: {e}", status_code=401)
 
-    def exchange_authorization_code(self, code: str) -> AuthResult:
+    def exchange_authorization_code(
+        self, code: str, redirect_uri: Optional[str] = None
+    ) -> AuthResult:
         self._validate_configuration()
         data = {
             "code": code,
             "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "redirect_uri": "postmessage",
+            "redirect_uri": redirect_uri or "postmessage",
             "grant_type": "authorization_code",
         }
-        response = requests.post(self.token_uri, data=data)
+        response = requests.post(self.token_uri, data=data, timeout=15)
         if response.status_code != 200:
-            _log.info(f"token exchange failed: {response.status_code} {response.text}")
+            _log.info(f"token exchange failed: {response.status_code}")
             raise IdentityProviderError("unable to authenticate", status_code=401)
 
         user_tokens = response.json()
@@ -141,9 +170,9 @@ class GoogleIdentityProvider(BaseIdentityProvider):
             "client_secret": self.client_secret,
             "grant_type": "refresh_token",
         }
-        response = requests.post(self.token_uri, data=data)
+        response = requests.post(self.token_uri, data=data, timeout=15)
         if response.status_code != 200:
-            _log.info(f"token refresh failed: {response.status_code} {response.text}")
+            _log.info(f"token refresh failed: {response.status_code}")
             raise IdentityProviderError("unable to authenticate", status_code=401)
 
         user_tokens = response.json()
@@ -162,14 +191,30 @@ class GoogleIdentityProvider(BaseIdentityProvider):
             provider=self.name,
         )
 
+    def revoke_token(self, refresh_token: str) -> int:
+        if not refresh_token:
+            return 200
+        try:
+            response = requests.post(
+                GOOGLE_REVOKE_URI,
+                params={"token": refresh_token},
+                headers={"content-type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+            return response.status_code
+        except Exception as e:
+            _log.warning(f"failed to revoke Google token: {e}")
+            return 200
+
 
 class CilogonIdentityProvider(BaseIdentityProvider):
     """
-    Cilogon OIDC provider implementation.
+    CILogon OIDC provider implementation.
 
-    - Implement token exchange against CILogon token endpoint.
-    - Verify token issuer/audience according to CILogon OIDC metadata.
-    - Keep `user_info["email"]` normalization plus subject (`sub`) mapping.
+    - Exchanges authorization codes against the CILogon token endpoint.
+    - Verifies ID token issuer/audience against CILogon JWKS keys.
+    - Enriches user claims (email, name, eppn, idp_name) from CILogon's
+      /oauth2/userinfo endpoint when not embedded directly in the ID token.
     """
 
     name = "cilogon"
@@ -180,8 +225,33 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             self.client_id,
             self.client_secret,
         ) = auth.get_cilogon_credentials()
+        self.userinfo_uri = (
+            os.getenv("cilogon_userinfo_uri") or CILOGON_USERINFO_URI
+        )
+        self.authorize_uri = (
+            os.getenv("cilogon_authorize_uri") or CILOGON_AUTHORIZE_URI
+        )
+        self.redirect_uri = os.getenv("cilogon_redirect_uri")
+
+    def _refresh_credentials_from_env(self) -> None:
+        if not (self.token_uri and self.client_id and self.client_secret):
+            (
+                env_token_uri,
+                env_client_id,
+                env_client_secret,
+            ) = auth.get_cilogon_credentials()
+            self.token_uri = self.token_uri or env_token_uri
+            self.client_id = self.client_id or env_client_id
+            self.client_secret = self.client_secret or env_client_secret
+        if not self.redirect_uri:
+            self.redirect_uri = os.getenv("cilogon_redirect_uri")
+
+    def is_configured(self) -> bool:
+        self._refresh_credentials_from_env()
+        return bool(self.token_uri and self.client_id and self.client_secret)
 
     def _validate_configuration(self):
+        self._refresh_credentials_from_env()
         missing = []
         if not self.token_uri:
             missing.append("token_uri")
@@ -195,30 +265,87 @@ class CilogonIdentityProvider(BaseIdentityProvider):
                 status_code=500,
             )
 
-    def verify_id_token(raw_id_token: str, client_id: str) -> dict:
-        signing_key = jwks_client.get_signing_key_from_jwt(raw_id_token)
-        user_info = jwt.decode(
-            raw_id_token,
-            signing_key.key,
-            algorithms=["RS256"],
-            audience=client_id,
-            issuer=CILOGON_ISSUER,
-        )
-        user_info["email"] = user_info.get("email", "").lower()
+    def verify_id_token(self, raw_id_token: str) -> Dict:
+        self._refresh_credentials_from_env()
+        if not self.client_id:
+            raise IdentityProviderError(
+                "identity provider is misconfigured. missing: client_id",
+                status_code=500,
+            )
+        try:
+            signing_key = jwks_client.get_signing_key_from_jwt(raw_id_token)
+            user_info = jwt.decode(
+                raw_id_token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=self.client_id,
+                issuer=CILOGON_ISSUER,
+            )
+            user_info["email"] = (user_info.get("email") or "").strip().lower()
+            user_info["provider"] = self.name
+            return user_info
+        except Exception as e:
+            raise IdentityProviderError(f"unable to authenticate: {e}", status_code=401)
+
+    def fetch_userinfo(self, access_token: str) -> Dict:
+        if not access_token:
+            return {}
+        try:
+            response = requests.post(
+                self.userinfo_uri,
+                data={"access_token": access_token},
+                timeout=15,
+            )
+            if response.status_code != 200:
+                _log.info(
+                    f"CILogon userinfo request returned status {response.status_code}"
+                )
+                return {}
+            data = response.json()
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            _log.warning(f"failed to fetch CILogon userinfo: {e}")
+            return {}
+
+    @staticmethod
+    def _merge_userinfo_claims(user_info: Dict, extra_claims: Dict) -> Dict:
+        if not extra_claims:
+            return user_info
+
+        email = (extra_claims.get("email") or user_info.get("email") or "").strip().lower()
+        if email:
+            user_info["email"] = email
+
+        name = (extra_claims.get("name") or user_info.get("name") or "").strip()
+        if not name:
+            given = (extra_claims.get("given_name") or "").strip()
+            family = (extra_claims.get("family_name") or "").strip()
+            name = f"{given} {family}".strip()
+        if name:
+            user_info["name"] = name
+
+        for claim_key in ("given_name", "family_name", "eppn", "idp", "idp_name", "subject_id"):
+            val = extra_claims.get(claim_key)
+            if val and not user_info.get(claim_key):
+                user_info[claim_key] = val
+
         return user_info
 
-    def exchange_authorization_code(self, code: str) -> AuthResult:
+    def exchange_authorization_code(
+        self, code: str, redirect_uri: Optional[str] = None
+    ) -> AuthResult:
         self._validate_configuration()
+        effective_redirect_uri = redirect_uri or self.redirect_uri or "postmessage"
         data = {
             "code": code,
             "client_id": self.client_id,
             "client_secret": self.client_secret,
-            "redirect_uri": "postmessage",
+            "redirect_uri": effective_redirect_uri,
             "grant_type": "authorization_code",
         }
-        response = requests.post(self.token_uri, data=data)
+        response = requests.post(self.token_uri, data=data, timeout=15)
         if response.status_code != 200:
-            _log.info(f"token exchange failed: {response.status_code} {response.text}")
+            _log.info(f"token exchange failed: {response.status_code}")
             raise IdentityProviderError("unable to authenticate", status_code=401)
 
         user_tokens = response.json()
@@ -234,9 +361,14 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             time.sleep(2.5)
             user_info = self.verify_id_token(raw_id_token)
 
+        access_token = user_tokens.get("access_token", "")
+        if access_token and (not user_info.get("email") or not user_info.get("name")):
+            userinfo_claims = self.fetch_userinfo(access_token)
+            self._merge_userinfo_claims(user_info, userinfo_claims)
+
         return AuthResult(
             id_token=raw_id_token,
-            access_token=user_tokens.get("access_token", ""),
+            access_token=access_token,
             refresh_token=user_tokens.get("refresh_token", ""),
             user_info=user_info,
             provider=self.name,
@@ -250,9 +382,9 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             "client_secret": self.client_secret,
             "grant_type": "refresh_token",
         }
-        response = requests.post(self.token_uri, data=data)
+        response = requests.post(self.token_uri, data=data, timeout=15)
         if response.status_code != 200:
-            _log.info(f"token refresh failed: {response.status_code} {response.text}")
+            _log.info(f"token refresh failed: {response.status_code}")
             raise IdentityProviderError("unable to authenticate", status_code=401)
 
         user_tokens = response.json()
@@ -261,26 +393,113 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             raise IdentityProviderError("unable to authenticate", status_code=401)
 
         user_info = self.verify_id_token(raw_id_token)
+        access_token = user_tokens.get("access_token", "")
+        if access_token and not user_info.get("email"):
+            userinfo_claims = self.fetch_userinfo(access_token)
+            self._merge_userinfo_claims(user_info, userinfo_claims)
+
         next_refresh = user_tokens.get("refresh_token") or refresh_token
         return AuthResult(
             id_token=raw_id_token,
-            access_token=user_tokens.get("access_token", ""),
+            access_token=access_token,
             refresh_token=next_refresh,
             user_info=user_info,
             provider=self.name,
         )
 
 
-def build_identity_provider() -> BaseIdentityProvider:
-    provider_name = (os.getenv("AUTH_PROVIDER", "google") or "google").lower()
-    if provider_name == "google":
-        return GoogleIdentityProvider()
-    elif provider_name == "cilogon":
-        return CilogonIdentityProvider()
+class MultiIdentityProvider(BaseIdentityProvider):
+    """
+    Dispatcher that supports both Google and CILogon authentication flows
+    simultaneously while preserving the BaseIdentityProvider interface.
+    """
 
-    # NOTE: this is intentional to make provider onboarding explicit/safe.
-    # Add a new class and extend this switch when enabling CILogon or others.
-    raise IdentityProviderError(f"unsupported auth provider: {provider_name}", 500)
+    def __init__(
+        self,
+        default_provider: str = "google",
+        google_provider: Optional[GoogleIdentityProvider] = None,
+        cilogon_provider: Optional[CilogonIdentityProvider] = None,
+    ) -> None:
+        self.default_provider = default_provider if default_provider in {"google", "cilogon"} else "google"
+        self.name = self.default_provider
+        self.google = google_provider or GoogleIdentityProvider()
+        self.cilogon = cilogon_provider or CilogonIdentityProvider()
+
+    def get_provider(self, provider_name: Optional[str] = None) -> BaseIdentityProvider:
+        normalized = (provider_name or self.default_provider or "google").strip().lower()
+        if normalized == "google":
+            return self.google
+        if normalized == "cilogon":
+            return self.cilogon
+        raise IdentityProviderError(f"unsupported auth provider: {normalized}", status_code=400)
+
+    def _detect_provider_from_token(self, raw_id_token: str) -> Optional[BaseIdentityProvider]:
+        try:
+            parts = (raw_id_token or "").split(".")
+            if len(parts) >= 2:
+                padded = parts[1] + "=" * (-len(parts[1]) % 4)
+                unverified = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+                issuer = (unverified.get("iss") or "").strip()
+                if issuer == CILOGON_ISSUER or issuer.endswith(".cilogon.org"):
+                    return self.cilogon
+                if issuer in GOOGLE_ISSUERS:
+                    return self.google
+        except Exception:
+            pass
+        return None
+
+    def verify_id_token(
+        self, raw_id_token: str, provider: Optional[str] = None
+    ) -> Dict:
+        if provider:
+            return self.get_provider(provider).verify_id_token(raw_id_token)
+        detected = self._detect_provider_from_token(raw_id_token)
+        if detected is not None:
+            return detected.verify_id_token(raw_id_token)
+        return self.get_provider(None).verify_id_token(raw_id_token)
+
+    def exchange_authorization_code(
+        self,
+        code: str,
+        redirect_uri: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> AuthResult:
+        target = self.get_provider(provider)
+        return target.exchange_authorization_code(code, redirect_uri=redirect_uri)
+
+    def refresh_session(
+        self, refresh_token: str, provider: Optional[str] = None
+    ) -> AuthResult:
+        target = self.get_provider(provider)
+        return target.refresh_session(refresh_token)
+
+    def revoke_token(
+        self, refresh_token: str, provider: Optional[str] = None
+    ) -> int:
+        target = self.get_provider(provider)
+        return target.revoke_token(refresh_token)
+
+    def get_enabled_providers(self) -> Dict:
+        return {
+            "google": {
+                "enabled": self.google.is_configured(),
+                "client_id": self.google.client_id or "",
+            },
+            "cilogon": {
+                "enabled": self.cilogon.is_configured(),
+                "client_id": self.cilogon.client_id or "",
+                "authorize_uri": self.cilogon.authorize_uri,
+                "scope": CILOGON_DEFAULT_SCOPE,
+            },
+        }
+
+
+def build_identity_provider() -> MultiIdentityProvider:
+    provider_name = (os.getenv("AUTH_PROVIDER", "google") or "google").strip().lower()
+    if provider_name not in {"google", "cilogon", "both"}:
+        raise IdentityProviderError(f"unsupported auth provider: {provider_name}", 500)
+    default_provider = "cilogon" if provider_name == "cilogon" else "google"
+    return MultiIdentityProvider(default_provider=default_provider)
 
 
 def get_bearer_or_session_token(request, bearer_token: Optional[str]) -> Optional[str]:
