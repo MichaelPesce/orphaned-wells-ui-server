@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional
@@ -21,6 +22,8 @@ CILOGON_ISSUER = "https://cilogon.org"
 CILOGON_AUTHORIZE_URI = "https://cilogon.org/authorize"
 CILOGON_USERINFO_URI = "https://cilogon.org/oauth2/userinfo"
 CILOGON_DEFAULT_SCOPE = "openid email profile org.cilogon.userinfo"
+ORCID_PUBLIC_API_BASE_URI = "https://pub.orcid.org/v3.0"
+ORCID_ID_PATTERN = re.compile(r"\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b")
 GOOGLE_ISSUERS = {"https://accounts.google.com", "accounts.google.com"}
 GOOGLE_REVOKE_URI = "https://oauth2.googleapis.com/revoke"
 
@@ -467,12 +470,82 @@ class CilogonIdentityProvider(BaseIdentityProvider):
             "idp",
             "idp_name",
             "subject_id",
+            "oidc",
+            "eduPersonOrcid",
         ):
             val = extra_claims.get(claim_key)
             if val and not user_info.get(claim_key):
                 user_info[claim_key] = val
 
         return user_info
+
+    @staticmethod
+    def _extract_orcid_id(user_info: Dict) -> Optional[str]:
+        candidates = []
+        for key in ("eduPersonOrcid", "oidc", "eppn", "subject_id", "sub"):
+            raw_val = user_info.get(key)
+            if isinstance(raw_val, (list, tuple)):
+                candidates.extend(str(item) for item in raw_val if item)
+            elif raw_val:
+                candidates.append(str(raw_val))
+
+        for candidate in candidates:
+            match = ORCID_ID_PATTERN.search(candidate)
+            if match:
+                return match.group(1)
+        return None
+
+    def fetch_orcid_public_emails(self, orcid_id: str) -> list[str]:
+        if not orcid_id:
+            return []
+        try:
+            response = requests.get(
+                f"{ORCID_PUBLIC_API_BASE_URI}/{orcid_id}/email",
+                headers={"Accept": "application/json"},
+                timeout=10,
+            )
+            if response.status_code != 200:
+                _log.info(
+                    f"ORCID public email lookup returned status {response.status_code}"
+                )
+                return []
+            data = response.json()
+            raw_emails = data.get("email") if isinstance(data, dict) else []
+            if not isinstance(raw_emails, list):
+                return []
+
+            valid_entries = [
+                entry
+                for entry in raw_emails
+                if isinstance(entry, dict) and str(entry.get("email") or "").strip()
+            ]
+            valid_entries.sort(
+                key=lambda entry: (
+                    not bool(entry.get("verified", True)),
+                    not bool(entry.get("primary", False)),
+                )
+            )
+            emails: list[str] = []
+            for entry in valid_entries:
+                normalized = str(entry.get("email") or "").strip().lower()
+                if normalized and normalized not in emails:
+                    emails.append(normalized)
+            return emails
+        except Exception as e:
+            _log.warning(f"failed to fetch ORCID public emails for {orcid_id}: {e}")
+            return []
+
+    def _enrich_orcid_email_if_missing(self, user_info: Dict) -> None:
+        if user_info.get("email"):
+            return
+        orcid_id = self._extract_orcid_id(user_info)
+        if not orcid_id:
+            return
+        user_info["orcid"] = orcid_id
+        orcid_emails = self.fetch_orcid_public_emails(orcid_id)
+        if orcid_emails:
+            user_info["email"] = orcid_emails[0]
+            user_info["orcid_emails"] = orcid_emails
 
     def exchange_authorization_code(
         self, code: str, redirect_uri: Optional[str] = None
@@ -508,6 +581,7 @@ class CilogonIdentityProvider(BaseIdentityProvider):
         if access_token and (not user_info.get("email") or not user_info.get("name")):
             userinfo_claims = self.fetch_userinfo(access_token)
             self._merge_userinfo_claims(user_info, userinfo_claims)
+        self._enrich_orcid_email_if_missing(user_info)
 
         return AuthResult(
             id_token=raw_id_token,
@@ -540,6 +614,7 @@ class CilogonIdentityProvider(BaseIdentityProvider):
         if access_token and not user_info.get("email"):
             userinfo_claims = self.fetch_userinfo(access_token)
             self._merge_userinfo_claims(user_info, userinfo_claims)
+        self._enrich_orcid_email_if_missing(user_info)
 
         next_refresh = user_tokens.get("refresh_token") or refresh_token
         return AuthResult(

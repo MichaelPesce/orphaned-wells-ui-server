@@ -335,6 +335,13 @@ def _is_csrf_exempt_path(path: str) -> bool:
 
 def _resolve_user_email(user_info: dict) -> str:
     email = (user_info.get("email") or "").strip().lower()
+    orcid_emails = user_info.get("orcid_emails") or []
+    if orcid_emails and (not email or data_manager.getUser(email) is None):
+        for candidate in orcid_emails:
+            normalized = (candidate or "").strip().lower()
+            if normalized and data_manager.getUser(normalized) is not None:
+                email = normalized
+                break
     if not email and user_info.get("sub"):
         linked_user = data_manager.getUserBySub(user_info["sub"])
         if linked_user and linked_user.get("email"):

@@ -131,6 +131,76 @@ def test_cilogon_exchange_code_merges_userinfo_and_passes_redirect_uri(monkeypat
     assert result.user_info["idp_name"] == "Lawrence Berkeley National Laboratory"
 
 
+def test_cilogon_provider_falls_back_to_orcid_public_api_when_email_missing(monkeypatch):
+    monkeypatch.setattr(
+        "ogrre.internal.identity_provider.auth.get_cilogon_credentials",
+        lambda: (
+            "https://cilogon.org/oauth2/token",
+            "cilogon.client.id",
+            "cilogon-secret",
+        ),
+    )
+    provider = CilogonIdentityProvider()
+
+    monkeypatch.setattr(
+        provider,
+        "verify_id_token",
+        lambda token: {
+            "sub": "http://cilogon.org/serverA/users/456",
+            "iss": "https://cilogon.org",
+        },
+    )
+
+    def fake_post(url, data=None, headers=None, timeout=None):
+        if url == "https://cilogon.org/oauth2/token":
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "id_token": "cilogon-orcid-id-token",
+                "access_token": "cilogon-orcid-access-token",
+                "refresh_token": "cilogon-orcid-refresh-token",
+            }
+            return resp
+        if url == "https://cilogon.org/oauth2/userinfo":
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "sub": "http://cilogon.org/serverA/users/456",
+                "oidc": "http://orcid.org/0009-0002-8683-4972",
+                "given_name": "Michael",
+                "family_name": "Pesce",
+                "idp_name": "ORCID",
+            }
+            return resp
+        raise AssertionError(f"Unexpected POST URL {url}")
+
+    def fake_get(url, headers=None, timeout=None):
+        assert url == "https://pub.orcid.org/v3.0/0009-0002-8683-4972/email"
+        assert headers == {"Accept": "application/json"}
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "email": [
+                {
+                    "email": "mpesce@lbl.gov",
+                    "verified": True,
+                    "primary": False,
+                    "visibility": "PUBLIC",
+                }
+            ]
+        }
+        return resp
+
+    monkeypatch.setattr("ogrre.internal.identity_provider.requests.post", fake_post)
+    monkeypatch.setattr("ogrre.internal.identity_provider.requests.get", fake_get)
+
+    result = provider.exchange_authorization_code("orcid-code-123")
+    assert result.user_info["orcid"] == "0009-0002-8683-4972"
+    assert result.user_info["email"] == "mpesce@lbl.gov"
+    assert result.user_info["orcid_emails"] == ["mpesce@lbl.gov"]
+    assert result.user_info["name"] == "Michael Pesce"
+
+
 def test_multi_identity_provider_routes_by_issuer_and_provider():
     google = MagicMock(spec=GoogleIdentityProvider)
     google.is_configured.return_value = True
