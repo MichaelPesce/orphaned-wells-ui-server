@@ -484,7 +484,7 @@ async def auth_login(request: Request):
             status_code=403,
             detail=_build_auth_failure(
                 "account_not_registered",
-                "Your identity is valid, but this account is not registered for this application.",
+                "This account is not registered for this application. Please login with a different account or contact the development team to gain access.",
             ),
         )
 
@@ -560,7 +560,7 @@ def auth_refresh(request: Request):
             status_code=403,
             detail=_build_auth_failure(
                 "account_not_registered",
-                "Your identity is valid, but this account is not registered for this application.",
+                "This account is not registered for this application. Please login with a different account or contact the development team to gain access.",
             ),
         )
     authorized = util.validateUser(user)
@@ -610,7 +610,7 @@ def check_authorization(request: Request, user_info: dict = Depends(authenticate
                 status_code=403,
                 detail=_build_auth_failure(
                     "account_not_registered",
-                    "Your identity is valid, but this account is not registered for this application.",
+                    "This account is not registered for this application. Please login with a different account or contact the development team to gain access.",
                 ),
             )
     response = JSONResponse({"user_data": user, "environment": environment})
