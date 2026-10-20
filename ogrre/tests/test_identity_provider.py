@@ -131,7 +131,9 @@ def test_cilogon_exchange_code_merges_userinfo_and_passes_redirect_uri(monkeypat
     assert result.user_info["idp_name"] == "Lawrence Berkeley National Laboratory"
 
 
-def test_cilogon_provider_falls_back_to_orcid_public_api_when_email_missing(monkeypatch):
+def test_cilogon_provider_falls_back_to_orcid_public_api_when_email_missing(
+    monkeypatch,
+):
     monkeypatch.setattr(
         "ogrre.internal.identity_provider.auth.get_cilogon_credentials",
         lambda: (
