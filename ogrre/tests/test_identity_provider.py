@@ -312,6 +312,12 @@ def test_router_auth_endpoints_support_google_and_cilogon(manager, monkeypatch):
             )
         )
     assert no_email_exc.value.status_code == 403
+    assert no_email_exc.value.detail["detail_key"] == "missing_email"
+    assert "orcid.org/my-orcid" in no_email_exc.value.detail["message"]
+    assert (
+        no_email_exc.value.detail["help_url"]
+        == "https://support.orcid.org/hc/en-us/articles/360006897614-Visibility-settings"
+    )
 
     login_response = asyncio.run(
         router.auth_login(

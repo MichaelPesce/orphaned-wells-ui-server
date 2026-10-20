@@ -164,12 +164,22 @@ def require_role_category_access(user_info, role_categories):
         raise HTTPException(403, detail=detail)
 
 
-def _build_auth_failure(detail_key: str, message: str):
-    return {
+def _build_auth_failure(
+    detail_key: str,
+    message: str,
+    help_url: Optional[str] = None,
+    help_label: Optional[str] = None,
+):
+    failure = {
         "error": "authorization_failed",
         "detail_key": detail_key,
         "message": message,
     }
+    if help_url:
+        failure["help_url"] = help_url
+    if help_label:
+        failure["help_label"] = help_label
+    return failure
 
 
 def _set_csrf_cookie(response: JSONResponse, csrf_token: Optional[str] = None) -> str:
@@ -459,8 +469,10 @@ async def auth_login(request: Request):
         raise HTTPException(
             status_code=403,
             detail=_build_auth_failure(
-                "account_not_registered",
-                "Your identity is not associated with an email. Please add an email to your account and make it available to access OGRRE.",
+                "missing_email",
+                "Your identity is not associated with an email. If signing in with ORCID, open 'View my ORCID record' (orcid.org/my-orcid), click the edit pencil icon in the 'Emails & domains' section on the left sidebar, and set your verified email visibility to 'Everyone' (Public).",
+                help_url="https://support.orcid.org/hc/en-us/articles/360006897614-Visibility-settings",
+                help_label="View ORCID visibility settings documentation",
             ),
         )
 
