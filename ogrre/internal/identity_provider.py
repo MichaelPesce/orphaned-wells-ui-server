@@ -34,11 +34,6 @@ DEFAULT_CILOGON_IDP_OPTIONS = [
         "logo": "/img/idp/lbl.svg",
     },
     {
-        "label": "Pacific Northwest National Laboratory",
-        "entityId": "https://sso.pnnl.gov/idp",
-        "logo": "/img/idp/pnnl.svg",
-    },
-    {
         "label": "Lawrence Livermore National Laboratory",
         "entityId": "https://eidp.llnl.gov",
         "logo": "/img/idp/llnl.svg",
@@ -69,11 +64,15 @@ DEFAULT_IDP_LOGOS_BY_ENTITY_ID = {
 CILOGON_IDP_PRESETS = {
     "lbl": DEFAULT_CILOGON_IDP_OPTIONS[0],
     "lbnl": DEFAULT_CILOGON_IDP_OPTIONS[0],
-    "pnnl": DEFAULT_CILOGON_IDP_OPTIONS[1],
-    "llnl": DEFAULT_CILOGON_IDP_OPTIONS[2],
-    "ornl": DEFAULT_CILOGON_IDP_OPTIONS[3],
-    "anl": DEFAULT_CILOGON_IDP_OPTIONS[4],
-    "orcid": DEFAULT_CILOGON_IDP_OPTIONS[5],
+    "llnl": DEFAULT_CILOGON_IDP_OPTIONS[1],
+    "ornl": DEFAULT_CILOGON_IDP_OPTIONS[2],
+    "anl": DEFAULT_CILOGON_IDP_OPTIONS[3],
+    "orcid": DEFAULT_CILOGON_IDP_OPTIONS[4],
+    "pnnl": {
+        "label": "Pacific Northwest National Laboratory",
+        "entityId": "https://sso.pnnl.gov/idp",
+        "logo": "/img/idp/pnnl.svg",
+    },
     "uiuc": {
         "label": "University of Illinois Urbana-Champaign",
         "entityId": "urn:mace:incommon:uiuc.edu",
